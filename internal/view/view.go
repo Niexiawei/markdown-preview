@@ -91,6 +91,9 @@ func (s *State) leftHeader(c *ui.Context) {
 				p := p
 				open := s.cfg.IsOpen(p.ID)
 				row := components.Button(c.Key("project:"+p.ID), "", components.ButtonGhost).Label("项目：" + p.Name)
+				// The row opens and closes the project: a check box, so that a
+				// screen reader says which.
+				row.Role(ui.RoleCheckBox).Checked(open)
 				row.Gap(t.Space(0.75)).Children(func() {
 					components.Icon(c, lucide.Folder()).Size(t.Rem(1), t.Rem(1)).TextColor(t.TextMuted)
 					components.Text(c, p.Name).SingleLine().Grow(1)

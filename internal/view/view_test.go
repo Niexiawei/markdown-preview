@@ -672,3 +672,31 @@ func TestRemovingTheLastOpenProjectLeavesNoneActive(t *testing.T) {
 		t.Fatalf("Projects = %v, want the closed project kept", s.Projects())
 	}
 }
+
+func TestProjectRowReportsWhetherItIsOpen(t *testing.T) {
+	s, _, _ := twoProjects(t)
+	tt := newTester(s)
+	openPanel(t, tt)
+	info, ok := tt.Access("项目：alpha")
+	if !ok {
+		t.Fatalf("no accessible row for alpha; texts = %q", tt.Texts())
+	}
+	if info.Role != ui.RoleCheckBox {
+		t.Errorf("role = %v, want a check box: the row opens and closes the project", info.Role)
+	}
+	if !info.Checked {
+		t.Error("alpha is open, want the row reported as checked")
+	}
+
+	if err := tt.Click("项目：alpha"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	tt = newTester(s)
+	info, ok = tt.Access("项目：alpha")
+	if !ok {
+		t.Fatalf("no accessible row for alpha; texts = %q", tt.Texts())
+	}
+	if info.Checked {
+		t.Error("alpha is closed, want the row reported as unchecked")
+	}
+}
