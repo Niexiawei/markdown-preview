@@ -719,3 +719,20 @@ git commit -m "feat: 文件树右键复制名称/路径并在此打开，Cmd+C �
 - [ ] `go test ./...` 全绿（含 `TestShellSlotsBuild`，证明 shell 各槽位与 `View` 两条路径都同步）。
 - [ ] `go run .` 手动验证四项：目录面板上下左右滚；标题栏是一个分段器；点复制图标后状态栏报「已复制文件路径」；树上右键目录/文件菜单项与 `Ctrl+V` 粘贴结果一致，`Ctrl+C` 复制当前文档绝对路径。
 - [ ] README「已知限制」不需要改（本次不引入新的限制）；如用户要求把 `在文件管理器中打开` 改成 `在文件浏览器中打开`，只改 `nodeMenu` 里一个字符串 + `TestTreeDirMenuCopiesThePathAndRevealsTheFolder` 的期望列表。
+
+---
+
+## 执行备注（事后）
+
+实现在 `feat/toc-scroll-title-actions` 上按本计划完成（6 个提交）。三处计划本身的偏差，已在当时裁决并落地：
+
+1. **任务 2 步骤 2 的预期不成立**：旧分段按钮的可见文字本来就是 `WebView` / `原生`，tester 点文本即可命中，所以改完点击目标后 `TestModeToggleSitsWithTheDocumentName` 直接通过。保留该测试（断言模式真的切换），不再为它造 RED。
+2. **`TestTitleFitsNarrowWindow` 的原断言恒真**：tester 报告的文本矩形按窗口裁过，`rect.X+rect.W > 280` 永远不成立。改为「窄窗口下 `WebView` 段的可见宽度必须等于宽窗口下的自然宽度」（16.2 vs 45.3 DIP，差距足够明显）。
+3. **`tt.Menu()` 看不到 Onevra 的菜单**：tester 的 `Menu()` 只读系统菜单，而 `components.ContextMenu` 在窗口内自绘、条目是真实元素。改为 `tt.HasText(...)` 逐项断言，并单独断言文件菜单里**没有**「在文件管理器中打开」。
+
+最终审查（作者自审）另外修了两处：
+
+4. **目录滚动位置原来在任何重载时归零**（外部保存、切渲染后端都会让目录跳回顶部）。归零动作从 `loadDoc` 移到 `selectDocIn`：换文档才归零，同一文档重载保留位置（`TestTOCScrollSurvivesAReloadButNotADocumentChange`）。
+5. **标题栏图标与树菜单共用「复制文件路径」这个无障碍名**：读屏与 tester 都无法区分，实测点树菜单项会命中标题栏图标。图标改名为「复制文档路径」（`TestTreeMenuCopiesTheClickedFileWhileADocumentShows`）。
+
+另外 README 记录了新的树右键菜单、复制路径与 `Cmd/Ctrl+C`（计划的「收尾」里写的是「README 不需要改」，实际需要）。
