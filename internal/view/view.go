@@ -25,7 +25,9 @@ func (s *State) View(c *ui.Context) {
 			s.leftToolbar(c)
 		})
 		ui.Column(c).Grow(1).Children(func() {
-			s.contentTitle(c)
+			// As the shell's header row: a fixed height the title bar fills,
+			// which the shell pads and clips.
+			ui.Row(c).Height(sidebar.HeaderHeight(c)).Children(func() { s.contentTitle(c) })
 			s.preview(c)
 			s.statusBar(c)
 		})
@@ -148,7 +150,7 @@ func (s *State) leftToolbar(c *ui.Context) {
 // with.
 func (s *State) contentTitle(c *ui.Context) {
 	t := c.Theme()
-	ui.Row(c).FillWidth().Height(sidebar.HeaderHeight(c)).Padding(0, t.Space(2)).AlignItems(ui.Center).Gap(t.Space(1)).Children(func() {
+	ui.Row(c).FillWidth().FillHeight().Padding(0, t.Space(2)).AlignItems(ui.Center).Gap(t.Space(1)).Children(func() {
 		if path := s.shortPath(); path != "" {
 			components.Icon(c, lucide.FileText()).Size(t.Rem(0.875), t.Rem(0.875)).TextColor(t.TextMuted)
 			// The path gives the rest of the bar its room: a long one ends in
@@ -166,8 +168,16 @@ func (s *State) contentTitle(c *ui.Context) {
 // modeToggle is the rendering mode of the document shown, right after its
 // name: the two backends as the segments of the theme's control.
 func (s *State) modeToggle(c *ui.Context) {
+	t := c.Theme()
 	idx := s.modeIndex()
 	parts := components.Tabs(c, &idx, components.TabsSegmented, "原生", "WebView")
+	// The header is shorter than a page: a smaller label and the tabs' own
+	// padding brought in keep the whole control inside the slot the shell
+	// clips to, rather than centring it in a row taller than that slot.
+	parts.List.FontSize(11)
+	for i := range 2 {
+		parts.Tab(i).Padding(t.Space(1), t.Space(2))
+	}
 	// A window that could not make a web view keeps that segment out of the
 	// pointer's way while the document asks for it.
 	if !s.webOK && s.win != nil && s.mode() == config.RenderWebView {

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/oneo-me/onevra/source/shells/sidebar"
 
 	"mdpreview/internal/config"
 )
@@ -222,5 +223,39 @@ func TestTOCScrollSurvivesAReloadButNotADocumentChange(t *testing.T) {
 	s.selectDoc("b.md")
 	if s.tocScroll.X != 0 || s.tocScroll.Y != 0 {
 		t.Errorf("scroll = (%v, %v) for another document, want (0, 0)", s.tocScroll.X, s.tocScroll.Y)
+	}
+}
+
+// TestTitleSitsInsideTheHeaderSlot pins the title bar to the room the shell
+// gives it: the shell pads its header by 6 DIP top and bottom, clips what
+// overflows, and the mode switch must stay inside that slot rather than being
+// cut by it.
+func TestTitleSitsInsideTheHeaderSlot(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", "# A\n")
+	s.Refresh()
+	s.selectDoc("a.md")
+
+	const pad float32 = 6
+	var header, slotTop, slotBottom float32
+	tt := ui.NewTester(func(c *ui.Context) {
+		header = sidebar.HeaderHeight(c)
+		slotTop, slotBottom = pad, header-pad
+		ui.Row(c).Height(header).Padding(pad, 8).Children(func() {
+			ui.Row(c).Grow(1).MinWidth(0).FillHeight().Clip().Children(func() {
+				s.ContentTitle(c)
+			})
+		})
+	}, 900, 48)
+
+	for _, label := range []string{"原生", "WebView"} {
+		rect, ok := tt.Find(label)
+		if !ok {
+			t.Fatalf("texts = %q, want %q", tt.Texts(), label)
+		}
+		if rect.Y < slotTop+6 || rect.Y+rect.H > slotBottom-6 {
+			t.Errorf("%q shows at %v, outside the header's slot %v..%v",
+				label, rect, slotTop+6, slotBottom-6)
+		}
 	}
 }

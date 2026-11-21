@@ -736,3 +736,5 @@ git commit -m "feat: 文件树右键复制名称/路径并在此打开，Cmd+C �
 5. **标题栏图标与树菜单共用「复制文件路径」这个无障碍名**：读屏与 tester 都无法区分，实测点树菜单项会命中标题栏图标。图标改名为「复制文档路径」（`TestTreeMenuCopiesTheClickedFileWhileADocumentShows`）。
 
 另外 README 记录了新的树右键菜单、复制路径与 `Cmd/Ctrl+C`（计划的「收尾」里写的是「README 不需要改」，实际需要）。
+
+用户验收时发现并被修掉的一处（原计划没料到）：**标题栏这一行原来按整个 header 高度（48 DIP）排版，而 shell 给槽位的实际可用高度是 `header - 12`（上下各 6 DIP 内边距），分段器约 35 DIP 居中后顶部被裁掉。** 现在行改成 `FillHeight()` 填满槽位，分段器的标签 11px、页签内边距收到 `Space(1)/Space(2)`，整块约 31 DIP 落在 6..37 之间（`TestTitleSitsInsideTheHeaderSlot` 用 shell 同样的 48 + 6 内边距 + Clip 组装来钉住这一点）。`View`(测试用并排布局) 里补回了固定高度的 header 行，否则 `FillHeight` 会在测试布局里吃掉整列高度（`TestTOCClickSetsAnchor` 当时立刻变红）。
