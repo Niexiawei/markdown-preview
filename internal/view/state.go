@@ -5,6 +5,7 @@
 package view
 
 import (
+	"context"
 	"path/filepath"
 	"strings"
 
@@ -59,6 +60,11 @@ type State struct {
 	// project found gone is dropped once and not every frame.
 	gone map[string]bool
 
+	// watchReady is set once the app runs, when the projects can be
+	// watched; watches holds each project's cancel function.
+	watchReady bool
+	watches    map[string]context.CancelFunc
+
 	sidebarW float32
 	tocW     float32
 
@@ -75,6 +81,7 @@ func New(ws *workspace.Workspace, cfg config.Config, dir string) *State {
 		activeID:   cfg.ActiveID,
 		open:       map[string]*bool{},
 		gone:       map[string]bool{},
+		watches:    map[string]context.CancelFunc{},
 		renderMode: map[string]config.RenderMode{},
 		sidebarW:   300,
 		tocW:       240,
@@ -179,6 +186,7 @@ func (s *State) AddProject(root string) {
 	}
 	s.ws.SetConfig(s.cfg)
 	s.save()
+	s.startWatch(p.ID, p.Root)
 	s.reloadTree()
 }
 
@@ -192,6 +200,7 @@ func (s *State) SetActive(id string) {
 
 // RemoveProject removes a project from the window.
 func (s *State) RemoveProject(id string) {
+	s.stopWatch(id)
 	s.cfg.RemoveProject(id)
 	if s.cfg.ActiveID == "" && len(s.cfg.Projects) > 0 {
 		s.cfg.ActiveID = s.cfg.Projects[0].ID
@@ -226,7 +235,6 @@ func (s *State) reloadTree() {
 		tree, err := workspace.BuildTree(p.Root)
 		if err == nil {
 			s.tree = tree
-			s.status = ""
 			if s.selected != "" {
 				if _, statErr := s.ws.Stat(p.ID, s.selected); statErr != nil {
 					s.selected = ""

@@ -31,6 +31,7 @@ func main() {
 			Content: ui.View(state.View),
 		})
 		state.SetWindow(win)
+		state.StartWatching()
 	})
 	if err := mygo.App.Run(); err != nil {
 		log.Fatal(err)

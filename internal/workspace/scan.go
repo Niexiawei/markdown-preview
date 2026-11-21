@@ -46,17 +46,19 @@ var ignoredDirs = map[string]bool{
 
 // Ignored reports whether the scan and the file watch leave out the entry at
 // rel, relative to the project root with slashes. Hidden entries are left
-// out, whatever they are.
+// out, whatever they are, as are the files in a directory whose name one of
+// these has.
 func Ignored(rel string, isDir bool) bool {
-	base := rel
-	if i := strings.LastIndex(rel, "/"); i >= 0 {
-		base = rel[i+1:]
-	}
-	if strings.HasPrefix(base, ".") && base != "." {
-		return true
-	}
-	if isDir && ignoredDirs[strings.ToLower(base)] {
-		return true
+	for _, part := range strings.Split(rel, "/") {
+		if part == "" || part == "." || part == ".." {
+			continue
+		}
+		if strings.HasPrefix(part, ".") {
+			return true
+		}
+		if ignoredDirs[strings.ToLower(part)] {
+			return true
+		}
 	}
 	return false
 }
