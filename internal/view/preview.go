@@ -26,7 +26,7 @@ func (s *State) preview(c *ui.Context) {
 		body = func() { s.webPreview(c) }
 	}
 	ui.Split(c, &s.tocW, func() { s.toc(c) }, body).
-		Fill().SplitReset(240)
+		Grow(1).SplitReset(240)
 }
 
 // empty centers one line of text in a pane.

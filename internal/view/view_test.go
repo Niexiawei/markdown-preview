@@ -47,7 +47,7 @@ func TestViewShowsEmptyState(t *testing.T) {
 	if !tt.HasText("打开一个目录开始预览 markdown") {
 		t.Errorf("texts = %q, want the empty state", tt.Texts())
 	}
-	if !tt.HasText("打开项目…") {
+	if !tt.HasText("打开项目") {
 		t.Errorf("texts = %q, want the open button", tt.Texts())
 	}
 }
@@ -113,10 +113,10 @@ func TestToolbarShowsProjectNames(t *testing.T) {
 	os.MkdirAll(filepath.Join(dir, "beta"), 0o755)
 	s := newStateWith(cfg)
 	tt := ui.NewTester(s.View, 1000, 700)
-	if !tt.HasText("alpha ▾") {
+	if !tt.HasText("alpha") {
 		t.Fatalf("texts = %q, want the active project's name", tt.Texts())
 	}
-	if err := tt.Click("alpha ▾"); err != nil {
+	if err := tt.Click("切换项目"); err != nil {
 		t.Fatalf("Click: %v", err)
 	}
 	if !tt.HasText("beta") {
@@ -138,11 +138,11 @@ func TestChoosingProjectSwitchesIt(t *testing.T) {
 	writeDoc(t, betaRoot, "only.md", "# Only\n")
 	s := newStateWith(cfg)
 	tt := ui.NewTester(s.View, 1000, 700)
-	if err := tt.Click("alpha ▾"); err != nil {
+	if err := tt.Click("切换项目"); err != nil {
 		t.Fatalf("Click: %v", err)
 	}
-	if err := tt.ChooseMenuItem("beta"); err != nil {
-		t.Fatalf("ChooseMenuItem: %v", err)
+	if err := tt.Click("beta"); err != nil {
+		t.Fatalf("Click beta: %v", err)
 	}
 	tt = ui.NewTester(s.View, 1000, 700)
 	if p, ok := s.ActiveProject(); !ok || p.ID != beta.ID {

@@ -2,6 +2,8 @@ package view
 
 import (
 	"github.com/egoist/mygo/ui"
+	"github.com/oneo-me/onevra/source/components"
+	"github.com/oneo-me/onevra/source/icons/lucide"
 )
 
 // mcpButtonLabel is the toolbar button that opens the MCP settings.
@@ -29,7 +31,14 @@ func (s *State) setMCP(on bool) {
 // server: whether it runs, where, and with which token.
 func (s *State) mcpSettings(c *ui.Context) {
 	t := c.Theme()
-	button := ui.Button(c, mcpButtonLabel)
+	label := mcpButtonLabel
+	if s.mcpEnabled {
+		label = "MCP（已开启）"
+	}
+	button := components.IconButton(c, lucide.Plug(), label, components.IconButtonCompact)
+	if s.mcpEnabled {
+		button.Background(selectedRowTint(t))
+	}
 	if button.Clicked() {
 		s.mcpOpen = !s.mcpOpen
 	}

@@ -6,7 +6,7 @@ import (
 	"strconv"
 
 	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/ui"
+	"github.com/oneo-me/onevra/source/shells/sidebar"
 
 	"mdpreview/internal/config"
 	"mdpreview/internal/mcp"
@@ -27,13 +27,25 @@ func main() {
 		ws := workspace.New(cfg)
 		state := view.New(ws, cfg, dir)
 		view.RegisterMDView(state.Roots)
-		win := mygo.NewWindow(mygo.WindowOptions{
-			Title:   "Markdown Preview",
-			Width:   1280,
-			Height:  820,
-			Content: ui.View(state.View),
+		// The shell owns the window, the floating header and the sidebar the
+		// user collapses; the state fills its slots.
+		shell := sidebar.NewShell(sidebar.ShellOptions{
+			Title:        "Markdown Preview",
+			Width:        1280,
+			Height:       820,
+			MinWidth:     760,
+			MinHeight:    520,
+			StateKey:     "markdown-preview.main",
+			LeftWidth:    280,
+			LeftMinWidth: 200,
+			Left:         state.Left,
+			LeftHeader:   state.LeftHeader,
+			LeftToolbar:  state.LeftToolbar,
+			ContentTitle: state.ContentTitle,
+			Content:      state.Content,
+			Theme:        view.AppTheme,
 		})
-		state.SetWindow(win)
+		state.SetWindow(shell.Window())
 		state.StartWatching()
 		startMCP(state, ws, cfg, dir)
 	})

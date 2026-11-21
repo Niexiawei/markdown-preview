@@ -72,6 +72,9 @@ type State struct {
 	mcpOpen    bool
 	mcpControl func(on bool)
 
+	// projectsOpen is whether the project switcher's panel shows.
+	projectsOpen bool
+
 	sidebarW float32
 	tocW     float32
 

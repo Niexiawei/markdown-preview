@@ -167,3 +167,10 @@ type Index interface {
 | Windows 上 webview 依赖 WebView2 Runtime | 启动时探测，缺失则禁用切换（原生模式是主路径，不影响可用性） |
 | 协议处理器里读任意路径（`mdview://localhost/img?p=C:\...`） | 只允许"已打开项目根目录下的文件"，越界返回 403 |
 | 文件监听在编辑器"原子保存"下丢事件 | `WatchFiles` 本身按目录监听文件替换；再加"手动刷新"按钮兜底 |
+
+## 变更记录
+
+- 2026-11-21：布局改由 `github.com/oneo-me/onevra/source` 的 `shells/sidebar` 承担（可折叠侧栏 + 浮动标题栏），
+  主题改用 `theme.Onevra` + 本应用调色板（`internal/view/theme.go` 的 `AppTheme`），按钮与开关加 lucide 图标。
+  原「我定的」第 9 条（`ui.Split` 三栏）与第 12 条的窗口创建方式作废：窗口现在只由 `sidebar.NewShell` 创建，
+  侧栏折叠由 shell 提供。数据流、MCP 契约、缓存与监听策略不变。

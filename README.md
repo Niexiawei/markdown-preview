@@ -4,7 +4,9 @@
 正文可以在**原生渲染**与 **WebView 渲染**之间切换；文件被 agent 或编辑器改动时，树和正文会立刻跟上。
 内置一个默认关闭的**本地 MCP server**，供 agent 检索这些文档。
 
-界面用 [`github.com/egoist/mygo`](https://github.com/egoist/mygo) 的原生 UI（单二进制，不需要 bun、不需要 web 前端）。
+界面用 [`github.com/egoist/mygo`](https://github.com/egoist/mygo) 的原生 UI（单二进制，不需要 bun、不需要 web 前端），
+布局与主题来自 [`github.com/oneo-me/onevra`](https://github.com/oneo-me/onevra)：`shells/sidebar` 的可折叠侧栏外壳、
+`theme.Onevra` 的调色板（主色 `#0052d9`，悬停 `#618dff`，按下 `#003cab`，警告 `#e37318`）、以及 lucide 图标。
 
 ## 运行
 
@@ -20,8 +22,8 @@ WebView 模式额外需要系统的 web view：Windows 上是 WebView2 Runtime�
 
 ## 用法
 
-- 顶部「打开项目…」选一个目录 → 它成为一个项目；下拉箭头（显示当前项目名）里可以切换、移除项目。
-- 左栏是该项目里的 `.md` / `.markdown`（递归；跳过 `.git`、`node_modules`、`vendor`、`dist`、`build`、`.mygo` 和所有点开头的目录）。
+- 侧栏顶部是项目切换（显示当前项目名）→ 点开可以切换、移除项目；侧栏底部的图标按钮：打开项目、刷新、MCP。
+- 侧栏（可用标题栏的按钮折叠/展开）是该项目里的 `.md` / `.markdown`（递归；跳过 `.git`、`node_modules`、`vendor`、`dist`、`build`、`.mygo` 和所有点开头的目录）。
 - 右栏左半边是文档目录，点一项正文就滚到那个标题；右半边是正文。
 - 正文里的相对链接可以在文档之间跳转，`#标题` 跳到本文档的标题，`http(s)` 链接交给系统浏览器。
 - 底部状态栏左侧的分段控件切换当前文档的渲染后端：**原生** 或 **WebView**（每个文档各记各的，只在本次运行内有效）。
@@ -67,12 +69,12 @@ curl -s http://127.0.0.1:8765/mcp \
 ## 目录结构
 
 ```
-main.go                     组装：配置 → workspace → 窗口 → 文件监听 → MCP
+main.go                     组装：配置 → workspace → sidebar shell → 文件监听 → MCP
 internal/config/            配置的读写（项目列表、活动项目、渲染模式、MCP 设置）
 internal/workspace/         扫描、读取、解析缓存、TOC/slug、搜索（Index 接口，喂 UI 和 MCP）
 internal/watch/             把 mygo 的文件事件折叠成 ChangeSet
 internal/mcp/               JSON-RPC 端点与四个只读工具
-internal/view/              原生 UI：工具条、树、目录、两种预览、状态栏、设置面板
+internal/view/              Onevra 主题 + 外壳各区域：侧栏顶栏、树、侧栏工具栏、标题、预览、状态栏、设置面板
 ```
 
 设计与实现计划在 `docs/superpowers/` 下。

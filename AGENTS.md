@@ -4,8 +4,9 @@
 正文可在原生渲染（`ui/markdown`）与 WebView 渲染（`ui.WebView`）之间切换；外部改动（agent / 编辑器）
 实时跟随；另带一个默认关闭的本地 MCP server。
 
-UI 框架是 `github.com/egoist/mygo v0.9.1`（原生 UI 路径，**不用** web 前端、不需要 bun）。
-设计与实现计划在 `docs/superpowers/`。
+UI 框架是 `github.com/egoist/mygo v0.9.1`（原生 UI 路径，**不用** web 前端、不需要 bun）；
+布局、主题与图标来自 `github.com/oneo-me/onevra/source v0.2026.18`（`shells/sidebar` 外壳、`theme.Onevra`、
+`icons/lucide`、`components`）。设计与实现计划在 `docs/superpowers/`。
 
 ## 命令
 
@@ -28,7 +29,7 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
 | `internal/workspace` | 扫描 / 读取 / 解析缓存 / 标题缓存 / TOC 与 slug / 搜索；`Index` 接口 |
 | `internal/watch` | `mygo.WatchFiles` → `ChangeSet`（新增 / 删除 / 重命名 / 写入） |
 | `internal/mcp` | `POST /mcp` JSON-RPC 2.0，四个只读工具 |
-| `internal/view` | 原生 UI：工具条、树、目录、两种预览、状态栏、MCP 设置面板 |
+| `internal/view` | Onevra 主题（`theme.go`）与外壳各区域：侧栏顶栏、树、侧栏工具栏、内容标题、预览、状态栏、MCP 设置面板 |
 
 依赖方向：`view → workspace`、`mcp → workspace`、`workspace → config`。
 
@@ -42,6 +43,12 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
   `HTML()`；绝不为 webview 另引解析器，否则两模式渲染会不一致。
 - **视图状态归窗口线程。** 视图是 state 的纯函数；其他 goroutine 只通过 `State.Post(fn)` 投递，
   帧首 `drain()` 应用，然后 `win.Invalidate()` 唤醒。不要在 view 热路径里读盘或解析。
+- **窗口只用 `sidebar.NewShell` 创建**（`main.go`），不要退回 `mygo.NewWindow`：折叠侧栏、浮动标题栏、
+  主题安装都由 shell 负责。要加内容就填它的槽位：`Left` / `LeftHeader` / `LeftToolbar` / `ContentTitle` / `Content`。
+- **颜色从 `AppTheme` 取**（`internal/view/theme.go`）：不要在别处写死十六进制色值；需要主色就
+  `c.Theme().Accent`，需要警示色就 `c.Theme().Warning`。
+- **图标只用 `icons/lucide`**，用 `components.Icon` / `components.IconButton`；图标按钮必须给 `label`
+  （无障碍名，也是测试定位的唯一方式，图标本身不是文本）。
 - **配置与状态不落 `localStorage`**，一律写 `App.Path(PathUserData)` 下的 JSON。
 - **MCP server 默认关闭**；只监听 `127.0.0.1`（`Start` 会拒绝非 loopback 地址）；无
   `Authorization: Bearer <token>` 一律 401。
@@ -73,6 +80,9 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
 - **Windows 文件名限制**：测试里不要造含 `?` `*` 的文件名（`os.WriteFile` 会直接报错）；
   `os.Symlink` 需要管理员权限，相关用例会 `t.Skip`。
 - **webview 重载丢滚动位置**（原生模式保留），已写进 README「已知限制」。
+- **测试看不到 shell**：`sidebar.NewShell` 会真的建窗口，测试里不能用。`View` 是给测试用的并排近似布局，
+  shell 的各槽位各自导出（`Left`/`LeftHeader`/`LeftToolbar`/`ContentTitle`/`Content`），
+  `TestShellSlotsBuild` 逐个构建它们——改布局时保持这两条路径同步。
 
 ## 提交
 
