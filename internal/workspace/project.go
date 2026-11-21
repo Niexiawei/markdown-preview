@@ -41,11 +41,12 @@ func (w *Workspace) SetConfig(cfg config.Config) {
 	w.cfg = cfg
 }
 
-// Projects returns the projects the workspace has open.
+// Projects returns the projects the workspace has open, in the order they were
+// added.
 func (w *Workspace) Projects() []Project {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return append([]Project(nil), w.cfg.Projects...)
+	return w.cfg.OpenProjects()
 }
 
 // Project returns the project with id.
@@ -60,12 +61,13 @@ func (w *Workspace) Project(id string) (Project, bool) {
 	return Project{}, false
 }
 
-// Active returns the active project.
+// Active returns the active project, which is always one the workspace has
+// open.
 func (w *Workspace) Active() (Project, bool) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	for _, p := range w.cfg.Projects {
-		if p.ID == w.cfg.ActiveID {
+		if p.ID == w.cfg.ActiveID && w.cfg.IsOpen(p.ID) {
 			return p, true
 		}
 	}
