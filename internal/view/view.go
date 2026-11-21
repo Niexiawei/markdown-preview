@@ -63,8 +63,9 @@ func (s *State) Content(c *ui.Context) {
 	})
 }
 
-// leftHeader builds the project switcher: the active project's name, with the
-// projects to choose from under it.
+// leftHeader builds the project panel: the active project's name, and under it
+// every project the window knows, checked when open. A click opens or closes
+// one; the right click has the project's actions.
 func (s *State) leftHeader(c *ui.Context) {
 	t := c.Theme()
 	label := "项目"
@@ -88,21 +89,20 @@ func (s *State) leftHeader(c *ui.Context) {
 			}
 			for _, p := range s.Projects() {
 				p := p
-				active := p.ID == s.activeID
-				row := components.Button(c, "", components.ButtonGhost).Label(p.Name)
+				open := s.cfg.IsOpen(p.ID)
+				row := components.Button(c.Key("project:"+p.ID), "", components.ButtonGhost).Label(p.Name)
 				row.Gap(t.Space(0.75)).Children(func() {
 					components.Icon(c, lucide.Folder()).Size(t.Rem(1), t.Rem(1)).TextColor(t.TextMuted)
 					components.Text(c, p.Name).SingleLine().Grow(1)
-					if active {
+					if open {
 						components.Icon(c, lucide.Check()).Size(t.Rem(1), t.Rem(1)).TextColor(t.Accent)
 					}
 				})
-				if active {
+				if open {
 					row.Background(selectedRowTint(t))
 				}
 				if row.Clicked() {
-					s.activate(p.ID)
-					s.projectsOpen = false
+					s.ToggleProject(p.ID)
 				}
 			}
 			ui.Row(c).Height(1).Background(t.Border)

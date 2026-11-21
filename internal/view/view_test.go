@@ -374,3 +374,74 @@ func TestGoneProjectKeepsTheOthers(t *testing.T) {
 		t.Errorf("status = %q, want the gone project named", s.Status())
 	}
 }
+
+func TestPanelTogglesProjectOpen(t *testing.T) {
+	s, alphaRoot, betaRoot := twoProjects(t)
+	writeDoc(t, alphaRoot, "docs/a.md", "# A\n")
+	writeDoc(t, betaRoot, "only.md", "# Only\n")
+	s.Refresh()
+	beta := s.Projects()[1].ID
+
+	tt := newTester(s)
+	if err := tt.Click("切换项目"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if err := tt.Click("beta"); err != nil {
+		t.Fatalf("Click beta: %v", err)
+	}
+	if s.IsOpen(beta) {
+		t.Error("beta is open, want it closed by the click")
+	}
+	tt = newTester(s)
+	if tt.HasText("only.md") {
+		t.Errorf("texts = %q, want beta's document gone from the tree", tt.Texts())
+	}
+	if !s.projectsOpen {
+		t.Error("panel closed, want it to stay open while projects are toggled")
+	}
+	if err := tt.Click("beta"); err != nil {
+		t.Fatalf("Click beta again: %v", err)
+	}
+	if !s.IsOpen(beta) {
+		t.Error("beta is closed, want the second click to open it")
+	}
+	if len(s.Trees()) != 2 {
+		t.Errorf("Trees = %d, want both projects again", len(s.Trees()))
+	}
+}
+
+func TestPanelListsClosedProjectsToo(t *testing.T) {
+	dir := t.TempDir()
+	alphaRoot, betaRoot := filepath.Join(dir, "alpha"), filepath.Join(dir, "beta")
+	var cfg config.Config
+	cfg.AddProject(alphaRoot, "alpha")
+	beta, _ := cfg.AddProject(betaRoot, "beta")
+	cfg.SetOpen(beta.ID, false)
+	for _, root := range []string{alphaRoot, betaRoot} {
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := newStateWith(cfg)
+	tt := newTester(s)
+	if err := tt.Click("切换项目"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if !tt.HasText("beta") {
+		t.Errorf("texts = %q, want the closed project listed so it can be opened", tt.Texts())
+	}
+}
+
+func TestClosingProjectStopsWatching(t *testing.T) {
+	s, _, _ := twoProjects(t)
+	beta := s.Projects()[1].ID
+	cancelled := false
+	s.watches[beta] = func() { cancelled = true }
+	s.ToggleProject(beta)
+	if !cancelled {
+		t.Error("beta's watch was not cancelled")
+	}
+	if _, ok := s.watches[beta]; ok {
+		t.Error("beta is still watched after closing it")
+	}
+}

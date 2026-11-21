@@ -181,14 +181,29 @@ func (s *State) project(id string) (workspace.Project, bool) {
 	return workspace.Project{}, false
 }
 
-// activate shows the project with id as the active one.
-func (s *State) activate(id string) {
-	if !s.cfg.SetActive(id) {
+// ToggleProject opens or closes a project: the open ones are the projects the
+// tree shows, the window watches, and the web view serves.
+func (s *State) ToggleProject(id string) {
+	p, ok := s.project(id)
+	if !ok {
 		return
 	}
-	s.activeID = id
+	open := !s.cfg.IsOpen(id)
+	s.cfg.SetOpen(id, open)
+	if open {
+		s.startWatch(p.ID, p.Root)
+	} else {
+		s.stopWatch(p.ID)
+		if s.sel.project == id {
+			s.sel = docSel{}
+			s.status = ""
+			s.onDocChanged()
+		}
+	}
+	s.activeID = s.cfg.ActiveID
 	s.ws.SetConfig(s.cfg)
 	s.save()
+	s.reloadTree()
 }
 
 // Selected returns the document the window shows, as its project names it.
