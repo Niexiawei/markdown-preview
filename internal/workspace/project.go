@@ -16,6 +16,9 @@ type Project = config.Project
 type Workspace struct {
 	mu  sync.Mutex
 	cfg config.Config
+
+	cacheMu sync.Mutex
+	cache   map[string]*docEntry
 }
 
 // New returns a workspace of the projects in cfg.
