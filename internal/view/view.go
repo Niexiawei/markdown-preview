@@ -104,6 +104,14 @@ func (s *State) leftHeader(c *ui.Context) {
 				if row.Clicked() {
 					s.ToggleProject(p.ID)
 				}
+				components.ContextMenu(c, row, func(m *components.Menu) {
+					if m.Item("在文件管理器中打开").Chosen() {
+						s.revealProject(p)
+					}
+					if m.Item("复制项目路径").Chosen() {
+						s.copyProjectPath(p)
+					}
+				})
 			}
 			ui.Row(c).Height(1).Background(t.Border)
 			remove := components.Button(c, "", components.ButtonGhost).Label("移除当前项目")

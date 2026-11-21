@@ -91,8 +91,11 @@ type State struct {
 	mcpOpen    bool
 	mcpControl func(on bool)
 
-	// projectsOpen is whether the project switcher's panel shows.
+	// projectsOpen is whether the project panel shows.
 	projectsOpen bool
+	// sys is the desktop the window acts through; nil without one, as in the
+	// tests that do not care.
+	sys System
 
 	sidebarW float32
 	tocW     float32
@@ -130,6 +133,30 @@ func New(ws *workspace.Workspace, cfg config.Config, dir string) *State {
 	}
 	s.reloadTree()
 	return s
+}
+
+// SetSystem gives the window the desktop it acts through.
+func (s *State) SetSystem(sys System) { s.sys = sys }
+
+// revealProject shows a project's directory in the file manager.
+func (s *State) revealProject(p workspace.Project) {
+	if s.sys == nil {
+		return
+	}
+	if err := s.sys.Reveal(p.Root); err != nil {
+		s.status = "无法打开文件管理器：" + err.Error()
+		return
+	}
+	s.status = "已在文件管理器中打开：" + p.Root
+}
+
+// copyProjectPath puts a project's directory in the clipboard.
+func (s *State) copyProjectPath(p workspace.Project) {
+	if s.sys == nil {
+		return
+	}
+	s.sys.CopyText(p.Root)
+	s.status = "已复制项目路径：" + p.Root
 }
 
 // SetWindow gives the state the window it draws in, which it asks for a frame

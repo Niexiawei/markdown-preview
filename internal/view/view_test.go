@@ -445,3 +445,103 @@ func TestClosingProjectStopsWatching(t *testing.T) {
 		t.Error("beta is still watched after closing it")
 	}
 }
+
+// fakeSystem records what the window asked of the desktop.
+type fakeSystem struct {
+	revealed, copied string
+	asked            bool
+	confirm          bool
+	revealErr        error
+	confirmOptions   ConfirmOptions
+}
+
+func (f *fakeSystem) Reveal(path string) error { f.revealed = path; return f.revealErr }
+
+func (f *fakeSystem) CopyText(text string) { f.copied = text }
+
+func (f *fakeSystem) Confirm(options ConfirmOptions) bool {
+	f.asked, f.confirmOptions = true, options
+	return f.confirm
+}
+
+// openPanel clicks the project panel open.
+func openPanel(t *testing.T, tt *ui.Tester) {
+	t.Helper()
+	if err := tt.Click("切换项目"); err != nil {
+		t.Fatalf("Click the project panel: %v", err)
+	}
+}
+
+func TestProjectMenuCopiesThePath(t *testing.T) {
+	s, _, betaRoot := twoProjects(t)
+	sys := &fakeSystem{}
+	s.SetSystem(sys)
+	tt := newTester(s)
+	openPanel(t, tt)
+	if err := tt.RightClick("beta"); err != nil {
+		t.Fatalf("RightClick: %v", err)
+	}
+	if err := tt.Click("复制项目路径"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if sys.copied != betaRoot {
+		t.Errorf("copied = %q, want %q", sys.copied, betaRoot)
+	}
+	if !strings.Contains(s.Status(), "已复制") {
+		t.Errorf("status = %q, want the copy reported", s.Status())
+	}
+}
+
+func TestProjectMenuRevealsTheFolder(t *testing.T) {
+	s, _, betaRoot := twoProjects(t)
+	sys := &fakeSystem{}
+	s.SetSystem(sys)
+	tt := newTester(s)
+	openPanel(t, tt)
+	if err := tt.RightClick("beta"); err != nil {
+		t.Fatalf("RightClick: %v", err)
+	}
+	if err := tt.Click("在文件管理器中打开"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if sys.revealed != betaRoot {
+		t.Errorf("revealed = %q, want %q", sys.revealed, betaRoot)
+	}
+}
+
+func TestProjectMenuActsOnTheClickedProject(t *testing.T) {
+	s, alphaRoot, betaRoot := twoProjects(t)
+	sys := &fakeSystem{}
+	s.SetSystem(sys)
+	if p, _ := s.ActiveProject(); p.Root != alphaRoot {
+		t.Fatalf("active = %q, want alpha before the click", p.Root)
+	}
+	tt := newTester(s)
+	openPanel(t, tt)
+	if err := tt.RightClick("beta"); err != nil {
+		t.Fatalf("RightClick: %v", err)
+	}
+	if err := tt.Click("复制项目路径"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if sys.copied != betaRoot {
+		t.Errorf("copied = %q, want beta's root, not the active project's", sys.copied)
+	}
+}
+
+func TestProjectMenuRevealFailureIsReported(t *testing.T) {
+	s, _, _ := twoProjects(t)
+	sys := &fakeSystem{revealErr: os.ErrNotExist}
+	s.SetSystem(sys)
+	tt := newTester(s)
+	openPanel(t, tt)
+	if err := tt.RightClick("beta"); err != nil {
+		t.Fatalf("RightClick: %v", err)
+	}
+	if err := tt.Click("在文件管理器中打开"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if !strings.Contains(s.Status(), "文件管理器") {
+		t.Errorf("status = %q, want the failure reported", s.Status())
+	}
+}
