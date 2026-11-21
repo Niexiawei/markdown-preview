@@ -80,6 +80,11 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
 - **Windows 文件名限制**：测试里不要造含 `?` `*` 的文件名（`os.WriteFile` 会直接报错）；
   `os.Symlink` 需要管理员权限，相关用例会 `t.Skip`。
 - **webview 重载丢滚动位置**（原生模式保留），已写进 README「已知限制」。
+- **正文宽度是算出来的**：`State.SetContentWidth` 由 `main.go` 用 `win.ContentSize()` 减去侧栏宽度提供，
+  `bodyPaneWidth()` 再减去目录宽度；body 的列用这个宽度（而不是 `WidthPercent`），因为 `ScrollBoth`
+  里百分比不解析成视口宽度。改布局时要同步这个算式，否则正文会溢出或换行错。
+- **渲染方式开关在标题栏**（`contentTitle` 里的 `modeToggle`），不在底部状态栏；高度固定在 20 DIP 左右，
+  避免撑高 `sidebar.HeaderHeight`。
 - **测试看不到 shell**：`sidebar.NewShell` 会真的建窗口，测试里不能用。`View` 是给测试用的并排近似布局，
   shell 的各槽位各自导出（`Left`/`LeftHeader`/`LeftToolbar`/`ContentTitle`/`Content`），
   `TestShellSlotsBuild` 逐个构建它们——改布局时保持这两条路径同步。

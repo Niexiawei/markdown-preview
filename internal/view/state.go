@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/markdown"
 	"github.com/egoist/mygo/ui/markdown/parser"
 
@@ -77,6 +78,12 @@ type State struct {
 
 	sidebarW float32
 	tocW     float32
+	// docScroll is how far the document's body is scrolled, both ways.
+	docScroll ui.ScrollState
+	// contentWidth, when set, says how wide the window's content is on either
+	// side of the sidebar. The app sets it, since only it sees the shell;
+	// tests set their own.
+	contentWidth func() float32
 
 	inbox chan func()
 }
@@ -285,6 +292,25 @@ func (s *State) selectDoc(rel string) {
 
 // onDocChanged reloads the parse and the outline of the document shown.
 func (s *State) onDocChanged() { s.loadDoc() }
+
+// SetContentWidth tells the window how wide its content is. The shell owns the
+// window, so the app measures it and hands it over.
+func (s *State) SetContentWidth(fn func() float32) { s.contentWidth = fn }
+
+// windowWidth is how wide the window's content is: what the app measured, or a
+// default for the tests that build the view without a window.
+func (s *State) windowWidth() float32 {
+	if s.contentWidth != nil {
+		return max(320, s.contentWidth())
+	}
+	return 840
+}
+
+// bodyPaneWidth is how wide the document's body is: the window's content less
+// the outline beside it.
+func (s *State) bodyPaneWidth() float32 {
+	return max(200, s.windowWidth()-s.tocW)
+}
 
 // shortPath is the path shown in the status bar: the project's name in front
 // of the document's.

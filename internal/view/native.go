@@ -152,6 +152,9 @@ func (s *State) tocItems(c *ui.Context, nodes []*tocNode) {
 	}
 }
 
+// bodyPadding is the room around a document's body, in DIPs.
+const bodyPadding float32 = 28
+
 // nativePreview builds the document's body with the native markdown view.
 func (s *State) nativePreview(c *ui.Context) {
 	t := c.Theme()
@@ -163,8 +166,11 @@ func (s *State) nativePreview(c *ui.Context) {
 		s.empty(c, "在左侧选择一个文档")
 		return
 	}
-	ui.Scroll(c).Fill().Children(func() {
-		ui.Column(c).Padding(28).Gap(12).MaxWidth(820).Children(func() {
+	// Both ways: a table, a code block or an image wider than the pane scrolls
+	// here instead of being cut at its edge. The column takes the pane's own
+	// width, so paragraphs wrap, and they re-wrap as the window resizes.
+	ui.ScrollBoth(c).TrackScroll(&s.docScroll).Fill().Padding(bodyPadding).Children(func() {
+		ui.Column(c).Width(max(200, s.bodyPaneWidth()-2*bodyPadding-2)).Gap(12).Children(func() {
 			ui.Text(c, s.selected).FontSize(11).TextColor(t.TextMuted)
 			markdown.View(c, s.src, &s.md)
 		})

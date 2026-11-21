@@ -35,7 +35,7 @@ func (s *State) mcpSettings(c *ui.Context) {
 	if s.mcpEnabled {
 		label = "MCP（已开启）"
 	}
-	button := components.IconButton(c, lucide.Plug(), label, components.IconButtonCompact)
+	button := components.IconButton(c, lucide.Plug(), label, components.IconButtonPlain)
 	if s.mcpEnabled {
 		button.Background(selectedRowTint(t))
 	}

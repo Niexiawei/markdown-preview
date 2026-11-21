@@ -45,7 +45,18 @@ func main() {
 			Content:      state.Content,
 			Theme:        view.AppTheme,
 		})
-		state.SetWindow(shell.Window())
+		win := shell.Window()
+		state.SetWindow(win)
+		// The body takes the pane's width so paragraphs wrap and re-wrap on
+		// resize; only the shell knows how much the sidebar takes.
+		state.SetContentWidth(func() float32 {
+			width, _ := win.ContentSize()
+			sidebarWidth := float32(0)
+			if shell.LeftExpanded() {
+				sidebarWidth = shell.LeftWidth()
+			}
+			return float32(width) - sidebarWidth
+		})
 		state.StartWatching()
 		startMCP(state, ws, cfg, dir)
 	})

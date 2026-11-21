@@ -124,10 +124,10 @@ func (s *State) leftHeader(c *ui.Context) {
 func (s *State) leftToolbar(c *ui.Context) {
 	t := c.Theme()
 	ui.Row(c).Padding(t.Space(1)).Gap(t.Space(0.5)).AlignItems(ui.Center).Children(func() {
-		if components.IconButton(c, lucide.FolderOpen(), "打开项目", components.IconButtonCompact).Clicked() {
+		if components.IconButton(c, lucide.FolderOpen(), "打开项目", components.IconButtonPlain).Clicked() {
 			s.OpenProject()
 		}
-		if components.IconButton(c, lucide.RefreshCw(), "刷新", components.IconButtonCompact).
+		if components.IconButton(c, lucide.RefreshCw(), "刷新", components.IconButtonPlain).
 			Disabled(s.activeID == "").Clicked() {
 			s.Refresh()
 		}
@@ -140,10 +140,46 @@ func (s *State) leftToolbar(c *ui.Context) {
 // shows.
 func (s *State) contentTitle(c *ui.Context) {
 	t := c.Theme()
-	ui.Row(c).Height(sidebar.HeaderHeight(c)).Padding(0, t.Space(2)).AlignItems(ui.Center).Gap(t.Space(0.75)).Children(func() {
+	ui.Row(c).Height(sidebar.HeaderHeight(c)).Padding(0, t.Space(2)).AlignItems(ui.Center).Gap(t.Space(1)).Children(func() {
 		if path := s.shortPath(); path != "" {
 			components.Icon(c, lucide.FileText()).Size(t.Rem(0.875), t.Rem(0.875)).TextColor(t.TextMuted)
 			components.Text(c, trimEllipsis(path, 90)).FontSize(12).TextColor(t.TextMuted).SingleLine()
+			s.modeToggle(c)
+		}
+	})
+}
+
+// modeToggle is the rendering mode of the document shown, right after its
+// name: two small segments, low enough not to grow the title bar.
+func (s *State) modeToggle(c *ui.Context) {
+	t := c.Theme()
+	s.modeIdx = s.modeIndex()
+	labels := []string{"原生", "WebView"}
+	disabled := !s.webOK && s.win != nil && s.mode() == config.RenderWebView
+	height := max(20, t.Rem(1.25))
+	ui.Row(c).Height(height).Padding(1).Gap(1).Radius(height / 2).Background(t.Surface).Children(func() {
+		for i, label := range labels {
+			i, label := i, label
+			segment := components.Button(c, "", components.ButtonGhost).Label("渲染方式：" + label)
+			segment.Height(height-2).Padding(0, t.Space(0.75)).Radius((height - 2) / 2)
+			segment.FontSize(11)
+			if s.modeIdx == i {
+				segment.Background(t.Accent)
+				segment.TextColor(t.AccentText)
+			} else {
+				segment.TextColor(t.TextMuted)
+			}
+			if disabled && i == 1 {
+				segment.Disabled(true)
+			}
+			segment.Children(func() {
+				components.Text(c, label).FontSize(11).SingleLine()
+			})
+			if segment.Clicked() && s.modeIdx != i {
+				modes := []config.RenderMode{config.RenderNative, config.RenderWebView}
+				s.setMode(modes[i])
+				s.onDocChanged()
+			}
 		}
 	})
 }
@@ -187,20 +223,8 @@ func (s *State) treeItems(c *ui.Context, node *workspace.Node) {
 // shown, and what the window is doing.
 func (s *State) statusBar(c *ui.Context) {
 	t := c.Theme()
-	ui.Row(c).Height(34).PaddingX(t.Space(1)).AlignItems(ui.Center).Gap(t.Space(1)).Children(func() {
-		if s.selected != "" {
-			s.modeIdx = s.modeIndex()
-			labels := []string{"原生", "WebView"}
-			if !s.webOK && s.win != nil && s.renderMode[s.selected] == config.RenderWebView {
-				labels[1] = "WebView（不可用）"
-			}
-			ui.Segmented(c, &s.modeIdx, labels...).Disabled(s.selected == "")
-			if s.modeIdx != s.modeIndex() {
-				s.setMode([]config.RenderMode{config.RenderNative, config.RenderWebView}[max(0, min(1, s.modeIdx))])
-				s.onDocChanged()
-			}
-		}
-		components.Text(c, trimEllipsis(s.status, 120)).FontSize(12).TextColor(t.TextMuted).SingleLine()
+	ui.Row(c).Height(24).PaddingX(t.Space(1)).AlignItems(ui.Center).Gap(t.Space(1)).Children(func() {
+		components.Text(c, trimEllipsis(s.status, 140)).FontSize(11).TextColor(t.TextMuted).SingleLine()
 		ui.Spacer(c)
 	})
 }
