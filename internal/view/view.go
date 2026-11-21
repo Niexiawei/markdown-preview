@@ -10,6 +10,7 @@ import (
 // them, and the status bar under them.
 func (s *State) View(c *ui.Context) {
 	s.drain()
+	s.openURL = func(url string) { c.Services().OpenURL(url) }
 	ui.Column(c).Fill().Children(func() {
 		s.toolbar(c)
 		ui.Split(c, &s.sidebarW, func() { s.sidebar(c) }, func() { s.preview(c) }).

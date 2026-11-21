@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/ui/markdown"
+	"github.com/egoist/mygo/ui/markdown/parser"
 
 	"mdpreview/internal/config"
 	"mdpreview/internal/workspace"
@@ -30,6 +32,21 @@ type State struct {
 	selected string
 	status   string
 
+	// The document shown: its source, its parse, the outline built from it,
+	// and what the native markdown view shows it with.
+	src       string
+	doc       *parser.Document
+	headings  []workspace.Heading
+	docErr    error
+	md        markdown.Options
+	anchor    string
+	anchorVer uint64
+	openURL   func(string)
+
+	// renderMode is the rendering backend the user chose for a document, by
+	// its project path; documents without one use the configuration's.
+	renderMode map[string]config.RenderMode
+
 	// gone remembers the projects whose directory was removed, so that a
 	// project found gone is dropped once and not every frame.
 	gone map[string]bool
@@ -44,15 +61,16 @@ type State struct {
 // configuration lives in dir.
 func New(ws *workspace.Workspace, cfg config.Config, dir string) *State {
 	s := &State{
-		ws:       ws,
-		cfgDir:   dir,
-		cfg:      cfg,
-		activeID: cfg.ActiveID,
-		open:     map[string]*bool{},
-		gone:     map[string]bool{},
-		sidebarW: 300,
-		tocW:     240,
-		inbox:    make(chan func(), 1024),
+		ws:         ws,
+		cfgDir:     dir,
+		cfg:        cfg,
+		activeID:   cfg.ActiveID,
+		open:       map[string]*bool{},
+		gone:       map[string]bool{},
+		renderMode: map[string]config.RenderMode{},
+		sidebarW:   300,
+		tocW:       240,
+		inbox:      make(chan func(), 1024),
 	}
 	if s.activeID == "" && len(cfg.Projects) > 0 {
 		s.activeID = cfg.Projects[0].ID
@@ -238,8 +256,8 @@ func (s *State) selectDoc(rel string) {
 	s.onDocChanged()
 }
 
-// onDocChanged is where later tasks reload the document's parse and preview.
-func (s *State) onDocChanged() {}
+// onDocChanged reloads the parse and the outline of the document shown.
+func (s *State) onDocChanged() { s.loadDoc() }
 
 // shortPath is the path shown in the status bar: the project's name in front
 // of the document's.
