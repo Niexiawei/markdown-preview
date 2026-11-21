@@ -15,6 +15,7 @@ import (
 // and Content), and this is what they look like side by side.
 func (s *State) View(c *ui.Context) {
 	s.drain()
+	s.handleShortcuts(c)
 	s.openURL = func(url string) { c.Services().OpenURL(url) }
 	t := c.Theme()
 	ui.Row(c).Fill().Background(t.Background).Children(func() {
@@ -54,6 +55,7 @@ func (s *State) ContentTitle(c *ui.Context) { s.contentTitle(c) }
 // Content is the shell's page: the outline and the body, with the status bar
 // under them.
 func (s *State) Content(c *ui.Context) {
+	s.handleShortcuts(c)
 	ui.Column(c).Fill().Children(func() {
 		ui.Row(c).Height(sidebar.HeaderHeight(c))
 		ui.Column(c).Grow(1).Children(func() {
@@ -211,9 +213,10 @@ func (s *State) treeItems(c *ui.Context, tr projectTree) {
 	for _, child := range tr.root.Children {
 		child := child
 		if child.IsDir {
-			ui.TreeItem(c, child.Name, s.openOf(tr.project.ID+":"+child.Path), func() {
+			item := ui.TreeItem(c, child.Name, s.openOf(tr.project.ID+":"+child.Path), func() {
 				s.treeItems(c, tr.childOf(child))
 			})
+			s.nodeMenu(c, item, tr, child)
 			continue
 		}
 		selected := s.sel.project == tr.project.ID && child.Path == s.sel.path
@@ -221,7 +224,28 @@ func (s *State) treeItems(c *ui.Context, tr projectTree) {
 		if item.Clicked() {
 			s.selectDocIn(tr.project.ID, child.Path)
 		}
+		s.nodeMenu(c, item, tr, child)
 	}
+}
+
+// nodeMenu gives a tree entry its right click: copying its name or its path,
+// and for a directory, showing it in the file manager.
+func (s *State) nodeMenu(c *ui.Context, item ui.Element, tr projectTree, n *workspace.Node) {
+	components.ContextMenu(c, item, func(m *components.Menu) {
+		if m.Item("复制文件名称").Chosen() {
+			s.copyNodeName(n)
+		}
+		if m.Item("复制文件路径").Chosen() {
+			s.copyNodePath(tr, n)
+		}
+		if !n.IsDir {
+			return
+		}
+		m.Separator()
+		if m.Item("在文件管理器中打开").Chosen() {
+			s.revealNode(tr, n)
+		}
+	})
 }
 
 // childOf is the tree of tr from node down, which the tree builds as the user

@@ -700,3 +700,148 @@ func TestProjectRowReportsWhetherItIsOpen(t *testing.T) {
 		t.Error("alpha is closed, want the row reported as unchecked")
 	}
 }
+
+// TestTreeFileMenuCopiesTheName pins the file's two entries: its name, and its
+// absolute path.
+func TestTreeFileMenuCopiesTheName(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "notes/a.md", "# A\n")
+	s.Refresh()
+	sys := &fakeSystem{}
+	s.SetSystem(sys)
+
+	tt := newTester(s)
+	if err := tt.RightClick("a.md"); err != nil {
+		t.Fatalf("RightClick: %v", err)
+	}
+	for _, want := range []string{"复制文件名称", "复制文件路径"} {
+		if !tt.HasText(want) {
+			t.Fatalf("texts = %q, want %q in the file's menu", tt.Texts(), want)
+		}
+	}
+	if tt.HasText("在文件管理器中打开") {
+		t.Errorf("texts = %q, want no reveal: a file has no folder to show", tt.Texts())
+	}
+	if err := tt.Click("复制文件名称"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if sys.copied != "a.md" {
+		t.Errorf("copied = %q, want a.md", sys.copied)
+	}
+	if !strings.Contains(s.Status(), "已复制文件名称") {
+		t.Errorf("status = %q, want the copy reported", s.Status())
+	}
+}
+
+// TestTreeDirMenuCopiesThePathAndRevealsTheFolder pins the directory's three
+// entries, the path being the directory's own.
+func TestTreeDirMenuCopiesThePathAndRevealsTheFolder(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "notes/a.md", "# A\n")
+	s.Refresh()
+	sys := &fakeSystem{}
+	s.SetSystem(sys)
+
+	tt := newTester(s)
+	if err := tt.RightClick("notes"); err != nil {
+		t.Fatalf("RightClick: %v", err)
+	}
+	for _, want := range []string{"复制文件名称", "复制文件路径", "在文件管理器中打开"} {
+		if !tt.HasText(want) {
+			t.Fatalf("texts = %q, want %q in the directory's menu", tt.Texts(), want)
+		}
+	}
+	if err := tt.Click("复制文件路径"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if want := filepath.Join(root, "notes"); sys.copied != want {
+		t.Errorf("copied = %q, want %q", sys.copied, want)
+	}
+	if err := tt.RightClick("notes"); err != nil {
+		t.Fatalf("RightClick again: %v", err)
+	}
+	if err := tt.Click("在文件管理器中打开"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if want := filepath.Join(root, "notes"); sys.revealed != want {
+		t.Errorf("revealed = %q, want %q", sys.revealed, want)
+	}
+}
+
+// TestTreeDirMenuReportsARevealFailure pins that a file manager that cannot
+// open the directory says so in the status bar instead of failing silently.
+func TestTreeDirMenuReportsARevealFailure(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "notes/a.md", "# A\n")
+	s.Refresh()
+	s.SetSystem(&fakeSystem{revealErr: os.ErrNotExist})
+
+	tt := newTester(s)
+	if err := tt.RightClick("notes"); err != nil {
+		t.Fatalf("RightClick: %v", err)
+	}
+	if err := tt.Click("在文件管理器中打开"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if !strings.Contains(s.Status(), "文件管理器") {
+		t.Errorf("status = %q, want the failure reported", s.Status())
+	}
+}
+
+// TestTreeMenuWithoutDesktopDoesNothing pins that a tree without a System to
+// copy through is a no-op, not a panic.
+func TestTreeMenuWithoutDesktopDoesNothing(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "notes/a.md", "# A\n")
+	s.Refresh()
+
+	tt := newTester(s)
+	if err := tt.RightClick("a.md"); err != nil {
+		t.Fatalf("RightClick: %v", err)
+	}
+	if err := tt.Click("复制文件路径"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if s.Status() != "" {
+		t.Errorf("status = %q, want nothing claimed to have been copied", s.Status())
+	}
+}
+
+// TestCmdCCopiesTheDocumentPath pins Cmd/Ctrl+C: the document shown, its
+// absolute path.
+func TestCmdCCopiesTheDocumentPath(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "notes/a.md", "# A\n")
+	s.Refresh()
+	s.selectDoc("notes/a.md")
+	sys := &fakeSystem{}
+	s.SetSystem(sys)
+
+	tt := newTester(s)
+	tt.Key(ui.Cmd, ui.KeyC)
+	if want := filepath.Join(root, "notes", "a.md"); sys.copied != want {
+		t.Errorf("copied = %q, want %q", sys.copied, want)
+	}
+	if !strings.Contains(s.Status(), "已复制文件路径") {
+		t.Errorf("status = %q, want the copy reported", s.Status())
+	}
+}
+
+// TestCmdCCopiesNothingWithoutADocument pins that the shortcut does not claim
+// to copy a path when no document is shown.
+func TestCmdCCopiesNothingWithoutADocument(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "notes/a.md", "# A\n")
+	s.Refresh()
+	sys := &fakeSystem{}
+	s.SetSystem(sys)
+
+	tt := newTester(s)
+	tt.Key(ui.Cmd, ui.KeyC)
+	if sys.copied != "" {
+		t.Errorf("copied = %q, want nothing copied", sys.copied)
+	}
+	if s.Status() != "" {
+		t.Errorf("status = %q, want nothing claimed to have been copied", s.Status())
+	}
+}
