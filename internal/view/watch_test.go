@@ -88,15 +88,18 @@ func TestApplyChangesClearsRemovedDoc(t *testing.T) {
 	}
 }
 
-func TestApplyChangesIgnoresOtherProjects(t *testing.T) {
+func TestApplyChangesIgnoresAnotherProjectsPaths(t *testing.T) {
 	s, root := newState(t)
 	writeBody(t, root, "a.md", "# A\n")
 	s.Refresh()
-	writeBody(t, root, "new.md", "# New\n")
-	s.applyChanges("another-project", watch.ChangeSet{TreeDirty: true})
-	tt := newTester(s)
-	if tt.HasText("new.md") {
-		t.Errorf("texts = %q, want nothing applied for another project", tt.Texts())
+	s.selectDoc("a.md")
+	// A project the window does not have open cannot remove the document shown,
+	// even when it reports the same path.
+	s.applyChanges("another-project", watch.ChangeSet{
+		Docs: []watch.Change{{Op: mygo.FileRemove, Path: "a.md"}},
+	})
+	if got := s.Selected(); got != "a.md" {
+		t.Errorf("Selected = %q, want a.md: another project's report changed it", got)
 	}
 }
 
@@ -119,5 +122,31 @@ func TestApplyChangesOnlyTouchesItsOwnProjectsDoc(t *testing.T) {
 	})
 	if got := s.Selected(); got != "" {
 		t.Errorf("Selected = %q, want the removed document cleared", got)
+	}
+}
+
+func TestApplyChangesRefreshesTreeOfAnyOpenProject(t *testing.T) {
+	s, alphaRoot, betaRoot := twoProjects(t)
+	writeDoc(t, alphaRoot, "a.md", "# A\n")
+	writeDoc(t, betaRoot, "b.md", "# B\n")
+	s.Refresh()
+	trees := s.Trees()
+	if p, _ := s.ActiveProject(); p.Root != alphaRoot {
+		t.Fatalf("active = %q, want alpha before the change", p.Root)
+	}
+	writeDoc(t, betaRoot, "new.md", "# New\n")
+	s.applyChanges(trees[1].project.ID, watch.ChangeSet{TreeDirty: true})
+	if !newTester(s).HasText("new.md") {
+		t.Errorf("texts = %q, want the other project's new file in the tree", newTester(s).Texts())
+	}
+}
+
+func TestWatchedProjectsAreTheOpenOnes(t *testing.T) {
+	s, _, _ := twoProjects(t)
+	beta := s.Projects()[1].ID
+	s.ToggleProject(beta)
+	got := s.watchedProjects()
+	if len(got) != 1 || got[0].ID == beta {
+		t.Errorf("watchedProjects = %v, want only the open project", got)
 	}
 }

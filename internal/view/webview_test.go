@@ -174,3 +174,12 @@ func TestDocURLRoundTripsThroughHandler(t *testing.T) {
 		t.Errorf("p = %q, want %q", abs, want)
 	}
 }
+
+func TestRootsAreTheOpenProjects(t *testing.T) {
+	s, alphaRoot, _ := twoProjects(t)
+	s.ToggleProject(s.Projects()[1].ID)
+	roots := s.Roots()
+	if len(roots) != 1 || roots[0] != alphaRoot {
+		t.Errorf("Roots = %v, want only %q: the web view serves open projects", roots, alphaRoot)
+	}
+}

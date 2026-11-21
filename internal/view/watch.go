@@ -6,6 +6,7 @@ import (
 	"github.com/egoist/mygo"
 
 	"mdpreview/internal/watch"
+	"mdpreview/internal/workspace"
 )
 
 // StartWatching watches every project the window has open, so that a file an
@@ -13,10 +14,14 @@ import (
 // runs, after the window is made.
 func (s *State) StartWatching() {
 	s.watchReady = true
-	for _, p := range s.Projects() {
+	for _, p := range s.watchedProjects() {
 		s.startWatch(p.ID, p.Root)
 	}
 }
+
+// watchedProjects are the projects the window watches: the open ones, which are
+// the ones the tree shows.
+func (s *State) watchedProjects() []workspace.Project { return s.cfg.OpenProjects() }
 
 // startWatch begins watching one project, unless it is watched already.
 func (s *State) startWatch(id, root string) {
@@ -55,12 +60,10 @@ func (s *State) stopWatch(id string) {
 	}
 }
 
-// applyChanges applies what a project's watch reported. It runs on the
-// window's thread, from the inbox.
+// applyChanges applies what a project's watch reported, whichever open project
+// it was: the tree shows them all. It runs on the window's thread, from the
+// inbox.
 func (s *State) applyChanges(id string, set watch.ChangeSet) {
-	if id != s.activeID {
-		return
-	}
 	for _, change := range set.Docs {
 		switch {
 		case change.Old != "" && id == s.sel.project && change.Old == s.sel.path:

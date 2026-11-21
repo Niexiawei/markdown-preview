@@ -488,6 +488,9 @@ func TestProjectMenuCopiesThePath(t *testing.T) {
 	if sys.copied != betaRoot {
 		t.Errorf("copied = %q, want %q", sys.copied, betaRoot)
 	}
+	if !s.IsOpen(s.Projects()[1].ID) {
+		t.Error("the right click closed the project, want it left open")
+	}
 	if !strings.Contains(s.Status(), "已复制") {
 		t.Errorf("status = %q, want the copy reported", s.Status())
 	}
@@ -653,5 +656,19 @@ func TestAddProjectsOpensAll(t *testing.T) {
 	tt := newTester(s)
 	if !tt.HasText("a.md") {
 		t.Errorf("texts = %q, want alpha's document in the tree", tt.Texts())
+	}
+}
+
+func TestRemovingTheLastOpenProjectLeavesNoneActive(t *testing.T) {
+	s, _, _ := twoProjects(t)
+	s.SetSystem(&fakeSystem{confirm: true})
+	projects := s.Projects()
+	s.ToggleProject(projects[1].ID) // beta closed; alpha is the only open one
+	s.RemoveProject(projects[0].ID)
+	if p, ok := s.ActiveProject(); ok {
+		t.Errorf("ActiveProject = %v, %v, want none: the project left is closed", p, ok)
+	}
+	if got := len(s.Projects()); got != 1 {
+		t.Fatalf("Projects = %v, want the closed project kept", s.Projects())
 	}
 }

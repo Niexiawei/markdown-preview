@@ -338,9 +338,6 @@ func (s *State) RemoveProject(id string) {
 func (s *State) removeProject(id string) {
 	s.stopWatch(id)
 	s.cfg.RemoveProject(id)
-	if s.cfg.ActiveID == "" && len(s.cfg.Projects) > 0 {
-		s.cfg.ActiveID = s.cfg.Projects[0].ID
-	}
 	s.activeID = s.cfg.ActiveID
 	if s.sel.project == id {
 		s.sel = docSel{}
