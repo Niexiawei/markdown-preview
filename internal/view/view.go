@@ -142,51 +142,36 @@ func (s *State) leftToolbar(c *ui.Context) {
 }
 
 // contentTitle builds the titlebar's leading area: the document the window
-// shows.
+// shows, and the rendering mode it shows with.
 func (s *State) contentTitle(c *ui.Context) {
 	t := c.Theme()
-	ui.Row(c).Height(sidebar.HeaderHeight(c)).Padding(0, t.Space(2)).AlignItems(ui.Center).Gap(t.Space(1)).Children(func() {
+	ui.Row(c).FillWidth().Height(sidebar.HeaderHeight(c)).Padding(0, t.Space(2)).AlignItems(ui.Center).Gap(t.Space(1)).Children(func() {
 		if path := s.shortPath(); path != "" {
 			components.Icon(c, lucide.FileText()).Size(t.Rem(0.875), t.Rem(0.875)).TextColor(t.TextMuted)
-			components.Text(c, trimEllipsis(path, 90)).FontSize(12).TextColor(t.TextMuted).SingleLine()
+			// The path gives the rest of the bar its room: a long one ends in
+			// an ellipsis in its middle, keeping the file's name, rather than
+			// pushing the mode switch out of the window.
+			components.Text(c, path).FontSize(12).TextColor(t.TextMuted).SingleLine().TruncateMiddle().Shrink(1)
 			s.modeToggle(c)
 		}
 	})
 }
 
 // modeToggle is the rendering mode of the document shown, right after its
-// name: two small segments, low enough not to grow the title bar.
+// name: the two backends as the segments of the theme's control.
 func (s *State) modeToggle(c *ui.Context) {
-	t := c.Theme()
-	s.modeIdx = s.modeIndex()
-	labels := []string{"原生", "WebView"}
-	disabled := !s.webOK && s.win != nil && s.mode() == config.RenderWebView
-	height := max(20, t.Rem(1.25))
-	ui.Row(c).Height(height).Padding(1).Gap(1).Radius(height / 2).Background(t.Surface).Children(func() {
-		for i, label := range labels {
-			i, label := i, label
-			segment := components.Button(c, "", components.ButtonGhost).Label("渲染方式：" + label)
-			segment.Height(height-2).Padding(0, t.Space(0.75)).Radius((height - 2) / 2)
-			segment.FontSize(11)
-			if s.modeIdx == i {
-				segment.Background(t.Accent)
-				segment.TextColor(t.AccentText)
-			} else {
-				segment.TextColor(t.TextMuted)
-			}
-			if disabled && i == 1 {
-				segment.Disabled(true)
-			}
-			segment.Children(func() {
-				components.Text(c, label).FontSize(11).SingleLine()
-			})
-			if segment.Clicked() && s.modeIdx != i {
-				modes := []config.RenderMode{config.RenderNative, config.RenderWebView}
-				s.setMode(modes[i])
-				s.onDocChanged()
-			}
-		}
-	})
+	idx := s.modeIndex()
+	parts := components.Tabs(c, &idx, components.TabsSegmented, "原生", "WebView")
+	// A window that could not make a web view keeps that segment out of the
+	// pointer's way while the document asks for it.
+	if !s.webOK && s.win != nil && s.mode() == config.RenderWebView {
+		parts.Tab(1).Disabled(true)
+	}
+	if idx != s.modeIndex() {
+		modes := []config.RenderMode{config.RenderNative, config.RenderWebView}
+		s.setMode(modes[idx])
+		s.onDocChanged()
+	}
 }
 
 // fileTree builds the markdown tree, or what to do when there is nothing to

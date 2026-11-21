@@ -49,13 +49,13 @@ func TestModeToggleSitsWithTheDocumentName(t *testing.T) {
 			t.Errorf("title texts = %q, want %q", tt.Texts(), want)
 		}
 	}
-	if err := tt.Click("渲染方式：WebView"); err != nil {
+	if err := tt.Click("WebView"); err != nil {
 		t.Fatalf("Click: %v", err)
 	}
 	if got := s.mode(); got != config.RenderWebView {
 		t.Errorf("mode = %q, want webview", got)
 	}
-	if err := tt.Click("渲染方式：原生"); err != nil {
+	if err := tt.Click("原生"); err != nil {
 		t.Fatalf("Click: %v", err)
 	}
 	if got := s.mode(); got != config.RenderNative {
@@ -117,5 +117,65 @@ func TestTOCRowsFillThePane(t *testing.T) {
 	tt.ClickAt(220, rect.Y+rect.H/2)
 	if s.anchor != "范围" {
 		t.Errorf("anchor = %q, want the heading clicked at the pane's edge", s.anchor)
+	}
+}
+
+// TestModeToggleIsOneSegmentedControl pins the switch as the theme's segmented
+// control: the two backends are segments of one track, not two loose buttons
+// that name themselves.
+func TestModeToggleIsOneSegmentedControl(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "notes/a.md", "# A\n")
+	s.Refresh()
+	s.selectDoc("notes/a.md")
+
+	tt := ui.NewTester(func(c *ui.Context) { s.ContentTitle(c) }, 900, 48)
+	if tt.HasText("渲染方式：原生") {
+		t.Errorf("texts = %q, want no per-segment label: the segmented control names itself", tt.Texts())
+	}
+	if err := tt.Click("WebView"); err != nil {
+		t.Fatalf("Click WebView: %v", err)
+	}
+	if got := s.mode(); got != config.RenderWebView {
+		t.Errorf("mode = %q, want webview", got)
+	}
+	if err := tt.Click("原生"); err != nil {
+		t.Fatalf("Click 原生: %v", err)
+	}
+	if got := s.mode(); got != config.RenderNative {
+		t.Errorf("mode = %q, want native", got)
+	}
+}
+
+// TestTitleFitsNarrowWindow pins that a long path gives way instead of pushing
+// the mode switch out of the window: at the narrowest useful title bar both
+// segments show at their whole width, and still work.
+func TestTitleFitsNarrowWindow(t *testing.T) {
+	s, root := newState(t)
+	doc := "docs/2026-11-21-a-really-long-document-name-for-the-title-bar.md"
+	writeDoc(t, root, doc, "# A\n")
+	s.Refresh()
+	s.selectDoc(doc)
+
+	build := func(c *ui.Context) { s.ContentTitle(c) }
+	wide := ui.NewTester(build, 900, 48)
+	natural, ok := wide.Find("WebView")
+	if !ok {
+		t.Fatalf("texts = %q, want the mode switch", wide.Texts())
+	}
+
+	narrow := ui.NewTester(build, 280, 48)
+	cut, ok := narrow.Find("WebView")
+	if !ok {
+		t.Fatalf("texts = %q, want the mode switch", narrow.Texts())
+	}
+	if cut.W < natural.W {
+		t.Errorf("the WebView segment shows %v of its %v: the title bar cut it", cut.W, natural.W)
+	}
+	if err := narrow.Click("WebView"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if got := s.mode(); got != config.RenderWebView {
+		t.Errorf("mode = %q, want webview", got)
 	}
 }

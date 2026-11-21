@@ -223,7 +223,6 @@ func (s *State) setMode(m config.RenderMode) {
 		s.renderMode = map[docSel]config.RenderMode{}
 	}
 	s.renderMode[s.sel] = m
-	s.modeIdx = s.modeIndex()
 }
 
 // modeIndex is the segment the document shown chooses: 0 native, 1 web view.
