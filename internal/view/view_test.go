@@ -74,7 +74,7 @@ func TestTreeKeepsOpenStateAcrossRefresh(t *testing.T) {
 		t.Fatalf("texts = %q, want a.md before collapsing", tt.Texts())
 	}
 
-	*s.openOf("notes") = false
+	*s.openOf(s.Trees()[0].project.ID + ":notes") = false
 	tt = ui.NewTester(s.View, 1000, 700)
 	if tt.HasText("a.md") {
 		t.Errorf("texts = %q, want notes collapsed", tt.Texts())
@@ -121,35 +121,6 @@ func TestToolbarShowsProjectNames(t *testing.T) {
 	}
 	if !tt.HasText("beta") {
 		t.Errorf("texts = %q, want beta in the menu", tt.Texts())
-	}
-}
-
-func TestChoosingProjectSwitchesIt(t *testing.T) {
-	var cfg config.Config
-	dir := t.TempDir()
-	alphaRoot := filepath.Join(dir, "alpha")
-	betaRoot := filepath.Join(dir, "beta")
-	alpha, _ := cfg.AddProject(alphaRoot, "alpha")
-	beta, _ := cfg.AddProject(betaRoot, "beta")
-	cfg.ActiveID = alpha.ID
-	if err := os.MkdirAll(alphaRoot, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	writeDoc(t, betaRoot, "only.md", "# Only\n")
-	s := newStateWith(cfg)
-	tt := ui.NewTester(s.View, 1000, 700)
-	if err := tt.Click("切换项目"); err != nil {
-		t.Fatalf("Click: %v", err)
-	}
-	if err := tt.Click("beta"); err != nil {
-		t.Fatalf("Click beta: %v", err)
-	}
-	tt = ui.NewTester(s.View, 1000, 700)
-	if p, ok := s.ActiveProject(); !ok || p.ID != beta.ID {
-		t.Errorf("ActiveProject = %v, %v, want beta", p, ok)
-	}
-	if !tt.HasText("only.md") {
-		t.Errorf("texts = %q, want beta's document", tt.Texts())
 	}
 }
 
@@ -231,23 +202,175 @@ func TestMCPControlCalledOnToggle(t *testing.T) {
 	}
 }
 
-func TestSelectProjectSyncsWorkspace(t *testing.T) {
-	var cfg config.Config
+// twoProjects returns a window with alpha and beta open, and their roots.
+func twoProjects(t *testing.T) (*State, string, string) {
+	t.Helper()
 	dir := t.TempDir()
-	alphaRoot := filepath.Join(dir, "alpha")
-	betaRoot := filepath.Join(dir, "beta")
+	alphaRoot, betaRoot := filepath.Join(dir, "alpha"), filepath.Join(dir, "beta")
+	var cfg config.Config
 	alpha, _ := cfg.AddProject(alphaRoot, "alpha")
-	beta, _ := cfg.AddProject(betaRoot, "beta")
-	cfg.ActiveID = alpha.ID
+	cfg.AddProject(betaRoot, "beta")
+	cfg.SetActive(alpha.ID)
 	for _, root := range []string{alphaRoot, betaRoot} {
 		if err := os.MkdirAll(root, 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
-	ws := workspace.New(cfg)
-	s := New(ws, cfg, t.TempDir())
-	s.SelectProject(beta.ID)
-	if p, ok := ws.Active(); !ok || p.ID != beta.ID {
-		t.Errorf("workspace active = %v, %v, want beta: the MCP tools read it too", p, ok)
+	return New(workspace.New(cfg), cfg, t.TempDir()), alphaRoot, betaRoot
+}
+
+func TestTreeGroupsByProjectWhenSeveralAreOpen(t *testing.T) {
+	s, alphaRoot, betaRoot := twoProjects(t)
+	writeDoc(t, alphaRoot, "docs/a.md", "# A\n")
+	writeDoc(t, betaRoot, "only.md", "# Only\n")
+	s.Refresh()
+	if got := len(s.Trees()); got != 2 {
+		t.Fatalf("Trees = %d, want 2", got)
+	}
+	tt := newTester(s)
+	for _, want := range []string{"alpha", "beta", "a.md", "only.md"} {
+		if !tt.HasText(want) {
+			t.Errorf("texts = %q, want %q", tt.Texts(), want)
+		}
+	}
+}
+
+func TestSingleOpenProjectHasNoProjectLevel(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "notes/a.md", "# A\n")
+	s.Refresh()
+	trees := s.Trees()
+	if len(trees) != 1 {
+		t.Fatalf("Trees = %d, want 1", len(trees))
+	}
+	var names []string
+	for _, child := range trees[0].root.Children {
+		names = append(names, child.Name)
+	}
+	if len(names) != 1 || names[0] != "notes" {
+		t.Errorf("top level = %v, want [notes]: one project adds no project node", names)
+	}
+}
+
+func TestNoOpenProjectShowsTheEmptyState(t *testing.T) {
+	dir := t.TempDir()
+	alphaRoot, betaRoot := filepath.Join(dir, "alpha"), filepath.Join(dir, "beta")
+	var cfg config.Config
+	alpha, _ := cfg.AddProject(alphaRoot, "alpha")
+	beta, _ := cfg.AddProject(betaRoot, "beta")
+	cfg.SetOpen(alpha.ID, false)
+	cfg.SetOpen(beta.ID, false)
+	for _, root := range []string{alphaRoot, betaRoot} {
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := newStateWith(cfg)
+	tt := newTester(s)
+	if !tt.HasText("打开一个目录开始预览 markdown") {
+		t.Errorf("texts = %q, want the empty state", tt.Texts())
+	}
+	if got := s.Selected(); got != "" {
+		t.Errorf("Selected = %q, want none", got)
+	}
+}
+
+func TestSamePathInTwoProjectsLoadsItsOwnBody(t *testing.T) {
+	s, alphaRoot, betaRoot := twoProjects(t)
+	writeDoc(t, alphaRoot, "docs/a.md", "# ALPHA body\n")
+	writeDoc(t, betaRoot, "docs/a.md", "# BETA body\n")
+	s.Refresh()
+	trees := s.Trees()
+	if len(trees) != 2 {
+		t.Fatalf("Trees = %d, want 2", len(trees))
+	}
+	s.selectDocIn(trees[1].project.ID, "docs/a.md")
+	if got := s.Selected(); got != "docs/a.md" {
+		t.Errorf("Selected = %q, want docs/a.md", got)
+	}
+	if !strings.Contains(s.src, "BETA body") {
+		t.Errorf("src = %q, want the body of beta's document", s.src)
+	}
+	if p, ok := s.SelectedProject(); !ok || p.ID != trees[1].project.ID {
+		t.Errorf("SelectedProject = %v, %v, want beta", p, ok)
+	}
+	if p, ok := s.ActiveProject(); !ok || p.ID != trees[1].project.ID {
+		t.Errorf("ActiveProject = %v, %v, want beta: the MCP default follows", p, ok)
+	}
+	tt := newTester(s)
+	if !tt.HasText("beta/docs/a.md") {
+		t.Errorf("texts = %q, want beta's path in the title", tt.Texts())
+	}
+	s.selectDocIn(trees[0].project.ID, "docs/a.md")
+	if !strings.Contains(s.src, "ALPHA body") {
+		t.Errorf("src = %q, want the body of alpha's document", s.src)
+	}
+}
+
+func TestClickingDocInAnotherProjectShowsIt(t *testing.T) {
+	s, alphaRoot, betaRoot := twoProjects(t)
+	writeDoc(t, alphaRoot, "docs/a.md", "# A\n")
+	writeDoc(t, betaRoot, "only.md", "# Only\n")
+	s.Refresh()
+	tt := newTester(s)
+	if err := tt.Click("only.md"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if got := s.Selected(); got != "only.md" {
+		t.Fatalf("Selected = %q, want only.md", got)
+	}
+	if p, ok := s.SelectedProject(); !ok || p.Root != betaRoot {
+		t.Errorf("SelectedProject = %v, %v, want beta", p, ok)
+	}
+	if p, ok := s.ws.Active(); !ok || p.Root != betaRoot {
+		t.Errorf("workspace active = %v, %v, want beta: the MCP tools read it", p, ok)
+	}
+}
+
+func TestDirectoriesOfTwoProjectsOpenApart(t *testing.T) {
+	s, alphaRoot, betaRoot := twoProjects(t)
+	writeDoc(t, alphaRoot, "docs/a.md", "# A\n")
+	writeDoc(t, betaRoot, "docs/b.md", "# B\n")
+	s.Refresh()
+	trees := s.Trees()
+	if len(trees) != 2 {
+		t.Fatalf("Trees = %d, want 2", len(trees))
+	}
+	*s.openOf(trees[0].project.ID + ":docs") = false
+	tt := newTester(s)
+	if tt.HasText("a.md") {
+		t.Errorf("texts = %q, want alpha's docs collapsed", tt.Texts())
+	}
+	if !tt.HasText("b.md") {
+		t.Errorf("texts = %q, want beta's docs still open", tt.Texts())
+	}
+}
+
+func TestGoneProjectKeepsTheOthers(t *testing.T) {
+	s, alphaRoot, betaRoot := twoProjects(t)
+	writeDoc(t, alphaRoot, "a.md", "# A\n")
+	writeDoc(t, betaRoot, "only.md", "# Only\n")
+	s.Refresh()
+	trees := s.Trees()
+	s.selectDocIn(trees[1].project.ID, "only.md")
+	if err := os.RemoveAll(alphaRoot); err != nil {
+		t.Fatal(err)
+	}
+	s.Refresh()
+	if got := len(s.Projects()); got != 1 {
+		t.Fatalf("Projects = %v, want alpha dropped", s.Projects())
+	}
+	if got := len(s.Trees()); got != 1 || s.Trees()[0].project.Root != betaRoot {
+		t.Fatalf("Trees = %v, want only beta", s.Trees())
+	}
+	if got := s.Selected(); got != "only.md" {
+		t.Errorf("Selected = %q, want only.md: another project's document stays", got)
+	}
+	tt := newTester(s)
+	if !tt.HasText("only.md") {
+		t.Errorf("texts = %q, want beta's document still in the tree", tt.Texts())
+	}
+	if !strings.Contains(s.Status(), "不可用") {
+		t.Errorf("status = %q, want the gone project named", s.Status())
 	}
 }

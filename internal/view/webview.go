@@ -198,8 +198,9 @@ func escapeAttr(text string) string {
 // Roots returns the directories of the projects the window has open, which
 // the web view's handler serves and nothing else.
 func (s *State) Roots() []string {
-	roots := make([]string, 0, len(s.cfg.Projects))
-	for _, p := range s.cfg.Projects {
+	open := s.cfg.OpenProjects()
+	roots := make([]string, 0, len(open))
+	for _, p := range open {
 		roots = append(roots, p.Root)
 	}
 	return roots
@@ -207,7 +208,7 @@ func (s *State) Roots() []string {
 
 // mode is the rendering backend the document shown uses.
 func (s *State) mode() config.RenderMode {
-	if m, ok := s.renderMode[s.selected]; ok {
+	if m, ok := s.renderMode[s.sel]; ok {
 		return m
 	}
 	if s.cfg.Render == config.RenderWebView {
@@ -219,9 +220,9 @@ func (s *State) mode() config.RenderMode {
 // setMode makes the document shown use a rendering backend.
 func (s *State) setMode(m config.RenderMode) {
 	if s.renderMode == nil {
-		s.renderMode = map[string]config.RenderMode{}
+		s.renderMode = map[docSel]config.RenderMode{}
 	}
-	s.renderMode[s.selected] = m
+	s.renderMode[s.sel] = m
 	s.modeIdx = s.modeIndex()
 }
 
@@ -269,8 +270,8 @@ func (s *State) ensureWebView() bool {
 // revision changes with the document, so that a changed file reloads.
 func (s *State) docURL() string {
 	abs := ""
-	if p, ok := s.ActiveProject(); ok && s.selected != "" {
-		if path, err := s.ws.AbsOf(p.ID, s.selected); err == nil {
+	if p, ok := s.SelectedProject(); ok && !s.sel.empty() {
+		if path, err := s.ws.AbsOf(p.ID, s.sel.path); err == nil {
 			abs = path
 		}
 	}

@@ -9,15 +9,14 @@ import (
 // preview builds the right pane: the document's outline beside its body, or
 // what to do when no document is shown.
 func (s *State) preview(c *ui.Context) {
-	_, hasProject := s.ActiveProject()
 	switch {
-	case !hasProject:
+	case len(s.trees) == 0:
 		s.empty(c, "打开一个目录开始预览 markdown")
 		return
-	case s.selected == "" && s.tree != nil && len(s.tree.Children) > 0:
+	case s.sel.empty() && s.hasDocs():
 		s.empty(c, "在左侧选择一个文档")
 		return
-	case s.selected == "":
+	case s.sel.empty():
 		s.empty(c, "这个目录下没有 markdown 文件")
 		return
 	}

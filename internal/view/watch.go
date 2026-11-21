@@ -63,13 +63,13 @@ func (s *State) applyChanges(id string, set watch.ChangeSet) {
 	}
 	for _, change := range set.Docs {
 		switch {
-		case change.Old != "" && change.Old == s.selected:
+		case change.Old != "" && id == s.sel.project && change.Old == s.sel.path:
 			// The document the window shows was renamed: follow it.
-			s.selected = change.Path
+			s.sel.path = change.Path
 			s.onDocChanged()
-		case change.Path == s.selected:
+		case id == s.sel.project && change.Path == s.sel.path:
 			if change.Op == mygo.FileRemove {
-				s.selected = ""
+				s.sel = docSel{}
 				s.status = "文件已被删除"
 				s.reloadTree()
 				continue

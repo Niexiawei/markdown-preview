@@ -101,7 +101,7 @@ func (s *State) leftHeader(c *ui.Context) {
 					row.Background(selectedRowTint(t))
 				}
 				if row.Clicked() {
-					s.SelectProject(p.ID)
+					s.activate(p.ID)
 					s.projectsOpen = false
 				}
 			}
@@ -184,39 +184,57 @@ func (s *State) modeToggle(c *ui.Context) {
 	})
 }
 
-// tree builds the markdown tree, or what to do when there is nothing to show.
+// fileTree builds the markdown tree, or what to do when there is nothing to
+// show. With one project open its entries are the top level; with more, each
+// project gets a node of its own name.
 func (s *State) fileTree(c *ui.Context) {
 	t := c.Theme()
 	ui.Column(c).Fill().Padding(t.Space(0.5)).Gap(t.Space(0.25)).Children(func() {
-		if _, ok := s.ActiveProject(); !ok {
+		if len(s.trees) == 0 {
 			components.Text(c, "打开一个目录作为项目").FontSize(12).TextColor(t.TextMuted)
 			return
 		}
-		if s.tree == nil || len(s.tree.Children) == 0 {
+		if !s.hasDocs() {
 			components.Text(c, "这个目录下没有 markdown 文件").FontSize(12).TextColor(t.TextMuted)
 			return
 		}
 		ui.Tree(c, func() {
-			s.treeItems(c, s.tree)
+			if len(s.trees) == 1 {
+				s.treeItems(c, s.trees[0])
+				return
+			}
+			for _, tr := range s.trees {
+				tr := tr
+				ui.TreeItem(c, tr.project.Name, s.openOf("project:"+tr.project.ID), func() {
+					s.treeItems(c, tr)
+				})
+			}
 		})
 	})
 }
 
-// treeItems builds one directory's entries, and its directories' in turn.
-func (s *State) treeItems(c *ui.Context, node *workspace.Node) {
-	for _, child := range node.Children {
+// treeItems builds one project's entries, and its directories' in turn.
+func (s *State) treeItems(c *ui.Context, tr projectTree) {
+	for _, child := range tr.root.Children {
 		child := child
 		if child.IsDir {
-			ui.TreeItem(c, child.Name, s.openOf(child.Path), func() {
-				s.treeItems(c, child)
+			ui.TreeItem(c, child.Name, s.openOf(tr.project.ID+":"+child.Path), func() {
+				s.treeItems(c, tr.childOf(child))
 			})
 			continue
 		}
-		item := ui.TreeItem(c, child.Name, nil, nil).Selected(child.Path == s.selected)
+		selected := s.sel.project == tr.project.ID && child.Path == s.sel.path
+		item := ui.TreeItem(c, child.Name, nil, nil).Selected(selected)
 		if item.Clicked() {
-			s.selectDoc(child.Path)
+			s.selectDocIn(tr.project.ID, child.Path)
 		}
 	}
+}
+
+// childOf is the tree of tr from node down, which the tree builds as the user
+// opens its directories.
+func (tr projectTree) childOf(node *workspace.Node) projectTree {
+	return projectTree{project: tr.project, root: node}
 }
 
 // statusBar builds the row at the bottom: the rendering mode of the document

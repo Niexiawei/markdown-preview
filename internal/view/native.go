@@ -16,27 +16,27 @@ import (
 // markdown view at its directory, so that its images and links resolve.
 func (s *State) loadDoc() {
 	s.doc, s.headings, s.src, s.docErr = nil, nil, "", nil
-	if s.selected == "" {
+	if s.sel.empty() {
 		return
 	}
-	p, ok := s.ActiveProject()
+	p, ok := s.SelectedProject()
 	if !ok {
 		return
 	}
-	doc, headings, err := s.ws.Parse(p.ID, s.selected)
+	doc, headings, err := s.ws.Parse(p.ID, s.sel.path)
 	if err != nil {
 		s.docErr = err
 		s.status = err.Error()
 		return
 	}
-	src, err := s.ws.ReadMarkdown(p.ID, s.selected)
+	src, err := s.ws.ReadMarkdown(p.ID, s.sel.path)
 	if err != nil {
 		s.docErr = err
 		s.status = err.Error()
 		return
 	}
 	s.doc, s.headings, s.src = doc, headings, src
-	if abs, err := s.ws.AbsOf(p.ID, s.selected); err == nil {
+	if abs, err := s.ws.AbsOf(p.ID, s.sel.path); err == nil {
 		s.md.LoadImage = markdown.FileImages(filepath.Dir(abs))
 	}
 	s.md.Extensions = parser.Default
@@ -76,11 +76,11 @@ func (s *State) followLink(url string) {
 		return
 	}
 	// A path in the project, relative to the document that links to it.
-	target := path.Clean(path.Join(path.Dir(s.selected), url))
+	target := path.Clean(path.Join(path.Dir(s.sel.path), url))
 	if target == "." || target == ".." || strings.HasPrefix(target, "../") || !workspace.IsMarkdown(target) {
 		return
 	}
-	p, ok := s.ActiveProject()
+	p, ok := s.SelectedProject()
 	if !ok {
 		return
 	}
@@ -171,7 +171,7 @@ func (s *State) nativePreview(c *ui.Context) {
 	// width, so paragraphs wrap, and they re-wrap as the window resizes.
 	ui.ScrollBoth(c).TrackScroll(&s.docScroll).Fill().Padding(bodyPadding).Children(func() {
 		ui.Column(c).Width(max(200, s.bodyPaneWidth()-2*bodyPadding-2)).Gap(12).Children(func() {
-			ui.Text(c, s.selected).FontSize(11).TextColor(t.TextMuted)
+			ui.Text(c, s.sel.path).FontSize(11).TextColor(t.TextMuted)
 			markdown.View(c, s.src, &s.md)
 		})
 	})

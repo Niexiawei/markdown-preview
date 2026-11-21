@@ -18,6 +18,22 @@ import (
 	"mdpreview/internal/workspace"
 )
 
+// docSel names the document the window shows: the project it belongs to, and
+// its path in it.
+type docSel struct {
+	project string
+	path    string
+}
+
+// empty reports whether no document is selected.
+func (d docSel) empty() bool { return d.path == "" }
+
+// projectTree is one open project's tree, as the sidebar shows it.
+type projectTree struct {
+	project workspace.Project
+	root    *workspace.Node
+}
+
 // State is what the window shows, and what the app keeps of it.
 type State struct {
 	ws     *workspace.Workspace
@@ -26,13 +42,15 @@ type State struct {
 
 	cfg      config.Config
 	activeID string
-	tree     *workspace.Node
-	// open is the open state of each directory of the tree, by its project
-	// path: directories start open, and a click on one's arrow writes here,
-	// so that a reloaded tree shows what the user left open.
-	open     map[string]*bool
-	selected string
-	status   string
+	// trees are the trees of the open projects, in the order they were added:
+	// with more than one project the sidebar puts a node of each on top.
+	trees []projectTree
+	// open is the open state of each directory of the trees, by the key
+	// "projectID:path": directories start open, and a click on one's arrow
+	// writes here, so that a reloaded tree shows what the user left open.
+	open   map[string]*bool
+	sel    docSel
+	status string
 
 	// The document shown: its source, its parse, the outline built from it,
 	// and what the native markdown view shows it with.
@@ -46,8 +64,8 @@ type State struct {
 	openURL   func(string)
 
 	// renderMode is the rendering backend the user chose for a document, by
-	// its project path; documents without one use the configuration's.
-	renderMode map[string]config.RenderMode
+	// its identity; documents without one use the configuration's.
+	renderMode map[docSel]config.RenderMode
 	// modeIdx is the segment the status bar shows, which a click writes.
 	modeIdx int
 	// The web view, made the first time a document asks for it; rev makes
@@ -99,13 +117,16 @@ func New(ws *workspace.Workspace, cfg config.Config, dir string) *State {
 		open:       map[string]*bool{},
 		gone:       map[string]bool{},
 		watches:    map[string]context.CancelFunc{},
-		renderMode: map[string]config.RenderMode{},
+		renderMode: map[docSel]config.RenderMode{},
 		sidebarW:   300,
 		tocW:       240,
 		inbox:      make(chan func(), 1024),
 	}
-	if s.activeID == "" && len(cfg.Projects) > 0 {
-		s.activeID = cfg.Projects[0].ID
+	if !cfg.IsOpen(s.activeID) {
+		s.activeID = ""
+		if open := cfg.OpenProjects(); len(open) > 0 {
+			s.activeID = open[0].ID
+		}
 	}
 	s.reloadTree()
 	return s
@@ -146,11 +167,43 @@ func (s *State) ActiveProject() (workspace.Project, bool) {
 	return workspace.Project{}, false
 }
 
-// Projects returns the projects the window has open.
+// Projects returns every project the window knows, open or not: the project
+// panel lists them all.
 func (s *State) Projects() []workspace.Project { return s.cfg.Projects }
 
+// project returns the project with id.
+func (s *State) project(id string) (workspace.Project, bool) {
+	for _, p := range s.cfg.Projects {
+		if p.ID == id {
+			return p, true
+		}
+	}
+	return workspace.Project{}, false
+}
+
+// activate shows the project with id as the active one.
+func (s *State) activate(id string) {
+	if !s.cfg.SetActive(id) {
+		return
+	}
+	s.activeID = id
+	s.ws.SetConfig(s.cfg)
+	s.save()
+}
+
 // Selected returns the document the window shows, as its project names it.
-func (s *State) Selected() string { return s.selected }
+func (s *State) Selected() string { return s.sel.path }
+
+// SelectedProject returns the project of the document the window shows.
+func (s *State) SelectedProject() (workspace.Project, bool) {
+	if s.sel.empty() {
+		return workspace.Project{}, false
+	}
+	return s.project(s.sel.project)
+}
+
+// IsOpen reports whether the window shows the project with id.
+func (s *State) IsOpen(id string) bool { return s.cfg.IsOpen(id) }
 
 // Status returns the line the status bar shows besides the rendering mode.
 func (s *State) Status() string { return s.status }
@@ -165,19 +218,17 @@ func (s *State) openOf(path string) *bool {
 	return &b
 }
 
-// Tree returns the tree the sidebar shows.
-func (s *State) Tree() *workspace.Node { return s.tree }
+// Trees returns the trees of the open projects, in the order they were added.
+func (s *State) Trees() []projectTree { return s.trees }
 
-// SelectProject shows another project.
-func (s *State) SelectProject(id string) {
-	if !s.cfg.SetActive(id) {
-		return
+// hasDocs reports whether any open project has a markdown document.
+func (s *State) hasDocs() bool {
+	for _, tr := range s.trees {
+		if tr.root != nil && len(tr.root.Children) > 0 {
+			return true
+		}
 	}
-	s.activeID = id
-	s.selected = ""
-	s.ws.SetConfig(s.cfg)
-	s.save()
-	s.reloadTree()
+	return false
 }
 
 // OpenProject asks for a directory and shows it as a project.
@@ -200,20 +251,12 @@ func (s *State) AddProject(root string) {
 	s.activeID = p.ID
 	s.cfg.ActiveID = p.ID
 	if added {
-		s.selected = ""
+		s.sel = docSel{}
 	}
 	s.ws.SetConfig(s.cfg)
 	s.save()
 	s.startWatch(p.ID, p.Root)
 	s.reloadTree()
-}
-
-// SetActive shows the project with id, saving the choice.
-func (s *State) SetActive(id string) {
-	if s.cfg.SetActive(id) {
-		s.activeID = id
-		s.save()
-	}
 }
 
 // RemoveProject removes a project from the window.
@@ -224,7 +267,9 @@ func (s *State) RemoveProject(id string) {
 		s.cfg.ActiveID = s.cfg.Projects[0].ID
 	}
 	s.activeID = s.cfg.ActiveID
-	s.selected = ""
+	if s.sel.project == id {
+		s.sel = docSel{}
+	}
 	delete(s.gone, id)
 	s.ws.SetConfig(s.cfg)
 	s.save()
@@ -241,52 +286,63 @@ func (s *State) save() {
 	_ = s.cfg.Save(s.cfgDir)
 }
 
-// reloadTree reads the active project's tree, dropping projects whose
-// directory is gone.
+// reloadTree reads the trees of the open projects, dropping the projects whose
+// directory is gone and the document that is no longer one of them.
 func (s *State) reloadTree() {
-	for {
-		p, ok := s.ActiveProject()
-		if !ok {
-			s.tree, s.selected = nil, ""
-			return
-		}
+	s.trees = s.trees[:0]
+	for _, p := range s.cfg.OpenProjects() {
 		tree, err := workspace.BuildTree(p.Root)
 		if err == nil {
-			s.tree = tree
-			if s.selected != "" {
-				if _, statErr := s.ws.Stat(p.ID, s.selected); statErr != nil {
-					s.selected = ""
-					s.status = "文件已被删除"
-					s.onDocChanged()
-				}
-			}
-			return
+			s.trees = append(s.trees, projectTree{project: p, root: tree})
+			continue
 		}
 		if s.gone[p.ID] {
-			s.tree, s.selected = nil, ""
 			s.status = "项目目录不可用：" + p.Root
-			return
+			continue
 		}
 		s.gone[p.ID] = true
+		s.status = "项目目录不可用：" + p.Root
 		s.cfg.RemoveProject(p.ID)
 		s.activeID = s.cfg.ActiveID
+		if s.sel.project == p.ID {
+			s.sel = docSel{}
+		}
 		s.ws.SetConfig(s.cfg)
 		s.save()
-		if len(s.cfg.Projects) == 0 {
-			s.tree, s.selected = nil, ""
-			s.status = ""
-			return
-		}
+	}
+	if s.sel.empty() {
+		return
+	}
+	if _, err := s.ws.Stat(s.sel.project, s.sel.path); err != nil {
+		s.sel = docSel{}
+		s.status = "文件已被删除"
+		s.onDocChanged()
 	}
 }
 
 // selectDoc shows a document of the active project.
 func (s *State) selectDoc(rel string) {
-	if rel == s.selected {
+	p, ok := s.ActiveProject()
+	if !ok {
 		return
 	}
-	s.selected = rel
+	s.selectDocIn(p.ID, rel)
+}
+
+// selectDocIn shows a document of the project with projectID, which becomes
+// the active project: the MCP tools read with it when no project is named.
+func (s *State) selectDocIn(projectID, rel string) {
+	sel := docSel{project: projectID, path: rel}
+	if sel == s.sel {
+		return
+	}
+	s.sel = sel
 	s.status = ""
+	if projectID != "" && s.cfg.SetActive(projectID) {
+		s.activeID = projectID
+		s.ws.SetConfig(s.cfg)
+		s.save()
+	}
 	s.onDocChanged()
 }
 
@@ -315,13 +371,13 @@ func (s *State) bodyPaneWidth() float32 {
 // shortPath is the path shown in the status bar: the project's name in front
 // of the document's.
 func (s *State) shortPath() string {
-	if s.selected == "" {
+	if s.sel.empty() {
 		return ""
 	}
-	if p, ok := s.ActiveProject(); ok {
-		return p.Name + "/" + s.selected
+	if p, ok := s.SelectedProject(); ok {
+		return p.Name + "/" + s.sel.path
 	}
-	return s.selected
+	return s.sel.path
 }
 
 // trimEllipsis shortens text to at most n runes, ending it with an ellipsis.

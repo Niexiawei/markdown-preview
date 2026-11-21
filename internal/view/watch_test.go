@@ -99,3 +99,25 @@ func TestApplyChangesIgnoresOtherProjects(t *testing.T) {
 		t.Errorf("texts = %q, want nothing applied for another project", tt.Texts())
 	}
 }
+
+func TestApplyChangesOnlyTouchesItsOwnProjectsDoc(t *testing.T) {
+	s, alphaRoot, betaRoot := twoProjects(t)
+	writeDoc(t, alphaRoot, "docs/a.md", "# A\n")
+	writeDoc(t, betaRoot, "docs/a.md", "# B\n")
+	s.Refresh()
+	trees := s.Trees()
+	s.selectDocIn(trees[0].project.ID, "docs/a.md")
+	// The other project reports the same path removed.
+	s.applyChanges(trees[1].project.ID, watch.ChangeSet{
+		Docs: []watch.Change{{Op: mygo.FileRemove, Path: "docs/a.md"}},
+	})
+	if got := s.Selected(); got != "docs/a.md" {
+		t.Errorf("Selected = %q, want alpha's document untouched", got)
+	}
+	s.applyChanges(trees[0].project.ID, watch.ChangeSet{
+		Docs: []watch.Change{{Op: mygo.FileRemove, Path: "docs/a.md"}},
+	})
+	if got := s.Selected(); got != "" {
+		t.Errorf("Selected = %q, want the removed document cleared", got)
+	}
+}
