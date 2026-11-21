@@ -192,7 +192,7 @@ func TestTitleCopiesTheDocumentPath(t *testing.T) {
 	s.SetSystem(sys)
 
 	tt := ui.NewTester(func(c *ui.Context) { s.ContentTitle(c) }, 900, 48)
-	if err := tt.Click("复制文件路径"); err != nil {
+	if err := tt.Click("复制文档路径"); err != nil {
 		t.Fatalf("Click: %v", err)
 	}
 	if want := filepath.Join(root, "notes", "a.md"); sys.copied != want {
@@ -200,5 +200,27 @@ func TestTitleCopiesTheDocumentPath(t *testing.T) {
 	}
 	if !strings.Contains(s.Status(), "已复制文件路径") {
 		t.Errorf("status = %q, want the copy reported", s.Status())
+	}
+}
+
+// TestTOCScrollSurvivesAReloadButNotADocumentChange pins that the outline
+// keeps its place while the same document reloads (an agent saved it, or the
+// backend switched), and starts at the top for another document.
+func TestTOCScrollSurvivesAReloadButNotADocumentChange(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", "# A\n\n## 一\n")
+	writeDoc(t, root, "b.md", "# B\n")
+	s.Refresh()
+	s.selectDoc("a.md")
+
+	s.tocScroll.Y = 120
+	s.onDocChanged()
+	if s.tocScroll.Y != 120 {
+		t.Errorf("Y = %v after the same document reloaded, want 120", s.tocScroll.Y)
+	}
+
+	s.selectDoc("b.md")
+	if s.tocScroll.X != 0 || s.tocScroll.Y != 0 {
+		t.Errorf("scroll = (%v, %v) for another document, want (0, 0)", s.tocScroll.X, s.tocScroll.Y)
 	}
 }

@@ -845,3 +845,27 @@ func TestCmdCCopiesNothingWithoutADocument(t *testing.T) {
 		t.Errorf("status = %q, want nothing claimed to have been copied", s.Status())
 	}
 }
+
+// TestTreeMenuCopiesTheClickedFileWhileADocumentShows pins the tree's path
+// entry apart from the title bar's button: with a document shown, the menu
+// still copies the file it was opened on.
+func TestTreeMenuCopiesTheClickedFileWhileADocumentShows(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "notes/a.md", "# A\n")
+	writeDoc(t, root, "notes/b.md", "# B\n")
+	s.Refresh()
+	s.selectDoc("notes/a.md")
+	sys := &fakeSystem{}
+	s.SetSystem(sys)
+
+	tt := newTester(s)
+	if err := tt.RightClick("b.md"); err != nil {
+		t.Fatalf("RightClick: %v", err)
+	}
+	if err := tt.Click("复制文件路径"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if want := filepath.Join(root, "notes", "b.md"); sys.copied != want {
+		t.Errorf("copied = %q, want %q", sys.copied, want)
+	}
+}

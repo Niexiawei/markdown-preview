@@ -144,7 +144,8 @@ func (s *State) leftToolbar(c *ui.Context) {
 }
 
 // contentTitle builds the titlebar's leading area: the document the window
-// shows, and the rendering mode it shows with.
+// shows, the button that copies its path, and the rendering mode it shows
+// with.
 func (s *State) contentTitle(c *ui.Context) {
 	t := c.Theme()
 	ui.Row(c).FillWidth().Height(sidebar.HeaderHeight(c)).Padding(0, t.Space(2)).AlignItems(ui.Center).Gap(t.Space(1)).Children(func() {
@@ -154,7 +155,7 @@ func (s *State) contentTitle(c *ui.Context) {
 			// an ellipsis in its middle, keeping the file's name, rather than
 			// pushing the mode switch out of the window.
 			components.Text(c, path).FontSize(12).TextColor(t.TextMuted).SingleLine().TruncateMiddle().Shrink(1)
-			if components.IconButton(c, lucide.Copy(), "复制文件路径", components.IconButtonCompact).Clicked() {
+			if components.IconButton(c, lucide.Copy(), "复制文档路径", components.IconButtonCompact).Clicked() {
 				s.copyDocPath()
 			}
 			s.modeToggle(c)

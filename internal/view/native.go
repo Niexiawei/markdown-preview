@@ -36,9 +36,6 @@ func (s *State) loadDoc() {
 		return
 	}
 	s.doc, s.headings, s.src = doc, headings, src
-	// A document's outline starts at its top, not where the last one's
-	// scroll was left.
-	s.tocScroll.X, s.tocScroll.Y = 0, 0
 	if abs, err := s.ws.AbsOf(p.ID, s.sel.path); err == nil {
 		s.md.LoadImage = markdown.FileImages(filepath.Dir(abs))
 	}

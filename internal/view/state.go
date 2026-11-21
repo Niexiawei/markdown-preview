@@ -410,6 +410,9 @@ func (s *State) selectDocIn(projectID, rel string) {
 	}
 	s.sel = sel
 	s.status = ""
+	// Another document's outline starts at its top, not where the last
+	// one's scroll was left. A reload of the same document keeps it.
+	s.tocScroll.X, s.tocScroll.Y = 0, 0
 	if projectID != "" && s.cfg.SetActive(projectID) {
 		s.activeID = projectID
 		s.ws.SetConfig(s.cfg)
