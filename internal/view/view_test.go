@@ -3,6 +3,7 @@ package view
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -450,15 +451,24 @@ func TestClosingProjectStopsWatching(t *testing.T) {
 // fakeSystem records what the window asked of the desktop.
 type fakeSystem struct {
 	revealed, copied string
-	asked            bool
-	confirm          bool
-	revealErr        error
-	confirmOptions   ConfirmOptions
+	// files is what the window put on the clipboard as files, and filesErr
+	// what that write reports.
+	files          []string
+	filesErr       error
+	asked          bool
+	confirm        bool
+	revealErr      error
+	confirmOptions ConfirmOptions
 }
 
 func (f *fakeSystem) Reveal(path string) error { f.revealed = path; return f.revealErr }
 
 func (f *fakeSystem) CopyText(text string) { f.copied = text }
+
+func (f *fakeSystem) CopyFiles(paths ...string) error {
+	f.files = append([]string(nil), paths...)
+	return f.filesErr
+}
 
 func (f *fakeSystem) Confirm(options ConfirmOptions) bool {
 	f.asked, f.confirmOptions = true, options
@@ -867,5 +877,79 @@ func TestTreeMenuCopiesTheClickedFileWhileADocumentShows(t *testing.T) {
 	}
 	if want := filepath.Join(root, "notes", "b.md"); sys.copied != want {
 		t.Errorf("copied = %q, want %q", sys.copied, want)
+	}
+}
+
+// TestTreeFileMenuCopiesTheFile pins the entry that puts the file itself on the
+// clipboard, so that another application can paste it.
+func TestTreeFileMenuCopiesTheFile(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "notes/a.md", "# A\n")
+	s.Refresh()
+	sys := &fakeSystem{}
+	s.SetSystem(sys)
+
+	tt := newTester(s)
+	if err := tt.RightClick("a.md"); err != nil {
+		t.Fatalf("RightClick: %v", err)
+	}
+	if !tt.HasText("复制文件") {
+		t.Fatalf("texts = %q, want 复制文件 in the file's menu", tt.Texts())
+	}
+	if err := tt.Click("复制文件"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	want := []string{filepath.Join(root, "notes", "a.md")}
+	if !slices.Equal(sys.files, want) {
+		t.Errorf("files = %q, want %q", sys.files, want)
+	}
+	if !strings.Contains(s.Status(), "已复制文件") {
+		t.Errorf("status = %q, want the copy reported", s.Status())
+	}
+}
+
+// TestTreeDirMenuCopiesTheFolder pins the same entry for a directory, which is
+// what pasting a folder into another application expects.
+func TestTreeDirMenuCopiesTheFolder(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "notes/a.md", "# A\n")
+	s.Refresh()
+	sys := &fakeSystem{}
+	s.SetSystem(sys)
+
+	tt := newTester(s)
+	if err := tt.RightClick("notes"); err != nil {
+		t.Fatalf("RightClick: %v", err)
+	}
+	if !tt.HasText("复制文件夹") {
+		t.Fatalf("texts = %q, want 复制文件夹 in the directory's menu", tt.Texts())
+	}
+	if err := tt.Click("复制文件夹"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	want := []string{filepath.Join(root, "notes")}
+	if !slices.Equal(sys.files, want) {
+		t.Errorf("files = %q, want %q", sys.files, want)
+	}
+}
+
+// TestTreeMenuReportsACopyFailure pins that a clipboard write that fails says
+// so in the status bar instead of leaving the user waiting for a paste that
+// will not come.
+func TestTreeMenuReportsACopyFailure(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "notes/a.md", "# A\n")
+	s.Refresh()
+	s.SetSystem(&fakeSystem{filesErr: os.ErrPermission})
+
+	tt := newTester(s)
+	if err := tt.RightClick("a.md"); err != nil {
+		t.Fatalf("RightClick: %v", err)
+	}
+	if err := tt.Click("复制文件"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if !strings.Contains(s.Status(), "无法复制") {
+		t.Errorf("status = %q, want the failure reported", s.Status())
 	}
 }

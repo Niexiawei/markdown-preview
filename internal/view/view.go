@@ -239,10 +239,19 @@ func (s *State) treeItems(c *ui.Context, tr projectTree) {
 	}
 }
 
-// nodeMenu gives a tree entry its right click: copying its name or its path,
+// nodeMenu gives a tree entry its right click: the entry itself on the
+// clipboard for another application to paste, its name or its path as text,
 // and for a directory, showing it in the file manager.
 func (s *State) nodeMenu(c *ui.Context, item ui.Element, tr projectTree, n *workspace.Node) {
 	components.ContextMenu(c, item, func(m *components.Menu) {
+		copyFile := "复制文件"
+		if n.IsDir {
+			copyFile = "复制文件夹"
+		}
+		if m.Item(copyFile).Chosen() {
+			s.copyNodeFile(tr, n)
+		}
+		m.Separator()
 		if m.Item("复制文件名称").Chosen() {
 			s.copyNodeName(n)
 		}

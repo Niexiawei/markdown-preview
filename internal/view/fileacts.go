@@ -27,6 +27,28 @@ func (s *State) copyDocPath() {
 	s.status = "已复制文件路径：" + abs
 }
 
+// copyNodeFile puts a tree entry itself on the clipboard, as the file manager
+// copies it: another application pastes the file, not a path to it.
+func (s *State) copyNodeFile(tr projectTree, n *workspace.Node) {
+	if s.sys == nil {
+		return
+	}
+	abs, err := s.absOf(tr, n)
+	if err != nil {
+		s.status = "无法复制：" + err.Error()
+		return
+	}
+	if err := s.sys.CopyFiles(abs); err != nil {
+		s.status = "无法复制：" + err.Error()
+		return
+	}
+	if n.IsDir {
+		s.status = "已复制文件夹：" + abs
+		return
+	}
+	s.status = "已复制文件：" + abs
+}
+
 // copyNodeName puts a tree entry's name in the clipboard.
 func (s *State) copyNodeName(n *workspace.Node) {
 	if s.sys == nil {

@@ -3,13 +3,16 @@ package view
 import "github.com/egoist/mygo"
 
 // System is what the window asks of the desktop beyond drawing it: revealing a
-// project in the file manager, copying a path, and asking before a project is
-// removed. main supplies Desktop; the tests supply a fake.
+// project in the file manager, copying a path or a file, and asking before a
+// project is removed. main supplies Desktop; the tests supply a fake.
 type System interface {
 	// Reveal shows a directory in the file manager.
 	Reveal(path string) error
 	// CopyText puts text in the clipboard.
 	CopyText(text string)
+	// CopyFiles puts files on the clipboard as the desktop's own file list,
+	// so that another application can paste them.
+	CopyFiles(paths ...string) error
 	// Confirm asks the user to allow what cannot be undone in the window.
 	Confirm(options ConfirmOptions) bool
 }
@@ -30,6 +33,10 @@ func (Desktop) Reveal(path string) error { return mygo.Shell.OpenPath(path) }
 
 // CopyText puts text in the clipboard.
 func (Desktop) CopyText(text string) { mygo.Clipboard.WriteText(text) }
+
+// CopyFiles puts files on the clipboard as the desktop's own file list, so
+// that another application can paste them.
+func (Desktop) CopyFiles(paths ...string) error { return mygo.Clipboard.WriteFiles(paths...) }
 
 // Confirm asks before an action the window cannot undo. The cancel button
 // holds the default and Escape; the confirm button is set apart as destructive.
