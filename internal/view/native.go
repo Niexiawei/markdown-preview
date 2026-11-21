@@ -36,6 +36,9 @@ func (s *State) loadDoc() {
 		return
 	}
 	s.doc, s.headings, s.src = doc, headings, src
+	// A document's outline starts at its top, not where the last one's
+	// scroll was left.
+	s.tocScroll.X, s.tocScroll.Y = 0, 0
 	if abs, err := s.ws.AbsOf(p.ID, s.sel.path); err == nil {
 		s.md.LoadImage = markdown.FileImages(filepath.Dir(abs))
 	}
@@ -118,17 +121,29 @@ func buildTOC(headings []workspace.Heading) []*tocNode {
 	return roots
 }
 
+// tocPadding is the room around the outline, in DIPs.
+const tocPadding float32 = 8
+
 // toc builds the document's outline, whose entries scroll the body to their
-// heading.
+// heading. The outline scrolls both ways, and keeps its rows as wide as the
+// pane, so that a click on one lands wherever on it the pointer is.
 func (s *State) toc(c *ui.Context) {
 	t := c.Theme()
-	ui.Column(c).Fill().Padding(8).Children(func() {
+	ui.Column(c).Fill().Padding(tocPadding).Children(func() {
 		ui.Text(c, "目录").FontSize(11).TextColor(t.TextMuted)
 		if len(s.headings) == 0 {
 			return
 		}
-		ui.Tree(c, func() {
-			s.tocItems(c, buildTOC(s.headings))
+		// Both ways: an outline deeper than the pane scrolls down, and a
+		// heading wider than it scrolls sideways instead of being cut. The
+		// column takes at least the pane's own width, so that a short
+		// heading's row still stretches across it.
+		ui.ScrollBoth(c).Grow(1).TrackScroll(&s.tocScroll).Children(func() {
+			ui.Column(c).MinWidth(max(0, s.tocW-2*tocPadding)).Gap(t.Space(0.25)).Children(func() {
+				ui.Tree(c, func() {
+					s.tocItems(c, buildTOC(s.headings))
+				})
+			})
 		})
 	})
 }

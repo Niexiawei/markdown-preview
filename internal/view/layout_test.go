@@ -1,6 +1,8 @@
 package view
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/egoist/mygo/ui"
@@ -73,5 +75,47 @@ func TestStatusBarDropsTheModeSwitch(t *testing.T) {
 		if tt.HasText(unwanted) {
 			t.Errorf("status bar texts = %q, want no %q", tt.Texts(), unwanted)
 		}
+	}
+}
+
+// TestTOCScrollsBothWays pins that the outline scrolls both ways: a document
+// with many headings and one long heading is cut neither at the bottom nor at
+// the right edge.
+func TestTOCScrollsBothWays(t *testing.T) {
+	s, root := newState(t)
+	var b strings.Builder
+	b.WriteString("# " + strings.Repeat("很长", 60) + "\n\n")
+	for i := range 60 {
+		fmt.Fprintf(&b, "## 小节 %02d\n\n正文\n", i)
+	}
+	writeDoc(t, root, "a.md", b.String())
+	s.Refresh()
+	s.selectDoc("a.md")
+
+	_ = ui.NewTester(func(c *ui.Context) { s.toc(c) }, 240, 300)
+	if s.tocScroll.MaxY <= 0 {
+		t.Errorf("MaxY = %v, want the outline to scroll down", s.tocScroll.MaxY)
+	}
+	if s.tocScroll.MaxX <= 0 {
+		t.Errorf("MaxX = %v, want the long heading to scroll sideways", s.tocScroll.MaxX)
+	}
+}
+
+// TestTOCRowsFillThePane pins that a short outline's rows still take the whole
+// pane: a click at the pane's right edge chooses the heading there.
+func TestTOCRowsFillThePane(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", "# 短标题\n\n## 范围\n\n## 执行顺序\n")
+	s.Refresh()
+	s.selectDoc("a.md")
+
+	tt := ui.NewTester(func(c *ui.Context) { s.toc(c) }, 240, 300)
+	rect, ok := tt.Find("范围")
+	if !ok {
+		t.Fatalf("texts = %q, want the heading", tt.Texts())
+	}
+	tt.ClickAt(220, rect.Y+rect.H/2)
+	if s.anchor != "范围" {
+		t.Errorf("anchor = %q, want the heading clicked at the pane's edge", s.anchor)
 	}
 }

@@ -101,6 +101,8 @@ type State struct {
 	tocW     float32
 	// docScroll is how far the document's body is scrolled, both ways.
 	docScroll ui.ScrollState
+	// tocScroll is how far the document's outline scrolls, both ways.
+	tocScroll ui.ScrollState
 	// contentWidth, when set, says how wide the window's content is on either
 	// side of the sidebar. The app sets it, since only it sees the shell;
 	// tests set their own.
