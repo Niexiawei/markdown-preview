@@ -1,0 +1,14 @@
+{
+  "name": "Markdown Preview",
+  "slug": "markdown-preview",
+  "identifier": "dev.mdpreview.app",
+  "version": "0.1.0",
+  "icon": "resources/icon.png",
+  "fileAssociations": [
+    {
+      "ext": ["md", "markdown"],
+      "name": "Markdown Document",
+      "mimeType": "text/markdown"
+    }
+  ]
+}
