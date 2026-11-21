@@ -3,6 +3,7 @@ package view
 import (
 	"github.com/egoist/mygo/ui"
 
+	"mdpreview/internal/config"
 	"mdpreview/internal/workspace"
 )
 
@@ -99,8 +100,21 @@ func (s *State) treeItems(c *ui.Context, node *workspace.Node) {
 // rendering mode of the document shown.
 func (s *State) statusbar(c *ui.Context) {
 	t := c.Theme()
-	ui.Row(c).Height(32).PaddingX(12).AlignItems(ui.Center).Gap(10).Children(func() {
+	ui.Row(c).Height(34).PaddingX(12).AlignItems(ui.Center).Gap(10).Children(func() {
+		if s.selected != "" {
+			s.modeIdx = s.modeIndex()
+			labels := []string{"原生", "WebView"}
+			if !s.webOK && s.win != nil && s.renderMode[s.selected] == config.RenderWebView {
+				labels[1] = "WebView（不可用）"
+			}
+			ui.Segmented(c, &s.modeIdx, labels...).Disabled(s.selected == "")
+			if s.modeIdx != s.modeIndex() {
+				s.setMode([]config.RenderMode{config.RenderNative, config.RenderWebView}[max(0, min(1, s.modeIdx))])
+				s.onDocChanged()
+			}
+		}
 		ui.Text(c, trimEllipsis(s.status, 120)).FontSize(12).TextColor(t.TextMuted)
 		ui.Row(c).Grow(1)
+		ui.Text(c, trimEllipsis(s.shortPath(), 90)).FontSize(12).TextColor(t.TextMuted)
 	})
 }

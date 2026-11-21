@@ -2,6 +2,8 @@ package view
 
 import (
 	"github.com/egoist/mygo/ui"
+
+	"mdpreview/internal/config"
 )
 
 // preview builds the right pane: the document's outline beside its body, or
@@ -19,7 +21,11 @@ func (s *State) preview(c *ui.Context) {
 		s.empty(c, "这个目录下没有 markdown 文件")
 		return
 	}
-	ui.Split(c, &s.tocW, func() { s.toc(c) }, func() { s.nativePreview(c) }).
+	body := func() { s.nativePreview(c) }
+	if s.mode() == config.RenderWebView {
+		body = func() { s.webPreview(c) }
+	}
+	ui.Split(c, &s.tocW, func() { s.toc(c) }, body).
 		Fill().SplitReset(240)
 }
 

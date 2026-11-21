@@ -46,6 +46,14 @@ type State struct {
 	// renderMode is the rendering backend the user chose for a document, by
 	// its project path; documents without one use the configuration's.
 	renderMode map[string]config.RenderMode
+	// modeIdx is the segment the status bar shows, which a click writes.
+	modeIdx int
+	// The web view, made the first time a document asks for it; rev makes
+	// each change of the document a new address for it to load.
+	wv    *mygo.WebView
+	wvURL string
+	webOK bool
+	rev   int
 
 	// gone remembers the projects whose directory was removed, so that a
 	// project found gone is dropped once and not every frame.

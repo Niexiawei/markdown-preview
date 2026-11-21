@@ -27,6 +27,9 @@ func newStateWith(cfg config.Config) *State {
 	return New(workspace.New(cfg), cfg, "")
 }
 
+// newTester builds the window in memory, without a window.
+func newTester(s *State) *ui.Tester { return ui.NewTester(s.View, 1000, 700) }
+
 func writeDoc(t *testing.T, root, rel, body string) {
 	t.Helper()
 	path := filepath.Join(root, filepath.FromSlash(rel))

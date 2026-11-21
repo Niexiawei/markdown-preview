@@ -43,6 +43,8 @@ func (s *State) loadDoc() {
 	s.md.OnLink = s.followLink
 	s.md.Anchor = s.anchor
 	s.md.AnchorVersion = s.anchorVer
+	s.rev++
+	s.loadWebDoc()
 }
 
 // gotoHeading scrolls the document to the heading of slug.

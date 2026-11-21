@@ -23,6 +23,7 @@ func main() {
 		}
 		ws := workspace.New(cfg)
 		state := view.New(ws, cfg, dir)
+		view.RegisterMDView(state.Roots)
 		win := mygo.NewWindow(mygo.WindowOptions{
 			Title:   "Markdown Preview",
 			Width:   1280,
