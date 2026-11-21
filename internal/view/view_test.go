@@ -1,0 +1,253 @@
+package view
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/egoist/mygo/ui"
+
+	"mdpreview/internal/config"
+	"mdpreview/internal/workspace"
+)
+
+// newState returns a window showing one project rooted at a temp dir.
+func newState(t *testing.T) (*State, string) {
+	t.Helper()
+	root := t.TempDir()
+	var cfg config.Config
+	p, _ := cfg.AddProject(root, "alpha")
+	cfg.ActiveID = p.ID
+	return New(workspace.New(cfg), cfg, t.TempDir()), root
+}
+
+// newStateWith returns a window showing the projects of cfg.
+func newStateWith(cfg config.Config) *State {
+	return New(workspace.New(cfg), cfg, "")
+}
+
+// newTester builds the window in memory, without a window.
+func newTester(s *State) *ui.Tester { return ui.NewTester(s.View, 1000, 700) }
+
+func writeDoc(t *testing.T, root, rel, body string) {
+	t.Helper()
+	path := filepath.Join(root, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestViewShowsEmptyState(t *testing.T) {
+	s := newStateWith(config.Config{Version: config.Version})
+	tt := ui.NewTester(s.View, 1000, 700)
+	if !tt.HasText("打开一个目录开始预览 markdown") {
+		t.Errorf("texts = %q, want the empty state", tt.Texts())
+	}
+	if !tt.HasText("打开项目") {
+		t.Errorf("texts = %q, want the open button", tt.Texts())
+	}
+}
+
+func TestTreeListsMarkdown(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "notes/a.md", "# A\n")
+	s.Refresh()
+	tt := ui.NewTester(s.View, 1000, 700)
+	if !tt.HasText("notes") {
+		t.Errorf("texts = %q, want the notes directory", tt.Texts())
+	}
+	if !tt.HasText("a.md") {
+		t.Errorf("texts = %q, want a.md", tt.Texts())
+	}
+}
+
+func TestTreeKeepsOpenStateAcrossRefresh(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "notes/a.md", "# A\n")
+	s.Refresh()
+	tt := ui.NewTester(s.View, 1000, 700)
+	if !tt.HasText("a.md") {
+		t.Fatalf("texts = %q, want a.md before collapsing", tt.Texts())
+	}
+
+	*s.openOf("notes") = false
+	tt = ui.NewTester(s.View, 1000, 700)
+	if tt.HasText("a.md") {
+		t.Errorf("texts = %q, want notes collapsed", tt.Texts())
+	}
+
+	s.Refresh()
+	tt = ui.NewTester(s.View, 1000, 700)
+	if tt.HasText("a.md") {
+		t.Errorf("texts = %q, want notes still collapsed after a reload", tt.Texts())
+	}
+}
+
+func TestClickingDocShowsIt(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "notes/a.md", "# A\n")
+	s.Refresh()
+	tt := ui.NewTester(s.View, 1000, 700)
+	if err := tt.Click("a.md"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if got := s.Selected(); got != "notes/a.md" {
+		t.Errorf("Selected = %q, want notes/a.md", got)
+	}
+	if !tt.HasText("alpha/notes/a.md") {
+		t.Errorf("texts = %q, want the path in the toolbar", tt.Texts())
+	}
+}
+
+func TestToolbarShowsProjectNames(t *testing.T) {
+	var cfg config.Config
+	dir := t.TempDir()
+	alpha, _ := cfg.AddProject(filepath.Join(dir, "alpha"), "alpha")
+	cfg.AddProject(filepath.Join(dir, "beta"), "beta")
+	cfg.ActiveID = alpha.ID
+	os.MkdirAll(filepath.Join(dir, "alpha"), 0o755)
+	os.MkdirAll(filepath.Join(dir, "beta"), 0o755)
+	s := newStateWith(cfg)
+	tt := ui.NewTester(s.View, 1000, 700)
+	if !tt.HasText("alpha") {
+		t.Fatalf("texts = %q, want the active project's name", tt.Texts())
+	}
+	if err := tt.Click("切换项目"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if !tt.HasText("beta") {
+		t.Errorf("texts = %q, want beta in the menu", tt.Texts())
+	}
+}
+
+func TestChoosingProjectSwitchesIt(t *testing.T) {
+	var cfg config.Config
+	dir := t.TempDir()
+	alphaRoot := filepath.Join(dir, "alpha")
+	betaRoot := filepath.Join(dir, "beta")
+	alpha, _ := cfg.AddProject(alphaRoot, "alpha")
+	beta, _ := cfg.AddProject(betaRoot, "beta")
+	cfg.ActiveID = alpha.ID
+	if err := os.MkdirAll(alphaRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeDoc(t, betaRoot, "only.md", "# Only\n")
+	s := newStateWith(cfg)
+	tt := ui.NewTester(s.View, 1000, 700)
+	if err := tt.Click("切换项目"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if err := tt.Click("beta"); err != nil {
+		t.Fatalf("Click beta: %v", err)
+	}
+	tt = ui.NewTester(s.View, 1000, 700)
+	if p, ok := s.ActiveProject(); !ok || p.ID != beta.ID {
+		t.Errorf("ActiveProject = %v, %v, want beta", p, ok)
+	}
+	if !tt.HasText("only.md") {
+		t.Errorf("texts = %q, want beta's document", tt.Texts())
+	}
+}
+
+func TestRemoveProjectFallsBackToNext(t *testing.T) {
+	var cfg config.Config
+	dir := t.TempDir()
+	alpha, _ := cfg.AddProject(filepath.Join(dir, "alpha"), "alpha")
+	beta, _ := cfg.AddProject(filepath.Join(dir, "beta"), "beta")
+	cfg.ActiveID = alpha.ID
+	os.MkdirAll(filepath.Join(dir, "alpha"), 0o755)
+	os.MkdirAll(filepath.Join(dir, "beta"), 0o755)
+	s := newStateWith(cfg)
+	s.RemoveProject(alpha.ID)
+	if p, ok := s.ActiveProject(); !ok || p.ID != beta.ID {
+		t.Errorf("ActiveProject = %v, %v, want beta", p, ok)
+	}
+	if len(s.Projects()) != 1 {
+		t.Errorf("Projects = %v, want 1", s.Projects())
+	}
+}
+
+func TestGoneProjectIsDropped(t *testing.T) {
+	var cfg config.Config
+	dir := t.TempDir()
+	alphaRoot := filepath.Join(dir, "alpha")
+	betaRoot := filepath.Join(dir, "beta")
+	alpha, _ := cfg.AddProject(alphaRoot, "alpha")
+	beta, _ := cfg.AddProject(betaRoot, "beta")
+	cfg.ActiveID = alpha.ID
+	writeDoc(t, betaRoot, "only.md", "# Only\n")
+	s := newStateWith(cfg)
+	if err := os.RemoveAll(alphaRoot); err != nil {
+		t.Fatal(err)
+	}
+	s.Refresh()
+	if p, ok := s.ActiveProject(); !ok || p.ID != beta.ID {
+		t.Errorf("ActiveProject = %v, %v, want beta", p, ok)
+	}
+	if len(s.Projects()) != 1 {
+		t.Errorf("Projects = %v, want alpha dropped", s.Projects())
+	}
+	if !strings.Contains(s.Status(), "") {
+		t.Logf("status = %q", s.Status())
+	}
+}
+
+func TestMCPSettingsShowsAddressAndToken(t *testing.T) {
+	s, _ := newState(t)
+	s.SetMCPStatus(true, "http://127.0.0.1:8765/mcp", "secret-token")
+	s.mcpOpen = true
+	tt := newTester(s)
+	for _, want := range []string{"本地 MCP server", "http://127.0.0.1:8765/mcp", "secret-token", "复制 token"} {
+		if !tt.HasText(want) {
+			t.Errorf("texts = %q, want %q", tt.Texts(), want)
+		}
+	}
+}
+
+func TestMCPSettingsOffByDefault(t *testing.T) {
+	s, _ := newState(t)
+	s.mcpOpen = true
+	tt := newTester(s)
+	if !tt.HasText("关闭中。打开后，agent 可以列出和检索当前打开的项目的 markdown 文档。") {
+		t.Errorf("texts = %q, want the off state", tt.Texts())
+	}
+}
+
+func TestMCPControlCalledOnToggle(t *testing.T) {
+	s, _ := newState(t)
+	var got []bool
+	s.SetMCPControl(func(on bool) { got = append(got, on) })
+	s.mcpOpen = true
+	tt := newTester(s)
+	if err := tt.Click("MCP server"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if len(got) != 1 || got[0] != true {
+		t.Errorf("control called with %v, want [true]", got)
+	}
+}
+
+func TestSelectProjectSyncsWorkspace(t *testing.T) {
+	var cfg config.Config
+	dir := t.TempDir()
+	alphaRoot := filepath.Join(dir, "alpha")
+	betaRoot := filepath.Join(dir, "beta")
+	alpha, _ := cfg.AddProject(alphaRoot, "alpha")
+	beta, _ := cfg.AddProject(betaRoot, "beta")
+	cfg.ActiveID = alpha.ID
+	for _, root := range []string{alphaRoot, betaRoot} {
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ws := workspace.New(cfg)
+	s := New(ws, cfg, t.TempDir())
+	s.SelectProject(beta.ID)
+	if p, ok := ws.Active(); !ok || p.ID != beta.ID {
+		t.Errorf("workspace active = %v, %v, want beta: the MCP tools read it too", p, ok)
+	}
+}

@@ -1,0 +1,6 @@
+.mygo/
+dist/
+build/
+.superpowers/
+.idea/
+*.exe
