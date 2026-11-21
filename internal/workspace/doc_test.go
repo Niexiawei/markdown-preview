@@ -22,11 +22,11 @@ func newWorkspace(t *testing.T) (*Workspace, string) {
 
 func TestSlug(t *testing.T) {
 	cases := map[string]string{
-		"Hello World": "hello-world",
-		"导出流程":        "导出流程",
-		"a  b":        "a--b",
-		"C++ Notes":   "c-notes",
-		"a_b-c":       "a_b-c",
+		"Hello World":  "hello-world",
+		"导出流程":         "导出流程",
+		"a  b":         "a--b",
+		"C++ Notes":    "c-notes",
+		"a_b-c":        "a_b-c",
 		"  Trailing  ": "--trailing--",
 	}
 	for in, want := range cases {
