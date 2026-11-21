@@ -54,6 +54,7 @@ func (s *State) toolbar(c *ui.Context) {
 		if ui.Button(c, "刷新").Disabled(s.activeID == "").Clicked() {
 			s.Refresh()
 		}
+		s.mcpSettings(c)
 		ui.Row(c).Grow(1)
 		if path := s.shortPath(); path != "" {
 			ui.Text(c, trimEllipsis(path, 90)).FontSize(12).TextColor(t.TextMuted)

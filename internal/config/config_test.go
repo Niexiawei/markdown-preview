@@ -104,6 +104,31 @@ func TestProjectIDStable(t *testing.T) {
 	}
 }
 
+func TestMCPDefaultsAndRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	c, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if c.MCP.Enabled {
+		t.Error("MCP.Enabled = true, want off by default")
+	}
+	if c.MCP.Port != MCPPort {
+		t.Errorf("MCP.Port = %d, want %d", c.MCP.Port, MCPPort)
+	}
+	c.MCP = MCP{Enabled: true, Port: 9123, Token: "abc"}
+	if err := c.Save(dir); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got.MCP != c.MCP {
+		t.Errorf("MCP = %+v, want %+v", got.MCP, c.MCP)
+	}
+}
+
 func TestSetActiveRejectsUnknown(t *testing.T) {
 	var c Config
 	if c.SetActive("nope") {

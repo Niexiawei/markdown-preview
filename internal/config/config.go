@@ -33,18 +33,30 @@ type Project struct {
 	Root string `json:"root"`
 }
 
+// MCP is the app's local Model Context Protocol server: whether it runs, the
+// port it listens on, and the token callers authenticate with.
+type MCP struct {
+	Enabled bool   `json:"enabled"`
+	Port    int    `json:"port"`
+	Token   string `json:"token"`
+}
+
+// MCPPort is the port the server listens on by default.
+const MCPPort = 8765
+
 // Config is what the app keeps between runs.
 type Config struct {
 	Version  int        `json:"version"`
 	Projects []Project  `json:"projects"`
 	ActiveID string     `json:"active_id"`
 	Render   RenderMode `json:"render"`
+	MCP      MCP        `json:"mcp"`
 }
 
 // Load reads the configuration in dir. A directory without one gives the
 // defaults rather than an error, as does a file the app does not know yet.
 func Load(dir string) (Config, error) {
-	c := Config{Version: Version, Render: RenderNative}
+	c := Config{Version: Version, Render: RenderNative, MCP: MCP{Port: MCPPort}}
 	data, err := os.ReadFile(filepath.Join(dir, FileName))
 	if errors.Is(err, os.ErrNotExist) {
 		return c, nil
@@ -53,13 +65,16 @@ func Load(dir string) (Config, error) {
 		return c, err
 	}
 	if err := json.Unmarshal(data, &c); err != nil {
-		return Config{Version: Version, Render: RenderNative}, err
+		return Config{Version: Version, Render: RenderNative, MCP: MCP{Port: MCPPort}}, err
 	}
 	if c.Version == 0 {
 		c.Version = Version
 	}
 	if c.Render == "" {
 		c.Render = RenderNative
+	}
+	if c.MCP.Port == 0 {
+		c.MCP.Port = MCPPort
 	}
 	return c, nil
 }

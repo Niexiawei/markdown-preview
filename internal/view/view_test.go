@@ -195,3 +195,38 @@ func TestGoneProjectIsDropped(t *testing.T) {
 		t.Logf("status = %q", s.Status())
 	}
 }
+
+func TestMCPSettingsShowsAddressAndToken(t *testing.T) {
+	s, _ := newState(t)
+	s.SetMCPStatus(true, "http://127.0.0.1:8765/mcp", "secret-token")
+	s.mcpOpen = true
+	tt := newTester(s)
+	for _, want := range []string{"本地 MCP server", "http://127.0.0.1:8765/mcp", "secret-token", "复制 token"} {
+		if !tt.HasText(want) {
+			t.Errorf("texts = %q, want %q", tt.Texts(), want)
+		}
+	}
+}
+
+func TestMCPSettingsOffByDefault(t *testing.T) {
+	s, _ := newState(t)
+	s.mcpOpen = true
+	tt := newTester(s)
+	if !tt.HasText("关闭中。打开后，agent 可以列出和检索当前打开的项目的 markdown 文档。") {
+		t.Errorf("texts = %q, want the off state", tt.Texts())
+	}
+}
+
+func TestMCPControlCalledOnToggle(t *testing.T) {
+	s, _ := newState(t)
+	var got []bool
+	s.SetMCPControl(func(on bool) { got = append(got, on) })
+	s.mcpOpen = true
+	tt := newTester(s)
+	if err := tt.Click("MCP server"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if len(got) != 1 || got[0] != true {
+		t.Errorf("control called with %v, want [true]", got)
+	}
+}

@@ -65,6 +65,13 @@ type State struct {
 	watchReady bool
 	watches    map[string]context.CancelFunc
 
+	// The local MCP server, as the settings panel shows it.
+	mcpEnabled bool
+	mcpAddr    string
+	mcpToken   string
+	mcpOpen    bool
+	mcpControl func(on bool)
+
 	sidebarW float32
 	tocW     float32
 
