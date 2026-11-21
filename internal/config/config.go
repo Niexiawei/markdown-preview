@@ -11,8 +11,9 @@ import (
 	"path/filepath"
 )
 
-// Version is the schema version of the file Save writes.
-const Version = 1
+// Version is the schema version of the file Save writes. Version 2 added
+// OpenIDs, the projects the window shows.
+const Version = 2
 
 // FileName is the name of the file Load reads and Save writes.
 const FileName = "config.json"
@@ -48,6 +49,7 @@ const MCPPort = 8765
 type Config struct {
 	Version  int        `json:"version"`
 	Projects []Project  `json:"projects"`
+	OpenIDs  []string   `json:"open_ids"`
 	ActiveID string     `json:"active_id"`
 	Render   RenderMode `json:"render"`
 	MCP      MCP        `json:"mcp"`
@@ -56,18 +58,32 @@ type Config struct {
 // Load reads the configuration in dir. A directory without one gives the
 // defaults rather than an error, as does a file the app does not know yet.
 func Load(dir string) (Config, error) {
-	c := Config{Version: Version, Render: RenderNative, MCP: MCP{Port: MCPPort}}
 	data, err := os.ReadFile(filepath.Join(dir, FileName))
 	if errors.Is(err, os.ErrNotExist) {
-		return c, nil
+		return defaults(), nil
 	}
 	if err != nil {
-		return c, err
+		return defaults(), err
 	}
+	var c Config
 	if err := json.Unmarshal(data, &c); err != nil {
-		return Config{Version: Version, Render: RenderNative, MCP: MCP{Port: MCPPort}}, err
+		return defaults(), err
 	}
-	if c.Version == 0 {
+	c.normalize()
+	return c, nil
+}
+
+// defaults is the configuration of a directory without one yet.
+func defaults() Config {
+	return Config{Version: Version, Render: RenderNative, MCP: MCP{Port: MCPPort}, OpenIDs: []string{}}
+}
+
+// normalize applies the defaults and drops what the file no longer explains: a
+// file without open_ids, which every file before version 2 is, has every
+// project open, and OpenIDs never names a project that is gone. It also keeps
+// ActiveID on an open project, since the MCP server falls back to it.
+func (c *Config) normalize() {
+	if c.Version < Version {
 		c.Version = Version
 	}
 	if c.Render == "" {
@@ -76,18 +92,36 @@ func Load(dir string) (Config, error) {
 	if c.MCP.Port == 0 {
 		c.MCP.Port = MCPPort
 	}
-	return c, nil
+	known := make(map[string]bool, len(c.Projects))
+	for _, p := range c.Projects {
+		known[p.ID] = true
+	}
+	if c.OpenIDs == nil {
+		c.OpenIDs = make([]string, 0, len(c.Projects))
+		for _, p := range c.Projects {
+			c.OpenIDs = append(c.OpenIDs, p.ID)
+		}
+	} else {
+		kept := c.OpenIDs[:0]
+		for _, id := range c.OpenIDs {
+			if known[id] {
+				kept = append(kept, id)
+			}
+		}
+		c.OpenIDs = kept
+	}
+	if !c.IsOpen(c.ActiveID) {
+		c.ActiveID = ""
+		if len(c.OpenIDs) > 0 {
+			c.ActiveID = c.OpenIDs[0]
+		}
+	}
 }
 
 // Save writes the configuration into dir, replacing the file in one step so
 // that a crash leaves either the old file or the new one.
 func (c Config) Save(dir string) error {
-	if c.Version == 0 {
-		c.Version = Version
-	}
-	if c.Render == "" {
-		c.Render = RenderNative
-	}
+	c.normalize()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
@@ -142,6 +176,7 @@ func (c *Config) AddProject(root, name string) (Project, bool) {
 	}
 	p := Project{ID: id, Name: name, Root: root}
 	c.Projects = append(c.Projects, p)
+	c.OpenIDs = append(c.OpenIDs, id)
 	if c.ActiveID == "" {
 		c.ActiveID = id
 	}
@@ -156,10 +191,17 @@ func (c *Config) RemoveProject(id string) bool {
 			continue
 		}
 		c.Projects = append(c.Projects[:i], c.Projects[i+1:]...)
+		open := c.OpenIDs[:0]
+		for _, o := range c.OpenIDs {
+			if o != id {
+				open = append(open, o)
+			}
+		}
+		c.OpenIDs = open
 		if c.ActiveID == id {
 			c.ActiveID = ""
-			if len(c.Projects) > 0 {
-				c.ActiveID = c.Projects[0].ID
+			if len(c.OpenIDs) > 0 {
+				c.ActiveID = c.OpenIDs[0]
 			}
 		}
 		return true
@@ -187,4 +229,62 @@ func (c Config) Active() (Project, bool) {
 		}
 	}
 	return Project{}, false
+}
+
+// IsOpen reports whether the project with id is open: one of the projects the
+// window shows, and watches for changes.
+func (c Config) IsOpen(id string) bool {
+	for _, open := range c.OpenIDs {
+		if open == id {
+			return true
+		}
+	}
+	return false
+}
+
+// SetOpen opens or closes the project with id, keeping ActiveID on an open
+// project. It reports whether there is such a project.
+func (c *Config) SetOpen(id string, open bool) bool {
+	known := false
+	for _, p := range c.Projects {
+		if p.ID == id {
+			known = true
+			break
+		}
+	}
+	if !known {
+		return false
+	}
+	if open {
+		if !c.IsOpen(id) {
+			c.OpenIDs = append(c.OpenIDs, id)
+		}
+	} else {
+		kept := c.OpenIDs[:0]
+		for _, o := range c.OpenIDs {
+			if o != id {
+				kept = append(kept, o)
+			}
+		}
+		c.OpenIDs = kept
+	}
+	if !c.IsOpen(c.ActiveID) {
+		c.ActiveID = ""
+		if len(c.OpenIDs) > 0 {
+			c.ActiveID = c.OpenIDs[0]
+		}
+	}
+	return true
+}
+
+// OpenProjects returns the projects that are open, in the order they were
+// added.
+func (c Config) OpenProjects() []Project {
+	out := make([]Project, 0, len(c.OpenIDs))
+	for _, p := range c.Projects {
+		if c.IsOpen(p.ID) {
+			out = append(out, p)
+		}
+	}
+	return out
 }

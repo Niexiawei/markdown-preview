@@ -139,3 +139,115 @@ func TestSetActiveRejectsUnknown(t *testing.T) {
 		t.Error("SetActive(unknown) = true, want false")
 	}
 }
+
+// writeConfig writes the configuration file the app reads, as the test says.
+func writeConfig(t *testing.T, dir, body string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, FileName), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// projectJSON is one project as the file holds it.
+func projectJSON(id, name string) string {
+	return `{"id":"` + id + `","name":"` + name + `","root":"` + name + `"}`
+}
+
+func TestLoadOpensEverythingWhenTheFileHasNoOpenIDs(t *testing.T) {
+	dir := t.TempDir()
+	alpha, beta := ProjectID(filepath.Join(dir, "alpha")), ProjectID(filepath.Join(dir, "beta"))
+	writeConfig(t, dir, `{"version":1,"projects":[`+projectJSON(alpha, "alpha")+`,`+projectJSON(beta, "beta")+
+		`],"active_id":"`+alpha+`"}`)
+	c, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := c.OpenProjects(); len(got) != 2 {
+		t.Errorf("OpenProjects = %v, want both projects: a file without open_ids has them all open", got)
+	}
+	if c.Version != Version {
+		t.Errorf("Version = %d, want %d", c.Version, Version)
+	}
+}
+
+func TestSetOpenTogglesTheProject(t *testing.T) {
+	dir := t.TempDir()
+	var c Config
+	alpha, _ := c.AddProject(filepath.Join(dir, "alpha"), "alpha")
+	beta, _ := c.AddProject(filepath.Join(dir, "beta"), "beta")
+	if !c.SetOpen(beta.ID, false) {
+		t.Fatalf("SetOpen(%q, false) = false", beta.ID)
+	}
+	if c.IsOpen(beta.ID) {
+		t.Error("IsOpen(beta) = true after closing it")
+	}
+	if got := c.OpenProjects(); len(got) != 1 || got[0].ID != alpha.ID {
+		t.Errorf("OpenProjects = %v, want [alpha]", got)
+	}
+	if !c.SetOpen(beta.ID, true) {
+		t.Fatalf("SetOpen(%q, true) = false", beta.ID)
+	}
+	if got := c.OpenProjects(); len(got) != 2 {
+		t.Errorf("OpenProjects = %v, want both open again", got)
+	}
+	if c.SetOpen("nope", true) {
+		t.Error("SetOpen(unknown) = true, want false")
+	}
+}
+
+func TestOpenIDsOfRemovedProjectsAreDropped(t *testing.T) {
+	dir := t.TempDir()
+	alpha := ProjectID(filepath.Join(dir, "alpha"))
+	writeConfig(t, dir, `{"version":2,"projects":[`+projectJSON(alpha, "alpha")+
+		`],"active_id":"`+alpha+`","open_ids":["ghost","`+alpha+`"]}`)
+	c, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := c.OpenProjects(); len(got) != 1 || got[0].ID != alpha {
+		t.Errorf("OpenProjects = %v, want [alpha]: the ghost is gone", got)
+	}
+}
+
+func TestClosingActiveProjectPicksAnother(t *testing.T) {
+	dir := t.TempDir()
+	var c Config
+	alpha, _ := c.AddProject(filepath.Join(dir, "alpha"), "alpha")
+	beta, _ := c.AddProject(filepath.Join(dir, "beta"), "beta")
+	if !c.SetActive(beta.ID) {
+		t.Fatal("SetActive(beta) = false")
+	}
+	c.SetOpen(beta.ID, false)
+	if c.ActiveID != alpha.ID {
+		t.Errorf("ActiveID = %q, want alpha: the active project is always an open one", c.ActiveID)
+	}
+	c.SetOpen(alpha.ID, false)
+	if c.ActiveID != "" {
+		t.Errorf("ActiveID = %q, want none: no project is open", c.ActiveID)
+	}
+}
+
+func TestAddProjectOpensIt(t *testing.T) {
+	var c Config
+	p, _ := c.AddProject(filepath.Join(t.TempDir(), "alpha"), "alpha")
+	if !c.IsOpen(p.ID) {
+		t.Errorf("IsOpen(%q) = false, want a new project open", p.ID)
+	}
+}
+
+func TestRemoveProjectClosesIt(t *testing.T) {
+	dir := t.TempDir()
+	var c Config
+	alpha, _ := c.AddProject(filepath.Join(dir, "alpha"), "alpha")
+	beta, _ := c.AddProject(filepath.Join(dir, "beta"), "beta")
+	c.SetActive(beta.ID)
+	if !c.RemoveProject(beta.ID) {
+		t.Fatalf("RemoveProject(beta) = false")
+	}
+	if got := c.OpenProjects(); len(got) != 1 || got[0].ID != alpha.ID {
+		t.Errorf("OpenProjects = %v, want [alpha]", got)
+	}
+	if c.ActiveID != alpha.ID {
+		t.Errorf("ActiveID = %q, want alpha", c.ActiveID)
+	}
+}
