@@ -320,3 +320,14 @@ func TestServerServesRealWorkspace(t *testing.T) {
 		t.Errorf("answer = %s, want the document's title", data)
 	}
 }
+
+func TestUnknownNotificationHasNoAnswer(t *testing.T) {
+	s := newTestServer(t)
+	code, out := call(t, s, `{"jsonrpc":"2.0","method":"tools/nope"}`, "secret")
+	if code != http.StatusAccepted {
+		t.Errorf("code = %d, want 202", code)
+	}
+	if len(out) != 0 {
+		t.Errorf("answer = %v, want none for a notification", out)
+	}
+}

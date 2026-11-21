@@ -205,3 +205,40 @@ func TestTitleFallsBackToFilename(t *testing.T) {
 		t.Errorf("Title = %q, want %q", titles["with-heading.md"], "Real Title")
 	}
 }
+
+func TestTitlesAreCachedAndInvalidated(t *testing.T) {
+	ws, root := newWorkspace(t)
+	if err := os.WriteFile(filepath.Join(root, "a.md"), []byte("# First\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	projectID := ws.Projects()[0].ID
+	before := titleScanCount.Load()
+	for i := 0; i < 3; i++ {
+		docs, err := ws.ListDocs(projectID)
+		if err != nil {
+			t.Fatalf("ListDocs: %v", err)
+		}
+		if docs[0].Title != "First" {
+			t.Fatalf("Title = %q, want First", docs[0].Title)
+		}
+	}
+	if got := titleScanCount.Load() - before; got != 1 {
+		t.Errorf("scanned titles %d times, want 1", got)
+	}
+
+	path := filepath.Join(root, "a.md")
+	if err := os.WriteFile(path, []byte("# Second\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	later := time.Now().Add(2 * time.Second)
+	if err := os.Chtimes(path, later, later); err != nil {
+		t.Fatal(err)
+	}
+	docs, err := ws.ListDocs(projectID)
+	if err != nil {
+		t.Fatalf("ListDocs: %v", err)
+	}
+	if docs[0].Title != "Second" {
+		t.Errorf("Title = %q, want Second after the write", docs[0].Title)
+	}
+}

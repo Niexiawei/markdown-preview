@@ -26,8 +26,12 @@ var (
 	ErrOutsideProject = errors.New("workspace: path is outside the project")
 )
 
-// parseCount counts the parses the workspace does, for the cache's tests.
-var parseCount atomic.Int64
+// parseCount and titleScanCount count the work the caches spare, for their
+// tests.
+var (
+	parseCount     atomic.Int64
+	titleScanCount atomic.Int64
+)
 
 // docEntry caches what parsing a document made, until its file changes.
 type docEntry struct {
@@ -51,7 +55,7 @@ func (w *Workspace) ListDocs(projectID string) ([]Doc, error) {
 	}
 	for i := range docs {
 		docs[i].ProjectID = projectID
-		if title, ok := firstHeading(filepath.Join(root, filepath.FromSlash(docs[i].Path))); ok {
+		if title, ok := w.titleOf(projectID, root, &docs[i]); ok {
 			docs[i].Title = title
 		}
 	}
@@ -90,7 +94,7 @@ func (w *Workspace) Parse(projectID, path string) (*parser.Document, []Heading, 
 	if err != nil {
 		return nil, nil, err
 	}
-	key := projectID + "\x00" + path
+	key := docKey{project: projectID, path: path}
 	w.cacheMu.Lock()
 	entry, ok := w.cache[key]
 	w.cacheMu.Unlock()
@@ -107,7 +111,7 @@ func (w *Workspace) Parse(projectID, path string) (*parser.Document, []Heading, 
 	headings := outlineOf(doc)
 	w.cacheMu.Lock()
 	if w.cache == nil {
-		w.cache = map[string]*docEntry{}
+		w.cache = map[docKey]*docEntry{}
 	}
 	w.cache[key] = &docEntry{
 		modTime:  info.ModTime(),
@@ -124,7 +128,7 @@ func (w *Workspace) Parse(projectID, path string) (*parser.Document, []Heading, 
 func (w *Workspace) Forget(projectID, path string) {
 	w.cacheMu.Lock()
 	defer w.cacheMu.Unlock()
-	delete(w.cache, projectID+"\x00"+path)
+	delete(w.cache, docKey{project: projectID, path: path})
 }
 
 // Root returns a project's directory.
@@ -177,6 +181,36 @@ func within(root, path string) bool {
 		return false
 	}
 	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
+}
+
+// titleOf returns the title a document shows: its first level-one heading,
+// which reading the start of the file finds, kept until the file changes so
+// that a tree reloaded on every file event does not read every document
+// again.
+func (w *Workspace) titleOf(projectID, root string, doc *Doc) (string, bool) {
+	key := docKey{project: projectID, path: doc.Path}
+	w.cacheMu.Lock()
+	entry, ok := w.titles[key]
+	w.cacheMu.Unlock()
+	if ok && entry.modTime.Equal(doc.ModTime) && entry.size == doc.Size {
+		return entry.title, entry.title != ""
+	}
+	titleScanCount.Add(1)
+	title, found := firstHeading(filepath.Join(root, filepath.FromSlash(doc.Path)))
+	w.cacheMu.Lock()
+	if w.titles == nil {
+		w.titles = map[docKey]*titleEntry{}
+	}
+	w.titles[key] = &titleEntry{modTime: doc.ModTime, size: doc.Size, title: title}
+	w.cacheMu.Unlock()
+	return title, found
+}
+
+// titleEntry is a document's title, until its file changes.
+type titleEntry struct {
+	modTime time.Time
+	size    int64
+	title   string
 }
 
 // firstHeading reads the start of a document for its first level-one

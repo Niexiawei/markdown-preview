@@ -166,6 +166,13 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		s.trace(r, req, start, http.StatusOK)
 		return
 	}
+	if req.notification() {
+		// A notification has no answer, whatever it asks of us.
+		_, _ = s.dispatch(req)
+		w.WriteHeader(http.StatusAccepted)
+		s.trace(r, req, start, http.StatusAccepted)
+		return
+	}
 	if resp, ok := s.dispatch(req); ok {
 		s.write(w, http.StatusOK, resp)
 	} else {

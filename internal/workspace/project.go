@@ -12,13 +12,20 @@ import (
 // Project is a directory of markdown documents.
 type Project = config.Project
 
+// docKey names a document: its project, and its path in it.
+type docKey struct {
+	project string
+	path    string
+}
+
 // Workspace is the set of projects the app has open.
 type Workspace struct {
 	mu  sync.Mutex
 	cfg config.Config
 
 	cacheMu sync.Mutex
-	cache   map[string]*docEntry
+	cache   map[docKey]*docEntry
+	titles  map[docKey]*titleEntry
 }
 
 // New returns a workspace of the projects in cfg.

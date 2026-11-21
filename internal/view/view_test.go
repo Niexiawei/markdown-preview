@@ -230,3 +230,24 @@ func TestMCPControlCalledOnToggle(t *testing.T) {
 		t.Errorf("control called with %v, want [true]", got)
 	}
 }
+
+func TestSelectProjectSyncsWorkspace(t *testing.T) {
+	var cfg config.Config
+	dir := t.TempDir()
+	alphaRoot := filepath.Join(dir, "alpha")
+	betaRoot := filepath.Join(dir, "beta")
+	alpha, _ := cfg.AddProject(alphaRoot, "alpha")
+	beta, _ := cfg.AddProject(betaRoot, "beta")
+	cfg.ActiveID = alpha.ID
+	for _, root := range []string{alphaRoot, betaRoot} {
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ws := workspace.New(cfg)
+	s := New(ws, cfg, t.TempDir())
+	s.SelectProject(beta.ID)
+	if p, ok := ws.Active(); !ok || p.ID != beta.ID {
+		t.Errorf("workspace active = %v, %v, want beta: the MCP tools read it too", p, ok)
+	}
+}

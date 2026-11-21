@@ -165,6 +165,7 @@ func (s *State) SelectProject(id string) {
 	}
 	s.activeID = id
 	s.selected = ""
+	s.ws.SetConfig(s.cfg)
 	s.save()
 	s.reloadTree()
 }
