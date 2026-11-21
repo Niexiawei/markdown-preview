@@ -22,9 +22,11 @@ WebView 模式额外需要系统的 web view：Windows 上是 WebView2 Runtime�
 
 ## 用法
 
-- 侧栏顶部是项目切换（显示当前项目名）→ 点开可以切换、移除项目；侧栏底部的图标按钮：打开项目、刷新、MCP。
+- 侧栏顶部是项目面板（显示当前项目名）→ 点开列出所有项目，有勾的是打开的项目（树里显示、监听中）：
+  **点一行打开/关闭它**，可以同时打开多个；右键一行：在文件管理器中打开、复制项目路径、移除项目…（移除要二次确认）。
+  侧栏底部的图标按钮：打开项目（对话框可一次选多个目录）、刷新、MCP。
   侧栏宽 280 DIP（可拖分隔条改，双击复位），折叠/展开按钮在标题栏左侧。
-- 侧栏（可用标题栏的按钮折叠/展开）是该项目里的 `.md` / `.markdown`（递归；跳过 `.git`、`node_modules`、`vendor`、`dist`、`build`、`.mygo` 和所有点开头的目录）。
+- **打开多个项目时，树最上面多一层项目名**；只打开一个项目时不加这层。树里是项目里的 `.md` / `.markdown`（递归；跳过 `.git`、`node_modules`、`vendor`、`dist`、`build`、`.mygo` 和所有点开头的目录）。
 - 右栏左半边是文档目录，点一项正文就滚到那个标题；右半边是正文。
 - 正文里的相对链接可以在文档之间跳转，`#标题` 跳到本文档的标题，`http(s)` 链接交给系统浏览器。
 - 文件名后面的两个小段（**原生** / **WebView**）切换当前文档的渲染后端，每个文档各记各的，只在本次运行内有效。
@@ -39,7 +41,7 @@ WebView 模式额外需要系统的 web view：Windows 上是 WebView2 Runtime�
 - 鉴权：请求头必须带 `Authorization: Bearer <token>`，token 在面板里可以复制，也写在用户数据目录的 `mcp.json`
 - 传输：`POST` 单个端点，JSON-RPC 2.0，`application/json` 响应（不提供 SSE 长连接）
 
-四个只读工具：
+四个只读工具（只列出**打开**的项目）：
 
 | tool | 入参 | 出参 |
 | --- | --- | --- |
@@ -48,7 +50,7 @@ WebView 模式额外需要系统的 web view：Windows 上是 WebView2 Runtime�
 | `read_doc` | `{path, project?}` | `{path,content}` |
 | `search_docs` | `{query, project?, limit?}` | `[{path,line,text}]` |
 
-`project` 省略时用当前活动项目。手写一次调用：
+`project` 省略时用当前活动项目（有选中文档时是它所属的项目，否则是第一个打开的项目）。手写一次调用：
 
 ```sh
 TOKEN=$(cat "$LOCALAPPDATA/markdown-preview/mcp.json" | grep token | cut -d'"' -f4)
@@ -67,8 +69,8 @@ curl -s http://127.0.0.1:8765/mcp \
 - WebView 模式在文档变化或用目录跳转时会重新加载页面，滚动位置回到顶部（原生模式保留）。
 - 没有代码块语法高亮（`ui/markdown` 的默认代码块是单色等宽）；WebView 模式同样只有等宽样式。
 - 单个文档上限 8 MB，超过会提示而不加载；非法 UTF-8 会被替换成 `U+FFFD` 后照常显示。
-- 一次只能看一个项目的一个文档（没有标签页、没有多窗口）。
-- 项目切换是自绘的下拉（按钮行），没有系统菜单的键盘导航。
+- 一次只能看一个项目的一个文档（没有标签页、没有多窗口）；同时打开多个项目只是让它们的文档都在树里。
+- 项目面板是自绘的浮层（按钮行 + 右键菜单），没有系统菜单的键盘导航。
 - 树的 md 项超过约 3000 个时会变慢（`ui.Tree` 会构建全部节点），届时可换成 `ui.Outline`。
 - 符号链接环的保护在需要管理员权限的平台上无法被测试覆盖（Windows 普通用户建不了符号链接）。
 
@@ -76,12 +78,13 @@ curl -s http://127.0.0.1:8765/mcp \
 
 ```
 main.go                     组装：配置 → workspace → sidebar shell → 文件监听 → MCP
-internal/config/            配置的读写（项目列表、活动项目、渲染模式、MCP 设置）
+internal/config/            配置的读写（项目列表、打开的项目、活动项目、渲染模式、MCP 设置）
 internal/workspace/         扫描、读取、解析缓存、TOC/slug、搜索（Index 接口，喂 UI 和 MCP）
 internal/watch/             把 mygo 的文件事件折叠成 ChangeSet
 internal/mcp/               JSON-RPC 端点与四个只读工具
-internal/view/              Onevra 主题（theme.go）+ 外壳各区域：侧栏顶栏、树、侧栏工具栏、
-                            内容标题（含渲染开关）、预览、状态栏、MCP 设置面板
+internal/view/              Onevra 主题（theme.go）+ 外壳各区域：侧栏顶栏（项目面板与右键菜单）、树、
+                            侧栏工具栏、内容标题（含渲染开关）、预览、状态栏、MCP 设置面板；
+                            system.go 是桌面动作（文件管理器 / 剪贴板 / 确认）的接口
 ```
 
 设计与实现计划在 `docs/superpowers/` 下。

@@ -273,32 +273,46 @@ func (s *State) hasDocs() bool {
 	return false
 }
 
-// OpenProject asks for a directory and shows it as a project.
+// OpenProject asks for directories and opens each of them as a project.
 func (s *State) OpenProject() {
 	paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
 		Title:     "打开项目目录",
 		Directory: true,
+		Multiple:  true,
 		Parent:    s.win,
 	})
 	if err != nil || len(paths) == 0 {
 		return
 	}
-	s.AddProject(paths[0])
+	s.AddProjects(paths)
 }
 
-// AddProject adds the directory at root to the projects and shows it.
-func (s *State) AddProject(root string) {
-	s.gone = map[string]bool{}
-	p, added := s.cfg.AddProject(root, filepath.Base(filepath.Clean(root)))
-	s.activeID = p.ID
-	s.cfg.ActiveID = p.ID
-	if added {
-		s.sel = docSel{}
+// AddProject opens the directory at root as a project.
+func (s *State) AddProject(root string) { s.AddProjects([]string{root}) }
+
+// AddProjects opens the directories at roots as projects, the last one active,
+// and reports how many were new. The document the window shows stays shown:
+// another project beside it changes nothing about it.
+func (s *State) AddProjects(roots []string) int {
+	added := 0
+	for _, root := range roots {
+		p, isNew := s.cfg.AddProject(root, filepath.Base(filepath.Clean(root)))
+		if isNew {
+			s.gone = map[string]bool{}
+			added++
+		}
+		s.cfg.SetOpen(p.ID, true)
+		s.cfg.ActiveID = p.ID
+		s.startWatch(p.ID, p.Root)
 	}
+	if len(roots) == 0 {
+		return 0
+	}
+	s.activeID = s.cfg.ActiveID
 	s.ws.SetConfig(s.cfg)
 	s.save()
-	s.startWatch(p.ID, p.Root)
 	s.reloadTree()
+	return added
 }
 
 // RemoveProject removes a project from the window, asking first: the window

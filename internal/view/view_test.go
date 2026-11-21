@@ -630,3 +630,28 @@ func TestRemovalWithoutSystemDoesNothing(t *testing.T) {
 		t.Errorf("Projects = %v, want beta kept: nothing can confirm a removal", s.Projects())
 	}
 }
+
+func TestAddProjectsOpensAll(t *testing.T) {
+	dir := t.TempDir()
+	alphaRoot, betaRoot := filepath.Join(dir, "alpha"), filepath.Join(dir, "beta")
+	for _, root := range []string{alphaRoot, betaRoot} {
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeDoc(t, alphaRoot, "a.md", "# A\n")
+	s := newStateWith(config.Config{Version: config.Version, Render: config.RenderNative})
+	if got := s.AddProjects([]string{alphaRoot, betaRoot}); got != 2 {
+		t.Errorf("AddProjects = %d, want 2", got)
+	}
+	if got := len(s.Trees()); got != 2 {
+		t.Fatalf("Trees = %d, want both projects open", got)
+	}
+	if p, ok := s.ActiveProject(); !ok || p.Root != betaRoot {
+		t.Errorf("ActiveProject = %v, %v, want beta: the last one added", p, ok)
+	}
+	tt := newTester(s)
+	if !tt.HasText("a.md") {
+		t.Errorf("texts = %q, want alpha's document in the tree", tt.Texts())
+	}
+}

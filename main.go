@@ -47,6 +47,9 @@ func main() {
 		})
 		win := shell.Window()
 		state.SetWindow(win)
+		// The window opens projects in the file manager, copies their paths,
+		// and asks the system before removing one.
+		state.SetSystem(view.Desktop{})
 		// The body takes the pane's width so paragraphs wrap and re-wrap on
 		// resize; only the shell knows how much the sidebar takes.
 		state.SetContentWidth(func() float32 {

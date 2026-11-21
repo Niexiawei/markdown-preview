@@ -29,7 +29,7 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
 | `internal/workspace` | 扫描 / 读取 / 解析缓存 / 标题缓存 / TOC 与 slug / 搜索；`Index` 接口 |
 | `internal/watch` | `mygo.WatchFiles` → `ChangeSet`（新增 / 删除 / 重命名 / 写入） |
 | `internal/mcp` | `POST /mcp` JSON-RPC 2.0，四个只读工具 |
-| `internal/view` | Onevra 主题（`theme.go`）与外壳各区域：侧栏顶栏、树、侧栏工具栏、内容标题、预览、状态栏、MCP 设置面板 |
+| `internal/view` | Onevra 主题（`theme.go`）与外壳各区域：侧栏顶栏（项目面板 + 右键菜单）、树、侧栏工具栏、内容标题、预览、状态栏、MCP 设置面板；`system.go` 是桌面动作接口 |
 
 依赖方向：`view → workspace`、`mcp → workspace`、`workspace → config`。
 
@@ -64,8 +64,11 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
 - **改忽略规则**：只改 `workspace.Ignored`（扫描与监听共用它），并补 `TestIgnoredRules`。
 - **改 TOC 缩进/交互**：`view/native.go` 的 `buildTOC` + `tocItems`。
 - **改渲染样式**：原生在 `markdown.Options`（`loadDoc` 里装配）；webview 在 `webview.go` 的 `docCSS`。
-- **改标题栏/侧栏**：`view.go` 里 `contentTitle`（路径 + `modeToggle`）、`leftHeader`（项目切换）、
+- **改标题栏/侧栏**：`view.go` 里 `contentTitle`（路径 + `modeToggle`）、`leftHeader`（项目面板：点一行开/关、右键打开/复制/移除）、
   `leftToolbar`（动作图标）、`statusBar`；shell 侧分别对应 `ContentTitle`/`LeftHeader`/`LeftToolbar` 槽位。
+- **加桌面动作（打开目录、复制、确认）**：扩 `view.System`（`system.go`）并在测试里扩 `fakeSystem`，
+  不要在 view 里直接调 `mygo.Dialog` / `mygo.Shell` / `mygo.Clipboard`：`LeftHeader` 在侧栏收起时不构建，
+  应用内弹窗画不出来，测试也跑不了真实对话框。
   改完跑 `TestShellSlotsBuild`，并在 `View` 里保持同样的拼装。
 - **换掉 `ui.Tree`**：md 项超过约 3000 时 `ui.Tree` 会构建全部节点，应换成 `ui.Outline`。
 
@@ -90,6 +93,11 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
 - **正文宽度是算出来的**：`State.SetContentWidth` 由 `main.go` 用 `win.ContentSize()` 减去侧栏宽度提供，
   `bodyPaneWidth()` 再减去目录宽度；body 的列用这个宽度（而不是 `WidthPercent`），因为 `ScrollBoth`
   里百分比不解析成视口宽度。改布局时要同步这个算式，否则正文会溢出或换行错。
+- **`cfg.OpenIDs` 的 `nil` 与 `[]` 语义不同**：`nil`（旧文件、没有这个字段）表示「全部打开」并迁移一次，
+  `[]` 表示「一个都不打开」。`config.normalize` 负责迁移、丢掉已不存在项目的 id，并保证 `ActiveID` 始终是打开的项目。
+- **文档身份是 `docSel{project, path}`**：树、正文、渲染模式表、监听都以它为准；只有一个 `path` 时两个项目里的
+  `docs/a.md` 会互相串。目录折叠键是 `项目ID + ":" + 路径`，项目节点的键是 `"project:" + 项目ID`。
+- **树只在打开项目数 ≥ 2 时多一层项目名**：`fileTree` 里按 `len(s.trees)` 分叉，改布局时别让单项目也长出这层。
 - **状态栏只放提示文字**（`statusBar`，高 24）：渲染开关、路径都不在这里，它们在标题栏。
 - **测试看不到 shell**：`sidebar.NewShell` 会真的建窗口，测试里不能用。`View` 是给测试用的并排近似布局，
   shell 的各槽位各自导出（`Left`/`LeftHeader`/`LeftToolbar`/`ContentTitle`/`Content`），
