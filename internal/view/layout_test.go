@@ -2,6 +2,7 @@ package view
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -177,5 +178,27 @@ func TestTitleFitsNarrowWindow(t *testing.T) {
 	}
 	if got := s.mode(); got != config.RenderWebView {
 		t.Errorf("mode = %q, want webview", got)
+	}
+}
+
+// TestTitleCopiesTheDocumentPath pins the button after the document's name:
+// one click puts the document's absolute path in the clipboard and says so.
+func TestTitleCopiesTheDocumentPath(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "notes/a.md", "# A\n")
+	s.Refresh()
+	s.selectDoc("notes/a.md")
+	sys := &fakeSystem{}
+	s.SetSystem(sys)
+
+	tt := ui.NewTester(func(c *ui.Context) { s.ContentTitle(c) }, 900, 48)
+	if err := tt.Click("复制文件路径"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if want := filepath.Join(root, "notes", "a.md"); sys.copied != want {
+		t.Errorf("copied = %q, want %q", sys.copied, want)
+	}
+	if !strings.Contains(s.Status(), "已复制文件路径") {
+		t.Errorf("status = %q, want the copy reported", s.Status())
 	}
 }

@@ -152,6 +152,9 @@ func (s *State) contentTitle(c *ui.Context) {
 			// an ellipsis in its middle, keeping the file's name, rather than
 			// pushing the mode switch out of the window.
 			components.Text(c, path).FontSize(12).TextColor(t.TextMuted).SingleLine().TruncateMiddle().Shrink(1)
+			if components.IconButton(c, lucide.Copy(), "复制文件路径", components.IconButtonCompact).Clicked() {
+				s.copyDocPath()
+			}
 			s.modeToggle(c)
 		}
 	})
