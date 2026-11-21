@@ -10,6 +10,10 @@
 
 **规格：** `docs/superpowers/specs/2026-11-21-markdown-preview-design.md`（执行者两份都读）
 
+> **本计划已执行完毕**（2026-11-21，合并提交 `eeaff9c`，`master`）。执行过程中的偏差与后续改动
+> （onevra 外壳、主题、图标、渲染开关位置、正文宽度模型、表格滚动）写在规格的
+> 「实施后的变更（写回）」一节，读计划时以那份为准。
+
 ## 全局约束
 
 - Go 模块名 `mdpreview`；`go.mod` 中 `require github.com/egoist/mygo v0.9.1`。
@@ -673,3 +677,28 @@ git add -A && git commit -m "docs: README 与限制说明"
 ## 执行交接
 
 任务之间有接口依赖（`Index`、`ChangeSet`、`State` 字段），但每个任务的测试都是自洽的。建议按任务顺序实现；任务 7（webview）与任务 9（MCP）互不依赖，可并行。
+
+---
+
+## 执行结果（写回）
+
+**状态：** 10 个任务全部完成并合并到 `master`（合并提交 `eeaff9c`，15 个实现提交，`go test ./...` 全绿）。
+
+**与原计划的偏差**（细节见规格的「实施后的变更」）：
+
+| 位置 | 原计划 | 实际 |
+| --- | --- | --- |
+| 任务 4 slug | GitHub 规则 + 重复加 `-1` | 逐字复制 `ui/markdown.Slug`，重复不去重（否则 `Options.Anchor` 匹配不到） |
+| 任务 5 布局 | `ui.Split` 三栏 | 合并后改用 `onevra/shells/sidebar` 外壳（`Left`/`LeftHeader`/`LeftToolbar`/`ContentTitle`/`Content` 槽位） |
+| 任务 5 状态 | mutex + `Invalidate` | 状态归窗口线程 + `State.Post` 投递 + 帧首 `drain` |
+| 任务 7 开关 | 底部 `ui.Segmented` | 移到标题栏、自绘两段、高 20 DIP（状态栏只留提示文字） |
+| 任务 6 正文 | `Scroll` + `MaxWidth(820)` | `ScrollBoth` + 列宽由 `win.ContentSize()` 减去侧栏与目录宽度算出（不溢出、跟随重排） |
+| 任务 9 通知 | 未规定 | 通知一律 202 空体；`SelectProject` 同步 `workspace` 配置 |
+
+**新增的测试**（原计划没写、执行中补上）：`TestAppThemeUsesPalette`、`TestShellSlotsBuild`、
+`TestBodyColumnFollowsPaneWidth`、`TestModeToggleSitsWithTheDocumentName`、`TestStatusBarDropsTheModeSwitch`、
+`TestTitlesAreCachedAndInvalidated`、`TestUnknownNotificationHasNoAnswer`、`TestSelectProjectSyncsWorkspace`、
+以及审查重点里那几条（root 变文件、奇数文件名、空/纯代码文档）。
+
+**手工验收清单仍待人工过一遍**：多项目来回切、外部 agent 改文件后自动刷新、重命名跟随、两模式渲染一致性、
+`curl` 打一次 `tools/call`。

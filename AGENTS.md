@@ -48,7 +48,8 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
 - **颜色从 `AppTheme` 取**（`internal/view/theme.go`）：不要在别处写死十六进制色值；需要主色就
   `c.Theme().Accent`，需要警示色就 `c.Theme().Warning`。
 - **图标只用 `icons/lucide`**，用 `components.Icon` / `components.IconButton`；图标按钮必须给 `label`
-  （无障碍名，也是测试定位的唯一方式，图标本身不是文本）。
+  （无障碍名，也是测试定位的唯一方式，图标本身不是文本）。侧栏底部的动作按钮用
+  `IconButtonPlain`（32 DIP 方块 / 20 DIP 图形），**不要**用 `IconButtonCompact`：用户反馈太小。
 - **配置与状态不落 `localStorage`**，一律写 `App.Path(PathUserData)` 下的 JSON。
 - **MCP server 默认关闭**；只监听 `127.0.0.1`（`Start` 会拒绝非 loopback 地址）；无
   `Authorization: Bearer <token>` 一律 401。
@@ -63,6 +64,9 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
 - **改忽略规则**：只改 `workspace.Ignored`（扫描与监听共用它），并补 `TestIgnoredRules`。
 - **改 TOC 缩进/交互**：`view/native.go` 的 `buildTOC` + `tocItems`。
 - **改渲染样式**：原生在 `markdown.Options`（`loadDoc` 里装配）；webview 在 `webview.go` 的 `docCSS`。
+- **改标题栏/侧栏**：`view.go` 里 `contentTitle`（路径 + `modeToggle`）、`leftHeader`（项目切换）、
+  `leftToolbar`（动作图标）、`statusBar`；shell 侧分别对应 `ContentTitle`/`LeftHeader`/`LeftToolbar` 槽位。
+  改完跑 `TestShellSlotsBuild`，并在 `View` 里保持同样的拼装。
 - **换掉 `ui.Tree`**：md 项超过约 3000 时 `ui.Tree` 会构建全部节点，应换成 `ui.Outline`。
 
 ## 已知的坑
@@ -80,11 +84,13 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
 - **Windows 文件名限制**：测试里不要造含 `?` `*` 的文件名（`os.WriteFile` 会直接报错）；
   `os.Symlink` 需要管理员权限，相关用例会 `t.Skip`。
 - **webview 重载丢滚动位置**（原生模式保留），已写进 README「已知限制」。
+- **表格的横向滚动条在表格底部**，不在窗口底部：mygo 的 markdown 视图把表格包在它自己的
+  `ScrollHorizontal` 里并 `AlignSelf(Stretch)`，所以表格铺满窗格、在内部滚。这是与用户确认过的
+  决策 A；想做“窗口级 x 滚动条”就要 `markdown.Options.Block` 里自绘表格（两百行上下），别偷偷改。
 - **正文宽度是算出来的**：`State.SetContentWidth` 由 `main.go` 用 `win.ContentSize()` 减去侧栏宽度提供，
   `bodyPaneWidth()` 再减去目录宽度；body 的列用这个宽度（而不是 `WidthPercent`），因为 `ScrollBoth`
   里百分比不解析成视口宽度。改布局时要同步这个算式，否则正文会溢出或换行错。
-- **渲染方式开关在标题栏**（`contentTitle` 里的 `modeToggle`），不在底部状态栏；高度固定在 20 DIP 左右，
-  避免撑高 `sidebar.HeaderHeight`。
+- **状态栏只放提示文字**（`statusBar`，高 24）：渲染开关、路径都不在这里，它们在标题栏。
 - **测试看不到 shell**：`sidebar.NewShell` 会真的建窗口，测试里不能用。`View` 是给测试用的并排近似布局，
   shell 的各槽位各自导出（`Left`/`LeftHeader`/`LeftToolbar`/`ContentTitle`/`Content`），
   `TestShellSlotsBuild` 逐个构建它们——改布局时保持这两条路径同步。

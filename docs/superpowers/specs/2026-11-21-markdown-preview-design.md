@@ -61,8 +61,9 @@
    写入走"临时文件 + rename"原子替换。`id` 用路径的稳定哈希，避免重命名根目录后配置错乱。
 3. **树忽略规则**（扫描与监听共用同一函数）：跳过 `.git`、`node_modules`、`vendor`、`dist`、`build`、
    `.mygo`、以及任何以 `.` 开头的目录；只收录后缀 `.md` / `.markdown`（大小写不敏感）。
-4. **TOC**：由 `parser.Document` 的 `Heading` 块直接生成；slug 用 GitHub 规则（小写、空格→`-`、
-   去标点、CJK 保留），重复 slug 追加 `-1`、`-2`。
+4. **TOC**：由 `parser.Document` 的顶层 `Heading` 块直接生成；slug 与 `ui/markdown.Slug` 逐字一致
+   （小写、每个空格→`-`、保留 `-`/`_`/字母数字、不折叠不去尾；重复标题**不去重**）。
+   理由见「实施后的变更」。
 5. **原生模式 TOC 跳转**：`markdown.Options.Anchor` 设为该 slug、每点一次 `AnchorVersion++`。
 6. **webview 模式**：注册自定义协议 `mdview://localhost/`，`/doc?p=<url-encoded 绝对路径>&rev=N`
    返回 `Document.HTML()` 套模板（CSS + `id` 锚点），`/img?p=...` 返回相对图片。
@@ -70,9 +71,10 @@
    不用 `Page.LoadHTML`，因为那样拿不到相对图片与锚点。
 7. **两种模式的解析结果共用**：`workspace` 包对 (项目, 路径, mtime, size) 做缓存，返回同一个 `*parser.Document`；
    `ui/markdown` 也吃这份源字符串（它内部有自己的增量缓存）。
-8. **渲染模式的作用域**：底部切换是"当前文档"的状态，会话内记住（按项目内相对路径），不落盘。
-9. **布局**：窗口 1280×820。顶部 40 DIP 工具条（项目下拉 + 「打开项目…」+ 「刷新」）；
-   主体 `ui.Split`（侧栏 300 DIP）；预览区再 `ui.Split`（TOC 240 DIP）；底部 32 DIP 状态栏。
+8. **渲染模式的作用域**：「当前文档」的状态，会话内记住（按项目内相对路径），不落盘。
+   切换控件的位置后来从底部移到了标题栏，见「实施后的变更」。
+9. **布局**：**已被 shell 取代**（见「实施后的变更」）。原计划是：窗口 1280×820，顶部 40 DIP 工具条，
+   主体 `ui.Split`（侧栏 300 DIP），预览区再 `ui.Split`（TOC 240 DIP），底部 32 DIP 状态栏。
 10. **文件监听**：每个打开过的项目一个 `mygo.WatchFiles(ctx, root, FileWatchOptions{Recursive:true, Ignore:…})`，
     生命周期跟随项目被移除/应用退出；事件合并后（watcher 自带 50ms debounce）→ 重建树；
     若当前文档受影响则重读并重新解析。
@@ -86,12 +88,13 @@
 ## 架构
 
 ```
-main.go                     组装：读配置 → 建 workspace → 建 view state → 绑 MCP → 开窗口
+main.go                     组装：读配置 → 建 workspace → 建 sidebar shell → 文件监听 → MCP
 internal/config/            配置读写（纯 IO，无 UI 依赖）
-internal/workspace/         项目扫描、树、读取、解析缓存、TOC/slug、DocIndex 实现
+internal/workspace/         项目扫描、树、读取、解析缓存、标题缓存、TOC/slug、搜索（Index 实现）
 internal/watch/             WatchFiles 封装成 ChangeSet 通道，可注入假事件源做测试
 internal/mcp/               JSON-RPC server + tools（只依赖 workspace.Index 接口）
-internal/view/              原生 UI：state、工具条、树、TOC、预览（native / webview）、状态栏
+internal/view/              Onevra 主题（theme.go）+ 外壳各区域：侧栏顶栏、树、侧栏工具栏、
+                            内容标题（含渲染开关）、预览（native / webview）、状态栏、设置面板
 ```
 
 依赖方向：`view → workspace`、`mcp → workspace`、`workspace → config`、`config → (mygo 只有 App.Path)`。
@@ -148,12 +151,14 @@ type Index interface {
 - 项目里没有 md：侧栏显示"这个目录下没有 markdown 文件"。
 - 当前文档被删除：正文清空并提示"文件已被删除"，树同步移除该项。
 - 项目根目录被删除或移动：该项目标记为失效，自动切到下一个可用项目；全部失效则回到空状态。
-- webview 模式在缺 WebView2 Runtime 的机器上：分段控件第二项禁用，并在状态栏说明原因（原生模式不受影响）。
+- webview 模式在缺 WebView2 Runtime 的机器上：标题栏的 WebView 分段禁用，并在状态栏说明原因（原生模式不受影响）。
 
 ## 测试策略
 
 - **纯逻辑**（`config`、`workspace`、`watch`、`mcp`）：`go test ./...`，全部用 `t.TempDir()` 造目录树。
-- **视图**：`ui` 有无窗口的 tester（`docs/ui/testing.md`），用它断言树的行、TOC 的行、分段控件选中项。
+- **视图**：`ui` 有无窗口的 tester（`docs/ui/testing.md`），用它断言树的行、TOC 的行、标题栏分段、
+  正文列宽度与滚动范围；shell 的各槽位（`Left`/`LeftHeader`/`LeftToolbar`/`ContentTitle`/`Content`）
+  逐个构建，因为 `sidebar.NewShell` 会真的建窗口，测试里不能用。
 - **MCP**：`httptest` 直接打 `/mcp`，断言 `initialize` → `tools/list` → `tools/call` 三段握手与 401/404 分支。
 - **手工验收**（由我本人过一遍）：多项目来回切、外部改文件、删除/重命名、两模式切换同一文档、
   MCP 用 `curl` 打一次 `tools/call`。
@@ -167,10 +172,66 @@ type Index interface {
 | Windows 上 webview 依赖 WebView2 Runtime | 启动时探测，缺失则禁用切换（原生模式是主路径，不影响可用性） |
 | 协议处理器里读任意路径（`mdview://localhost/img?p=C:\...`） | 只允许"已打开项目根目录下的文件"，越界返回 403 |
 | 文件监听在编辑器"原子保存"下丢事件 | `WatchFiles` 本身按目录监听文件替换；再加"手动刷新"按钮兜底 |
+| `sidebar.NewShell` 会真的建窗口，视图层没法整体 headless 测 | shell 各槽位单独导出，`TestShellSlotsBuild` 逐个构建；`View` 保留为并排近似布局 |
+| 正文列宽依赖 `win.ContentSize()` 与侧栏宽度的算式 | 改动布局时必须同步 `bodyPaneWidth()`；`TestBodyColumnFollowsPaneWidth` 在两种宽度下断言不溢出 |
+| 自绘项目下拉丢了系统菜单的键盘导航 | 无障碍名保留、Tab 可聚焦；若需要菜单键盘语义，换回 `ui.PopoverMenuButton`（但那个不支持图标） |
 
-## 变更记录
+## 实施后的变更（写回）
 
-- 2026-11-21：布局改由 `github.com/oneo-me/onevra/source` 的 `shells/sidebar` 承担（可折叠侧栏 + 浮动标题栏），
-  主题改用 `theme.Onevra` + 本应用调色板（`internal/view/theme.go` 的 `AppTheme`），按钮与开关加 lucide 图标。
-  原「我定的」第 9 条（`ui.Split` 三栏）与第 12 条的窗口创建方式作废：窗口现在只由 `sidebar.NewShell` 创建，
-  侧栏折叠由 shell 提供。数据流、MCP 契约、缓存与监听策略不变。
+实现并合并之后，下面这些「我定的」条目被替换或被细化。它们是**现状**，上面的正文只在没被这里
+覆盖时才是准确的。
+
+### 布局与外观（取代原第 9 条）
+
+- 窗口只由 `sidebar.NewShell`（`github.com/oneo-me/onevra/source v0.2026.18`）创建，不再用
+  `mygo.NewWindow` + `ui.Split` 拼三栏。默认 1280×820、最小 760×520、侧栏 280（最小 200），
+  窗口位置与最大化状态由 `StateKey: "markdown-preview.main"` 记住。
+- 槽位映射：`Left` = md 文件树；`LeftHeader` = 项目切换；`LeftToolbar` = 打开项目 / 刷新 / MCP；
+  `ContentTitle` = 文档路径 + 渲染开关；`Content` = 目录 + 正文 + 状态栏。
+  折叠侧栏、浮动标题栏、拖拽分隔都由 shell 负责。
+- 主题：`internal/view/theme.go` 的 `AppTheme` = `theme.Onevra(c)` + 本应用调色板
+  （主色 `#0052d9`、悬停 `#618dff`、按下 `#003cab`、警告 `#e37318`），由 shell 每帧安装；
+  侧栏选中行与已开启的 MCP 按钮用 `Accent.Alpha(0.12)` 的淡色。
+- 图标：一律用 `onevra/source/icons/lucide` + `components.Icon` / `components.IconButton`。
+  侧栏底部的动作按钮用 `IconButtonPlain`（32 DIP 方块 / 20 DIP 图形）；**不要**退回
+  `IconButtonCompact`（20/14），用户反馈太小。
+- 项目切换从系统菜单（`ui.PopoverMenuButton`）改成 `ui.Popover` + `components.Button` 行
+  （Folder 图标、当前项 Check + 淡主色底、末尾分隔 + Trash「移除当前项目」）。
+  **代价：丢掉了菜单的键盘导航语义**；无障碍名仍在。
+
+### 渲染开关的位置与尺寸（细化原第 8 条）
+
+- 从底部状态栏移到标题栏，紧跟在文档路径之后（`contentTitle` → `modeToggle`）。
+- 自绘两段而不是 `ui.Segmented`：外框高 `max(20, Rem(1.25))`、内段 18、字号 11，
+  目的是不把 `sidebar.HeaderHeight` 撑高。
+- 状态栏只剩一行提示文字（高度 24）。
+
+### 正文宽度与横向滚动（新增）
+
+- 正文列**不用** `WidthPercent`，也不用 `MaxWidth`：`ScrollBoth` 里的百分比不解析成视口宽度
+  （会退化成按内容撑开，导致文字不换行、内容溢出）。宽度由
+  `State.SetContentWidth`（`main.go` 用 `win.ContentSize()` 减去侧栏宽度）减去目录宽度算出。
+- 正文容器是 `ui.ScrollBoth`：窗口拉伸、侧栏折叠、拖动目录分隔条都会按新宽度重排；
+  比窗格宽的图片等由这条横向滚动承载。
+- **表格**保持 mygo 的行为（决策 A，用户确认）：表格被拉伸到窗格宽度，超出的部分在
+  **表格自带**的 `ScrollHorizontal` 里滚，滚动条在表格底部而不是窗口底部。不做「整篇变宽」，
+  也不自绘表格。
+- 列宽里额外减去 2 DIP，抵消宽度取整带来的 1px 溢出（否则每个文档都会多出一条无用的横向滚动条）。
+
+### slug 规则修正（取代原第 4 条）
+
+- `workspace.Slug` 是 `ui/markdown.Slug` 的逐字复制：小写、每个空格→`-`、保留 `-`/`_`/字母数字、
+  不折叠连续空格、不去首尾 `-`；**重复标题不去重**（都指向第一个同 slug 的标题）。
+- 原因：`markdown.Options.Anchor` 按 mygo 的 `Slug` 匹配标题，自造规则会让 TOC 点击跳不到。
+
+### 实现上的其他定论
+
+- 视图状态不加锁：状态归窗口线程，watcher 用 `State.Post(fn)` 投递，帧首 `drain()` 应用后
+  `win.Invalidate()`。（原计划的「mutex + Invalidate」作废。）
+- 树默认全展开，只记折叠（`open` 指针表），因为 `ui.TreeItem` 直接写 `*bool`。
+- `Workspace.ListDocs` 的标题按 `(mtime, size)` 缓存（`titleEntry`），避免每次树重建都读一遍文档开头。
+- MCP：通知（无 `id`）一律 202 空体、不回响应；`SelectProject` 要把新配置同步进 `workspace`
+  （否则 MCP 的「当前项目」停在旧值）。
+- 测试补充：`TestAppThemeUsesPalette`（四个色值）、`TestShellSlotsBuild`（逐个构建 shell 槽位）、
+  `TestBodyColumnFollowsPaneWidth`（600/1200 下都不溢出）、`TestModeToggleSitsWithTheDocumentName`、
+  `TestStatusBarDropsTheModeSwitch`。
