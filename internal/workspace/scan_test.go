@@ -165,3 +165,49 @@ func names(n *Node) []string {
 	}
 	return out
 }
+
+func TestListDocsWhenRootIsAFile(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "notadir")
+	if err := os.WriteFile(root, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ListDocs(root); !errors.Is(err, ErrProjectGone) {
+		t.Errorf("ListDocs(file) = %v, want ErrProjectGone", err)
+	}
+}
+
+func TestListDocsOddNames(t *testing.T) {
+	root := t.TempDir()
+	names := []string{"方案 #1 50%.md", "空格 与+加号.md", "问号？全角.md", "百分号%与会话#.md", "dash-and_under.md"}
+	for _, name := range names {
+		write(t, root, name)
+	}
+	docs, err := ListDocs(root)
+	if err != nil {
+		t.Fatalf("ListDocs: %v", err)
+	}
+	got := map[string]bool{}
+	for _, d := range docs {
+		got[d.Path] = true
+	}
+	for _, name := range names {
+		if !got[name] {
+			t.Errorf("docs = %v, want %q", got, name)
+		}
+	}
+}
+
+func TestParseEmptyAndCodeOnly(t *testing.T) {
+	for _, src := range []string{"", "\n\n", "```go\nfunc main() {}\n```\n", "<div>x</div>\n"} {
+		doc, headings, err := parseSource(src)
+		if err != nil {
+			t.Fatalf("parseSource(%q): %v", src, err)
+		}
+		if doc == nil {
+			t.Errorf("parseSource(%q) = nil document", src)
+		}
+		if len(headings) != 0 {
+			t.Errorf("parseSource(%q) headings = %v, want none", src, headings)
+		}
+	}
+}

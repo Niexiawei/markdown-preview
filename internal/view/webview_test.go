@@ -136,3 +136,41 @@ func TestSegmentedShowsBothModes(t *testing.T) {
 		t.Errorf("texts = %q, want both segments", tt.Texts())
 	}
 }
+
+func TestMDViewServesOddNames(t *testing.T) {
+	root := t.TempDir()
+	name := "方案 #1 50%+问号？.md"
+	doc := filepath.Join(root, name)
+	if err := os.WriteFile(doc, []byte("# 方案\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h := newMDViewHandler(func() []string { return []string{root} })
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/doc?p="+url.QueryEscape(doc)+"&rev=1", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("code = %d, want 200 for %q", rec.Code, name)
+	}
+	if !strings.Contains(rec.Body.String(), "方案") {
+		t.Errorf("body = %s, want the document", rec.Body.String())
+	}
+}
+
+func TestDocURLRoundTripsThroughHandler(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", "# A\n")
+	s.Refresh()
+	s.selectDoc("a.md")
+	u := s.docURL()
+	parsed, err := url.Parse(u)
+	if err != nil {
+		t.Fatalf("docURL = %q: %v", u, err)
+	}
+	if parsed.Scheme != viewScheme {
+		t.Errorf("scheme = %q, want %q", parsed.Scheme, viewScheme)
+	}
+	abs := parsed.Query().Get("p")
+	want, _ := filepath.Abs(filepath.Join(root, "a.md"))
+	if abs != want {
+		t.Errorf("p = %q, want %q", abs, want)
+	}
+}
