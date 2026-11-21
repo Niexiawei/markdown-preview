@@ -90,7 +90,7 @@ func (s *State) leftHeader(c *ui.Context) {
 			for _, p := range s.Projects() {
 				p := p
 				open := s.cfg.IsOpen(p.ID)
-				row := components.Button(c.Key("project:"+p.ID), "", components.ButtonGhost).Label(p.Name)
+				row := components.Button(c.Key("project:"+p.ID), "", components.ButtonGhost).Label("项目：" + p.Name)
 				row.Gap(t.Space(0.75)).Children(func() {
 					components.Icon(c, lucide.Folder()).Size(t.Rem(1), t.Rem(1)).TextColor(t.TextMuted)
 					components.Text(c, p.Name).SingleLine().Grow(1)
@@ -111,17 +111,11 @@ func (s *State) leftHeader(c *ui.Context) {
 					if m.Item("复制项目路径").Chosen() {
 						s.copyProjectPath(p)
 					}
+					m.Separator()
+					if m.Item("移除项目…").Chosen() {
+						s.RemoveProject(p.ID)
+					}
 				})
-			}
-			ui.Row(c).Height(1).Background(t.Border)
-			remove := components.Button(c, "", components.ButtonGhost).Label("移除当前项目")
-			remove.Gap(t.Space(0.75)).Children(func() {
-				components.Icon(c, lucide.Trash()).Size(t.Rem(1), t.Rem(1)).TextColor(t.Warning)
-				components.Text(c, "移除当前项目").SingleLine().TextColor(t.Warning)
-			})
-			if remove.Clicked() {
-				s.RemoveProject(s.activeID)
-				s.projectsOpen = false
 			}
 		})
 	})

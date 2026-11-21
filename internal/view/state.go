@@ -301,8 +301,27 @@ func (s *State) AddProject(root string) {
 	s.reloadTree()
 }
 
-// RemoveProject removes a project from the window.
+// RemoveProject removes a project from the window, asking first: the window
+// cannot undo it. Without a desktop to ask through, as in the tests that do
+// not supply one, nothing is removed.
 func (s *State) RemoveProject(id string) {
+	p, ok := s.project(id)
+	if !ok || s.sys == nil {
+		return
+	}
+	if !s.sys.Confirm(ConfirmOptions{
+		Title:        "移除项目？",
+		Message:      "从列表中移除 “" + p.Name + "”？项目里的文件不会被删除。",
+		ConfirmLabel: "移除",
+	}) {
+		s.status = "已取消移除"
+		return
+	}
+	s.removeProject(id)
+}
+
+// removeProject removes a project from the window, without asking.
+func (s *State) removeProject(id string) {
 	s.stopWatch(id)
 	s.cfg.RemoveProject(id)
 	if s.cfg.ActiveID == "" && len(s.cfg.Projects) > 0 {

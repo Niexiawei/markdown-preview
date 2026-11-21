@@ -133,6 +133,7 @@ func TestRemoveProjectFallsBackToNext(t *testing.T) {
 	os.MkdirAll(filepath.Join(dir, "alpha"), 0o755)
 	os.MkdirAll(filepath.Join(dir, "beta"), 0o755)
 	s := newStateWith(cfg)
+	s.SetSystem(&fakeSystem{confirm: true})
 	s.RemoveProject(alpha.ID)
 	if p, ok := s.ActiveProject(); !ok || p.ID != beta.ID {
 		t.Errorf("ActiveProject = %v, %v, want beta", p, ok)
@@ -386,7 +387,7 @@ func TestPanelTogglesProjectOpen(t *testing.T) {
 	if err := tt.Click("切换项目"); err != nil {
 		t.Fatalf("Click: %v", err)
 	}
-	if err := tt.Click("beta"); err != nil {
+	if err := tt.Click("项目：beta"); err != nil {
 		t.Fatalf("Click beta: %v", err)
 	}
 	if s.IsOpen(beta) {
@@ -399,7 +400,7 @@ func TestPanelTogglesProjectOpen(t *testing.T) {
 	if !s.projectsOpen {
 		t.Error("panel closed, want it to stay open while projects are toggled")
 	}
-	if err := tt.Click("beta"); err != nil {
+	if err := tt.Click("项目：beta"); err != nil {
 		t.Fatalf("Click beta again: %v", err)
 	}
 	if !s.IsOpen(beta) {
@@ -464,7 +465,7 @@ func (f *fakeSystem) Confirm(options ConfirmOptions) bool {
 	return f.confirm
 }
 
-// openPanel clicks the project panel open.
+// openPanel clicks the project panel open, unless it is open already.
 func openPanel(t *testing.T, tt *ui.Tester) {
 	t.Helper()
 	if err := tt.Click("切换项目"); err != nil {
@@ -478,7 +479,7 @@ func TestProjectMenuCopiesThePath(t *testing.T) {
 	s.SetSystem(sys)
 	tt := newTester(s)
 	openPanel(t, tt)
-	if err := tt.RightClick("beta"); err != nil {
+	if err := tt.RightClick("项目：beta"); err != nil {
 		t.Fatalf("RightClick: %v", err)
 	}
 	if err := tt.Click("复制项目路径"); err != nil {
@@ -498,7 +499,7 @@ func TestProjectMenuRevealsTheFolder(t *testing.T) {
 	s.SetSystem(sys)
 	tt := newTester(s)
 	openPanel(t, tt)
-	if err := tt.RightClick("beta"); err != nil {
+	if err := tt.RightClick("项目：beta"); err != nil {
 		t.Fatalf("RightClick: %v", err)
 	}
 	if err := tt.Click("在文件管理器中打开"); err != nil {
@@ -518,7 +519,7 @@ func TestProjectMenuActsOnTheClickedProject(t *testing.T) {
 	}
 	tt := newTester(s)
 	openPanel(t, tt)
-	if err := tt.RightClick("beta"); err != nil {
+	if err := tt.RightClick("项目：beta"); err != nil {
 		t.Fatalf("RightClick: %v", err)
 	}
 	if err := tt.Click("复制项目路径"); err != nil {
@@ -535,7 +536,7 @@ func TestProjectMenuRevealFailureIsReported(t *testing.T) {
 	s.SetSystem(sys)
 	tt := newTester(s)
 	openPanel(t, tt)
-	if err := tt.RightClick("beta"); err != nil {
+	if err := tt.RightClick("项目：beta"); err != nil {
 		t.Fatalf("RightClick: %v", err)
 	}
 	if err := tt.Click("在文件管理器中打开"); err != nil {
@@ -543,5 +544,89 @@ func TestProjectMenuRevealFailureIsReported(t *testing.T) {
 	}
 	if !strings.Contains(s.Status(), "文件管理器") {
 		t.Errorf("status = %q, want the failure reported", s.Status())
+	}
+}
+
+// removeFromPanel right clicks a project in the panel and chooses to remove it.
+func removeFromPanel(t *testing.T, tt *ui.Tester, name string) {
+	t.Helper()
+	openPanel(t, tt)
+	if err := tt.RightClick("项目：" + name); err != nil {
+		t.Fatalf("RightClick %q: %v", name, err)
+	}
+	if err := tt.Click("移除项目…"); err != nil {
+		t.Fatalf("Click remove: %v", err)
+	}
+}
+
+func TestRemovingAProjectAsksFirst(t *testing.T) {
+	s, _, _ := twoProjects(t)
+	sys := &fakeSystem{}
+	s.SetSystem(sys)
+	beta := s.Projects()[1]
+	tt := newTester(s)
+	removeFromPanel(t, tt, "beta")
+	if !sys.asked {
+		t.Fatal("removal went ahead without asking")
+	}
+	if sys.confirmOptions.ConfirmLabel != "移除" || !strings.Contains(sys.confirmOptions.Message, beta.Name) {
+		t.Errorf("confirm options = %+v, want the project named and a 移除 button", sys.confirmOptions)
+	}
+	if len(s.Projects()) != 2 {
+		t.Errorf("Projects = %v, want beta kept when the question is open", s.Projects())
+	}
+	tt = newTester(s)
+	if !tt.HasText("beta") {
+		t.Errorf("texts = %q, want beta still listed", tt.Texts())
+	}
+}
+
+func TestCancelledRemovalKeepsTheProject(t *testing.T) {
+	s, _, betaRoot := twoProjects(t)
+	sys := &fakeSystem{confirm: false}
+	s.SetSystem(sys)
+	trees := s.Trees()
+	s.selectDocIn(trees[1].project.ID, "")
+	writeDoc(t, betaRoot, "only.md", "# Only\n")
+	s.Refresh()
+	s.selectDocIn(trees[1].project.ID, "only.md")
+	tt := newTester(s)
+	removeFromPanel(t, tt, "beta")
+	if len(s.Projects()) != 2 {
+		t.Fatalf("Projects = %v, want beta kept", s.Projects())
+	}
+	if got := s.Selected(); got != "only.md" {
+		t.Errorf("Selected = %q, want beta's document still shown", got)
+	}
+	if !strings.Contains(s.Status(), "取消") {
+		t.Errorf("status = %q, want the cancellation reported", s.Status())
+	}
+}
+
+func TestConfirmedRemovalDropsTheProject(t *testing.T) {
+	s, _, _ := twoProjects(t)
+	sys := &fakeSystem{confirm: true}
+	s.SetSystem(sys)
+	beta := s.Projects()[1]
+	tt := newTester(s)
+	removeFromPanel(t, tt, "beta")
+	if len(s.Projects()) != 1 {
+		t.Fatalf("Projects = %v, want beta removed", s.Projects())
+	}
+	if s.IsOpen(beta.ID) {
+		t.Error("beta is open after being removed")
+	}
+	tt = newTester(s)
+	if tt.HasText("beta") {
+		t.Errorf("texts = %q, want beta gone from the panel", tt.Texts())
+	}
+}
+
+func TestRemovalWithoutSystemDoesNothing(t *testing.T) {
+	s, _, _ := twoProjects(t)
+	beta := s.Projects()[1]
+	s.RemoveProject(beta.ID)
+	if len(s.Projects()) != 2 {
+		t.Errorf("Projects = %v, want beta kept: nothing can confirm a removal", s.Projects())
 	}
 }
