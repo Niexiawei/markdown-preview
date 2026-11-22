@@ -215,3 +215,48 @@ func TestFindListRowJumpsToItsMatch(t *testing.T) {
 		t.Errorf("current = %d, want the second match", s.find.current)
 	}
 }
+
+// TestFindJumpWithoutAWebViewOnlyMovesTheList pins the degraded path: with no
+// web view made (headless tests, a machine without one) jumping in webview mode
+// still moves the list, and only says so in the status bar.
+func TestFindJumpWithoutAWebViewOnlyMovesTheList(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", "一 目标\n二 目标\n")
+	s.Refresh()
+	s.selectDoc("a.md")
+	s.setMode(config.RenderWebView)
+	openFindOn(s, "目标")
+
+	s.gotoMatch(1)
+	if s.find.current != 1 {
+		t.Errorf("current = %d, want 1", s.find.current)
+	}
+	if s.wv != nil {
+		t.Fatal("a web view was made without a window")
+	}
+	if !strings.Contains(s.status, "WebView") {
+		t.Errorf("status = %q, want the web view's absence reported", s.status)
+	}
+}
+
+// TestClosingTheFindPanelStopsThePageHighlight pins the panel's other half: it
+// asks the page to stop highlighting as it closes.
+func TestClosingTheFindPanelStopsThePageHighlight(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", "# A\n")
+	s.Refresh()
+	s.selectDoc("a.md")
+	openFindOn(s, "A")
+
+	s.closeFind()
+	if s.find.open {
+		t.Error("the panel stayed open")
+	}
+	if len(s.find.matches) == 0 {
+		t.Error("closing the panel dropped the matches the next open would show")
+	}
+	s.openFind()
+	if !s.find.open {
+		t.Error("the panel did not open again")
+	}
+}
