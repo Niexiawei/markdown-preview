@@ -102,6 +102,10 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
   `docs/a.md` 会互相串。目录折叠键是 `项目ID + ":" + 路径`，项目节点的键是 `"project:" + 项目ID`。
 - **树只在打开项目数 ≥ 2 时多一层项目名**：`fileTree` 里按 `len(s.trees)` 分叉，改布局时别让单项目也长出这层。
 - **状态栏只放提示文字**（`statusBar`，高 24）：渲染开关、路径都不在这里，它们在标题栏。
+- **标题槽的 24 DIP 首部间距是 onevra 写死的**（`shells/sidebar/shell.go` 里 `titleInset = 24`，`ShellOptions`
+  没有对应字段）。本项目要 8，所以在 `ContentTitle` 里把整行 `Translate(-16, 0)` 拉回来
+  （`titleInsetGap` / `titleInsetWanted` 两个常量）；`Margin(0,0,0,-16)` 也能挪，但会改布局宽度、
+  把标签条量宽量错，`Translate` 只动绘制与命中。onevra 升级后若新增了间距选项，改成用那个选项并删掉常量。
 - **标签栏在 shell 的 `ContentTitle` 槽位**（标题栏那 48 DIP），文档路径 + 复制 + 渲染开关是 `Content` 的第一行
   （`titleRow`，高 `titleRowHeight`）。别再把这些塞回彼此的槽位：用户要求 tab 在文件名字那一行之上；
   `View` 与 `Content` 的拼装要保持一致（`TestTabsSitAboveTheTitle`）。

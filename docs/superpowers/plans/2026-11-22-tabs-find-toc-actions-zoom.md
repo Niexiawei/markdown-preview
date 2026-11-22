@@ -1827,3 +1827,7 @@ git commit -m "docs: 记录标签页、目录动作与悬浮搜索的用法与�
    预留宽度同源（`tabOverflow`）；`revealTab` 改成**停在某个标签的起点**（原来右对齐会切出「空白 + 孤零零的 ✕」）；
    滚动容器挂 `HandleInput` 把普通滚轮转成横向滚动（mygo 只认 Shift+滚轮）。
    回归测试：`TestTabStripRestsOnATabStart`、`TestTabStripScrollsWithTheWheel`。
+
+7. **标题槽首部间距 24 → 8**（用户 2026-11-22）：onevra 的 sidebar 把 `titleInset` 写死成 24，
+   `ShellOptions` 不暴露；`ContentTitle` 里整行 `Translate(titleInsetWanted-titleInsetGap, 0)` 抵掉 16。
+   回归测试：`TestTabsTuckUnderTheSidebarHeader`（同时验证拉回来后点击仍落在标签上）。

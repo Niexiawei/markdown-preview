@@ -534,3 +534,52 @@ func TestTabStripRestsOnATabStart(t *testing.T) {
 		}
 	}
 }
+
+// TestTabsTuckUnderTheSidebarHeader pins the leading room the tabs take in the
+// shell's header: onevra's sidebar pads the title slot by a hardcoded gap, and
+// the tabs are pulled back so that gap is what this app asked for, not 24.
+func TestTabsTuckUnderTheSidebarHeader(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "alpha.md", "# A\n")
+	writeDoc(t, root, "beta.md", "# B\n")
+	s.Refresh()
+	s.selectDoc("alpha.md")
+	s.selectDoc("beta.md")
+
+	// The shell's title slot, as shells/sidebar builds it: padded on the left
+	// by the gap it keeps from the sidebar's own header.
+	slot := func(build func(c *ui.Context)) *ui.Tester {
+		return ui.NewTester(func(c *ui.Context) {
+			ui.Row(c).Height(48).Children(func() {
+				ui.Row(c).Grow(1).MinWidth(0).FillHeight().Clip().
+					Padding(0, 8, 0, titleInsetGap).Children(func() { build(c) })
+			})
+		}, 600, 48)
+	}
+
+	pulled, ok := slot(s.ContentTitle).Find("文档：alpha.md")
+	if !ok {
+		t.Fatal("the pulled slot shows no tab")
+	}
+	plain, ok := slot(s.tabBar).Find("文档：alpha.md")
+	if !ok {
+		t.Fatal("the unpulled slot shows no tab")
+	}
+	if got, want := plain.X-pulled.X, titleInsetGap-titleInsetWanted; got != want {
+		t.Errorf("the tabs sit %v left of where the shell puts them, want %v", got, want)
+	}
+	if pulled.X > titleInsetWanted+8 {
+		t.Errorf("the first tab starts at %v, want it near the %v the app asks for", pulled.X, titleInsetWanted)
+	}
+
+	// Pulling the row keeps the tabs under the pointer: the second one still
+	// takes a click.
+	tt := slot(s.ContentTitle)
+	tt.Frame()
+	if err := tt.Click("文档：beta.md"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if got := s.Selected(); got != "beta.md" {
+		t.Errorf("selected = %q, want beta.md after clicking its tab", got)
+	}
+}
