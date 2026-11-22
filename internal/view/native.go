@@ -8,6 +8,8 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/markdown"
 	"github.com/egoist/mygo/ui/markdown/parser"
+	"github.com/oneo-me/onevra/source/components"
+	"github.com/oneo-me/onevra/source/icons/lucide"
 
 	"mdpreview/internal/workspace"
 )
@@ -36,13 +38,26 @@ func (s *State) loadDoc() {
 		return
 	}
 	s.doc, s.headings, s.src = doc, headings, src
+	// Another document is another search: the matches of the last one name
+	// lines that no longer mean the same thing.
+	s.find.matches, s.find.current, s.find.truncated = nil, 0, false
+	s.find.lines = strings.Split(src, "\n")
+	if s.find.open && s.find.query != "" {
+		s.refreshMatches()
+	}
 	if abs, err := s.ws.AbsOf(p.ID, s.sel.path); err == nil {
 		s.md.LoadImage = markdown.FileImages(filepath.Dir(abs))
 	}
 	s.md.Extensions = parser.Default
 	s.md.OnLink = s.followLink
+	// A search hit's block belongs to the document it was found in: another
+	// document must open at its own top, not at block 12 of something else.
+	if strings.HasPrefix(s.anchor, findAnchorPrefix) {
+		s.anchor = ""
+	}
 	s.md.Anchor = s.anchor
 	s.md.AnchorVersion = s.anchorVer
+	s.md.AnchorBlock = s.anchorBlock
 	s.rev++
 	s.loadWebDoc()
 }
@@ -121,13 +136,40 @@ func buildTOC(headings []workspace.Heading) []*tocNode {
 // tocPadding is the room around the outline, in DIPs.
 const tocPadding float32 = 8
 
+// tocKey is where the outline's open state lives for a heading of the document
+// shown: by project and path first, so that two documents whose headings share
+// a name do not unfold each other.
+func (s *State) tocKey(slug string) string {
+	return "toc:" + s.sel.project + ":" + s.sel.path + ":" + slug
+}
+
+// setTOC unfolds or folds every heading of the document shown.
+func (s *State) setTOC(open bool) {
+	var walk func([]*tocNode)
+	walk = func(nodes []*tocNode) {
+		for _, n := range nodes {
+			if len(n.children) == 0 {
+				continue
+			}
+			b := open
+			s.open[s.tocKey(n.h.Slug)] = &b
+			walk(n.children)
+		}
+	}
+	walk(buildTOC(s.headings))
+}
+
 // toc builds the document's outline, whose entries scroll the body to their
 // heading. The outline scrolls both ways, and keeps its rows as wide as the
 // pane, so that a click on one lands wherever on it the pointer is.
 func (s *State) toc(c *ui.Context) {
 	t := c.Theme()
 	ui.Column(c).Fill().Padding(tocPadding).Children(func() {
-		ui.Text(c, "目录").FontSize(11).TextColor(t.TextMuted)
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
+			components.Text(c, "目录").FontSize(13).TextColor(t.TextMuted)
+			ui.Spacer(c)
+			s.tocActions(c)
+		})
 		if len(s.headings) == 0 {
 			return
 		}
@@ -145,11 +187,35 @@ func (s *State) toc(c *ui.Context) {
 	})
 }
 
+// tocActions builds the outline's bulk actions: unfold or fold every heading of
+// the document shown, and the body's zoom. The buttons are the plain size rather
+// than the compact one: at the outline's density the compact ones read as
+// decoration.
+func (s *State) tocActions(c *ui.Context) {
+	hasHeads := len(s.headings) > 0
+	if components.IconButton(c, lucide.UnfoldVertical(), "展开全部目录", components.IconButtonPlain).
+		Disabled(!hasHeads).Clicked() {
+		s.setTOC(true)
+	}
+	if components.IconButton(c, lucide.FoldVertical(), "折叠全部目录", components.IconButtonPlain).
+		Disabled(!hasHeads).Clicked() {
+		s.setTOC(false)
+	}
+	t := c.Theme()
+	if components.IconButton(c, lucide.ZoomOut(), "缩小正文", components.IconButtonPlain).Clicked() {
+		s.zoomBy(-zoomStep)
+	}
+	components.Text(c, itoa(s.zoomPercent())+"%").FontSize(11).TextColor(t.TextMuted)
+	if components.IconButton(c, lucide.ZoomIn(), "放大正文", components.IconButtonPlain).Clicked() {
+		s.zoomBy(zoomStep)
+	}
+}
+
 func (s *State) tocItems(c *ui.Context, nodes []*tocNode) {
 	for _, n := range nodes {
 		n := n
 		if len(n.children) > 0 {
-			item := ui.TreeItem(c, n.h.Text, s.openOf("toc:"+n.h.Slug), func() {
+			item := ui.TreeItem(c, n.h.Text, s.openOf(s.tocKey(n.h.Slug)), func() {
 				s.tocItems(c, n.children)
 			}).Selected(n.h.Slug == s.anchor)
 			if item.Clicked() {
@@ -181,7 +247,10 @@ func (s *State) nativePreview(c *ui.Context) {
 	// Both ways: a table, a code block or an image wider than the pane scrolls
 	// here instead of being cut at its edge. The column takes the pane's own
 	// width, so paragraphs wrap, and they re-wrap as the window resizes.
-	ui.ScrollBoth(c).TrackScroll(&s.docScroll).Fill().Padding(bodyPadding).Children(func() {
+	// The body's text scales with the zoom: every length the theme gives in
+	// ems — spacing, code, tables — follows its font size.
+	s.md.Theme = &markdown.Theme{FontSize: max(9, t.FontSize*s.zoomOrOne())}
+	ui.ScrollBoth(c).TrackScroll(s.docScroll()).Fill().Padding(bodyPadding).Children(func() {
 		ui.Column(c).Width(max(200, s.bodyPaneWidth()-2*bodyPadding-2)).Gap(12).Children(func() {
 			ui.Text(c, s.sel.path).FontSize(11).TextColor(t.TextMuted)
 			markdown.View(c, s.src, &s.md)

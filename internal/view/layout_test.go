@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/egoist/mygo/ui"
-	"github.com/oneo-me/onevra/source/shells/sidebar"
 
 	"mdpreview/internal/config"
 )
@@ -26,7 +25,7 @@ func TestBodyColumnFollowsPaneWidth(t *testing.T) {
 		width := width
 		s.SetContentWidth(func() float32 { return width })
 		_ = ui.NewTester(func(c *ui.Context) { s.Content(c) }, int(width), 700)
-		if sx := s.docScroll.MaxX; sx != 0 {
+		if sx := s.docScroll().MaxX; sx != 0 {
 			t.Errorf("width %v: MaxX = %v, want 0: the text wrapped instead of overflowing", width, sx)
 		}
 		want := width - s.tocW
@@ -45,7 +44,7 @@ func TestModeToggleSitsWithTheDocumentName(t *testing.T) {
 	s.Refresh()
 	s.selectDoc("notes/a.md")
 
-	tt := ui.NewTester(func(c *ui.Context) { s.ContentTitle(c) }, 900, 40)
+	tt := ui.NewTester(func(c *ui.Context) { s.titleRow(c) }, 900, 40)
 	for _, want := range []string{"alpha/notes/a.md", "原生", "WebView"} {
 		if !tt.HasText(want) {
 			t.Errorf("title texts = %q, want %q", tt.Texts(), want)
@@ -131,7 +130,7 @@ func TestModeToggleIsOneSegmentedControl(t *testing.T) {
 	s.Refresh()
 	s.selectDoc("notes/a.md")
 
-	tt := ui.NewTester(func(c *ui.Context) { s.ContentTitle(c) }, 900, 48)
+	tt := ui.NewTester(func(c *ui.Context) { s.titleRow(c) }, 900, 40)
 	if tt.HasText("渲染方式：原生") {
 		t.Errorf("texts = %q, want no per-segment label: the segmented control names itself", tt.Texts())
 	}
@@ -159,7 +158,7 @@ func TestTitleFitsNarrowWindow(t *testing.T) {
 	s.Refresh()
 	s.selectDoc(doc)
 
-	build := func(c *ui.Context) { s.ContentTitle(c) }
+	build := func(c *ui.Context) { s.titleRow(c) }
 	wide := ui.NewTester(build, 900, 48)
 	natural, ok := wide.Find("WebView")
 	if !ok {
@@ -192,7 +191,7 @@ func TestTitleCopiesTheDocumentPath(t *testing.T) {
 	sys := &fakeSystem{}
 	s.SetSystem(sys)
 
-	tt := ui.NewTester(func(c *ui.Context) { s.ContentTitle(c) }, 900, 48)
+	tt := ui.NewTester(func(c *ui.Context) { s.titleRow(c) }, 900, 40)
 	if err := tt.Click("复制文档路径"); err != nil {
 		t.Fatalf("Click: %v", err)
 	}
@@ -226,36 +225,183 @@ func TestTOCScrollSurvivesAReloadButNotADocumentChange(t *testing.T) {
 	}
 }
 
-// TestTitleSitsInsideTheHeaderSlot pins the title bar to the room the shell
-// gives it: the shell pads its header by 6 DIP top and bottom, clips what
-// overflows, and the mode switch must stay inside that slot rather than being
-// cut by it.
-func TestTitleSitsInsideTheHeaderSlot(t *testing.T) {
+// TestTitleSitsInsideItsRow pins the title row to the room the page gives it:
+// the row is titleRowHeight tall, and the mode switch must sit inside it rather
+// than being cut by it.
+func TestTitleSitsInsideItsRow(t *testing.T) {
 	s, root := newState(t)
 	writeDoc(t, root, "a.md", "# A\n")
 	s.Refresh()
 	s.selectDoc("a.md")
 
-	const pad float32 = 6
-	var header, slotTop, slotBottom float32
-	tt := ui.NewTester(func(c *ui.Context) {
-		header = sidebar.HeaderHeight(c)
-		slotTop, slotBottom = pad, header-pad
-		ui.Row(c).Height(header).Padding(pad, 8).Children(func() {
-			ui.Row(c).Grow(1).MinWidth(0).FillHeight().Clip().Children(func() {
-				s.ContentTitle(c)
-			})
-		})
-	}, 900, 48)
-
+	tt := ui.NewTester(func(c *ui.Context) { s.titleRow(c) }, 900, 40)
 	for _, label := range []string{"原生", "WebView"} {
 		rect, ok := tt.Find(label)
 		if !ok {
 			t.Fatalf("texts = %q, want %q", tt.Texts(), label)
 		}
-		if rect.Y < slotTop+6 || rect.Y+rect.H > slotBottom-6 {
-			t.Errorf("%q shows at %v, outside the header's slot %v..%v",
-				label, rect, slotTop+6, slotBottom-6)
+		if rect.Y < 0 || rect.Y+rect.H > titleRowHeight {
+			t.Errorf("%q shows at %v, outside the row 0..%v", label, rect, titleRowHeight)
 		}
+	}
+}
+
+// TestExpandAllOnlyTouchesTheCurrentDocument pins the outline's two bulk
+// actions: expanding every heading of the document shown unfolds its outline,
+// and not another document's headings of the same name.
+func TestExpandAllOnlyTouchesTheCurrentDocument(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", "# 总览\n\n## 范围\n\n### 细节\n")
+	writeDoc(t, root, "b.md", "# 总览\n\n## 范围\n\n### 细节\n")
+	s.Refresh()
+	s.selectDoc("a.md")
+	s.selectDoc("b.md") // b.md shows; a.md keeps its own open state
+
+	tt := ui.NewTester(func(c *ui.Context) { s.toc(c) }, 240, 400)
+	if err := tt.Click("折叠全部目录"); err != nil {
+		t.Fatalf("Click collapse: %v", err)
+	}
+	tt.Frame()
+	if tt.HasText("范围") {
+		t.Errorf("outline texts = %q, want only the top level after folding all", tt.Texts())
+	}
+	if err := tt.Click("展开全部目录"); err != nil {
+		t.Fatalf("Click expand: %v", err)
+	}
+	tt.Frame()
+	for _, want := range []string{"范围", "细节"} {
+		if !tt.HasText(want) {
+			t.Errorf("outline texts = %q, want %q after expanding all", tt.Texts(), want)
+		}
+	}
+
+	s.selectDoc("a.md")
+	tt.Frame()
+	if !tt.HasText("范围") {
+		t.Errorf("outline texts = %q, want a.md untouched by b.md's bulk action", tt.Texts())
+	}
+}
+
+// TestCollapseAllFoldsTheOutline pins the other direction: folding every
+// heading leaves only the top level, and a click still jumps.
+func TestCollapseAllFoldsTheOutline(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", "# 一\n\n## 二\n\n### 三\n")
+	s.Refresh()
+	s.selectDoc("a.md")
+
+	tt := ui.NewTester(func(c *ui.Context) { s.toc(c) }, 240, 400)
+	if err := tt.Click("折叠全部目录"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	tt.Frame()
+	if tt.HasText("二") || tt.HasText("三") {
+		t.Errorf("outline texts = %q, want only the top level", tt.Texts())
+	}
+	if err := tt.Click("一"); err != nil {
+		t.Fatalf("Click heading: %v", err)
+	}
+	if s.anchor != "一" {
+		t.Errorf("anchor = %q, want the top-level heading", s.anchor)
+	}
+}
+
+// TestTOCBulkActionsAreDisabledWithoutHeadings pins that the two bulk actions
+// do nothing on a document without headings, rather than erroring.
+func TestTOCBulkActionsAreDisabledWithoutHeadings(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "plain.md", "没有标题的正文\n")
+	s.Refresh()
+	s.selectDoc("plain.md")
+
+	tt := ui.NewTester(func(c *ui.Context) { s.toc(c) }, 240, 400)
+	for _, label := range []string{"展开全部目录", "折叠全部目录"} {
+		if _, ok := tt.Find(label); !ok {
+			t.Errorf("outline texts = %q, want %q", tt.Texts(), label)
+		}
+	}
+	s.setTOC(true)
+	if len(s.open) != 0 {
+		t.Errorf("open = %v, want nothing written without headings", s.open)
+	}
+}
+
+// TestZoomClampsAndResets pins the body's zoom: it steps both ways inside its
+// range, and Cmd+0 brings it back.
+func TestZoomClampsAndResets(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", "# A\n\n正文\n")
+	s.Refresh()
+	s.selectDoc("a.md")
+
+	if got := s.zoomPercent(); got != 100 {
+		t.Errorf("zoom = %d%%, want 100%%", got)
+	}
+	for range 30 {
+		s.zoomBy(zoomStep)
+	}
+	if got := s.zoom; got != zoomMax {
+		t.Errorf("zoom = %v, want the %v ceiling", got, zoomMax)
+	}
+	for range 30 {
+		s.zoomBy(-zoomStep)
+	}
+	if got := s.zoom; got != zoomMin {
+		t.Errorf("zoom = %v, want the %v floor", got, zoomMin)
+	}
+
+	tt := ui.NewTester(func(c *ui.Context) { s.Content(c) }, 900, 700)
+	tt.Key(ui.Cmd, ui.KeyEqual)
+	tt.Frame()
+	if s.zoom <= zoomMin {
+		t.Errorf("zoom = %v, want the shortcut to step up", s.zoom)
+	}
+	tt.Key(ui.Cmd, ui.Key0)
+	tt.Frame()
+	if got := s.zoomPercent(); got != 100 {
+		t.Errorf("zoom = %d%%, want 100%% after reset", got)
+	}
+}
+
+// TestZoomReachesTheNativeBody pins that the zoom changes the body text size
+// the native view is given, not just a number in the state.
+func TestZoomReachesTheNativeBody(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", "# A\n\n正文标记\n")
+	s.Refresh()
+	s.selectDoc("a.md")
+
+	_ = ui.NewTester(func(c *ui.Context) { s.nativePreview(c) }, 800, 600)
+	base := s.md.Theme.FontSize
+	s.zoomBy(zoomStep)
+	tt := ui.NewTester(func(c *ui.Context) { s.nativePreview(c) }, 800, 600)
+	tt.Frame()
+	if got := s.md.Theme.FontSize; got <= base {
+		t.Errorf("body font = %v, want more than %v after zooming in", got, base)
+	}
+	if !tt.HasText("正文标记") {
+		t.Errorf("texts = %q, want the paragraph", tt.Texts())
+	}
+}
+
+// TestZoomButtonsSitWithTheOutline pins the two zoom buttons and the percentage
+// in the outline's header, and that a click changes the zoom.
+func TestZoomButtonsSitWithTheOutline(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", "# A\n\n正文\n")
+	s.Refresh()
+	s.selectDoc("a.md")
+
+	tt := ui.NewTester(func(c *ui.Context) { s.toc(c) }, 240, 400)
+	for _, want := range []string{"缩小正文", "放大正文", "100%"} {
+		if !tt.HasText(want) {
+			t.Errorf("outline texts = %q, want %q", tt.Texts(), want)
+		}
+	}
+	if err := tt.Click("放大正文"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if got := s.zoomPercent(); got != 110 {
+		t.Errorf("zoom = %d%%, want 110%%", got)
 	}
 }

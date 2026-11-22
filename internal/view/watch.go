@@ -65,6 +65,11 @@ func (s *State) stopWatch(id string) {
 // inbox.
 func (s *State) applyChanges(id string, set watch.ChangeSet) {
 	for _, change := range set.Docs {
+		// A tab pointing at the old name would show nothing: follow the file
+		// wherever it went, and forget it if it went away.
+		if change.Old != "" {
+			s.renameTab(docSel{project: id, path: change.Old}, docSel{project: id, path: change.Path})
+		}
 		switch {
 		case change.Old != "" && id == s.sel.project && change.Old == s.sel.path:
 			// The document the window shows was renamed: follow it.
@@ -72,12 +77,15 @@ func (s *State) applyChanges(id string, set watch.ChangeSet) {
 			s.onDocChanged()
 		case id == s.sel.project && change.Path == s.sel.path:
 			if change.Op == mygo.FileRemove {
-				s.sel = docSel{}
-				s.status = "文件已被删除"
+				// The document shown went away: its neighbours take over.
+				s.closeTab(s.sel)
 				s.reloadTree()
+				s.status = "文件已被删除"
 				continue
 			}
 			s.onDocChanged()
+		case change.Op == mygo.FileRemove:
+			s.dropTab(docSel{project: id, path: change.Path})
 		}
 	}
 	if set.TreeDirty {

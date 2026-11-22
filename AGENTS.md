@@ -26,10 +26,10 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
 | --- | --- |
 | `main.go` | 组装：配置 → workspace → 窗口 → 文件监听 → MCP |
 | `internal/config` | 配置读写（项目、活动项目、渲染模式、MCP），原子写 `config.json` |
-| `internal/workspace` | 扫描 / 读取 / 解析缓存 / 标题缓存 / TOC 与 slug / 搜索；`Index` 接口 |
+| `internal/workspace` | 扫描 / 读取 / 解析缓存 / 标题缓存 / TOC 与 slug / 搜索 / 正文内查找（`find.go` 的 `FindIn`）；`Index` 接口 |
 | `internal/watch` | `mygo.WatchFiles` → `ChangeSet`（新增 / 删除 / 重命名 / 写入） |
 | `internal/mcp` | `POST /mcp` JSON-RPC 2.0，四个只读工具 |
-| `internal/view` | Onevra 主题（`theme.go`）与外壳各区域：侧栏顶栏（项目面板 + 右键菜单）、树、侧栏工具栏、内容标题、预览、状态栏、MCP 设置面板；`system.go` 是桌面动作接口 |
+| `internal/view` | Onevra 主题（`theme.go`）与外壳各区域：侧栏顶栏（项目面板 + 右键菜单）、树、侧栏工具栏、标签栏（`tabs.go`，占 shell 的标题槽位）、页面第一行的路径与渲染开关（`titleRow`）、预览、状态栏、MCP 设置面板；`find.go` 是悬浮搜索与跳转，`zoom.go` 是正文缩放；`system.go` 是桌面动作接口 |
 
 依赖方向：`view → workspace`、`mcp → workspace`、`workspace → config`。
 
@@ -64,8 +64,13 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
 - **改忽略规则**：只改 `workspace.Ignored`（扫描与监听共用它），并补 `TestIgnoredRules`。
 - **改 TOC 缩进/交互**：`view/native.go` 的 `buildTOC` + `tocItems`。
 - **改渲染样式**：原生在 `markdown.Options`（`loadDoc` 里装配）；webview 在 `webview.go` 的 `docCSS`。
-- **改标题栏/侧栏**：`view.go` 里 `contentTitle`（路径 + `modeToggle`）、`leftHeader`（项目面板：点一行开/关、右键打开/复制/移除）、
-  `leftToolbar`（动作图标）、`statusBar`；shell 侧分别对应 `ContentTitle`/`LeftHeader`/`LeftToolbar` 槽位。
+- **改标签栏/标题行/侧栏**：`tabs.go` 的 `tabBarAt`（标签、⌄ 列表）挂在 shell 的 `ContentTitle` 槽位；
+  `view.go` 的 `titleRow` → `contentTitle`（路径 + 复制 + `modeToggle`）是 `Content` 的第一行；
+  `leftHeader`（项目面板：点一行开/关、右键打开/复制/移除）、`leftToolbar`（动作图标）、`statusBar` 各就各位。
+  改布局时 `View` 与 `Content` 两条拼装路径要一起改（`TestShellSlotsBuild`、`TestTabsSitAboveTheTitle`）。
+- **改正文内查找**：匹配规则只改 `workspace.FindIn`（字面子串、忽略大小写、上限 500），补 `TestFindIn*`；
+  面板与跳转在 `view/find.go`（匹配列表 / 上下文预览 / `Cmd+F` 与 `Cmd+G`）。
+- **改标签栏**：`view/tabs.go` 的 `openTab` / `closeTab` / `visibleTabs` / `tabBar`，补 `TestTabBar*` 与 `TestClosingTabs`。
 - **加桌面动作（打开目录、复制、确认）**：扩 `view.System`（`system.go`）并在测试里扩 `fakeSystem`，
   不要在 view 里直接调 `mygo.Dialog` / `mygo.Shell` / `mygo.Clipboard`：`LeftHeader` 在侧栏收起时不构建，
   应用内弹窗画不出来，测试也跑不了真实对话框。
@@ -98,11 +103,65 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
 - **文档身份是 `docSel{project, path}`**：树、正文、渲染模式表、监听都以它为准；只有一个 `path` 时两个项目里的
   `docs/a.md` 会互相串。目录折叠键是 `项目ID + ":" + 路径`，项目节点的键是 `"project:" + 项目ID`。
 - **树只在打开项目数 ≥ 2 时多一层项目名**：`fileTree` 里按 `len(s.trees)` 分叉，改布局时别让单项目也长出这层。
-- **状态栏只放提示文字**（`statusBar`，高 24）：渲染开关、路径都不在这里，它们在标题栏。
+- **状态栏只放提示文字**（`statusBar`，高 24）：渲染开关、路径都不在这里，它们在标签栏下面那一行（`titleRow`）。
+- **标题槽的 24 DIP 首部间距是 onevra 写死的**（`shells/sidebar/shell.go` 里 `titleInset = 24`，`ShellOptions`
+  没有对应字段）。本项目要 12，所以 `ContentTitle` 调 `tabBarAt(c, -12)`，只把**标签条**（不含 ⌄ 按钮）往左拉，
+  ⌄ 留在标题槽自带的右侧内边距上——整行平移会让右边多出 16 的空档（用户报过「移动太过头」）。
+  **标签条自己不加左右内边距**（留白交给标题槽，否则是双层留白）。两个常量 `titleInsetGap`（24，onevra 的）
+  与 `titleInsetWanted`（本项目的 12）在 `view.go`；用 `Translate` 而不是负 `Margin`，因为后者会改布局宽度、
+  把标签条量宽量错。onevra 升级后若新增了间距选项，改用那个选项并删掉常量。
+- **标签栏在 shell 的 `ContentTitle` 槽位**（标题栏那 48 DIP），文档路径 + 复制 + 渲染开关是 `Content` 的第一行
+  （`titleRow`，高 `titleRowHeight`）。别再把这些塞回彼此的槽位：用户要求 tab 在文件名字那一行之上；
+  `View` 与 `Content` 的拼装要保持一致（`TestTabsSitAboveTheTitle`）。
+- **标签条是横向滚动容器**（`ui.ScrollHorizontal` + `State.tabScroll`），不丢标签：`visibleTabs` 那套"挑几个显示"
+  已经删掉，`tabsWidth` 只用来判断要不要出 ⌄ 按钮。切标签后由 `revealTab` 把活动标签滚进视野：目标是**当前标签完整可见**
+  （滚到需要的位置）且**左边缘落在某个标签起点**（否则会出现「空白 + 孤零零的 ✕」），够不着时退到 `MaxX`，两端用
+  `tabFade` 渐隐。滚动容器的 `MaxX` **慢一帧**：刚打开的标签还没撑开它，所以
+  `revealTab` 返回 "settled" 表示这个位置真的落得下，落不下就 `tabPending` 下一帧再要一次
+  （否则会差一个标签、选中的那个永远切着边）；用户滚轮一动就清掉 `tabPending`，让位给用户。
+  它必须**在构建滚动容器之前**
+  设 `tabScroll.X`（容器构建后再设会被忽略），并且首帧（`Bounds` 为 0 / `MaxX` 为 0）不要记 `tabShown`，否则永远不滚。
+- **「全部已打开文件」列表给滚动条留了右边距**（`Padding(0, Space(3), 0, 0)`）：列表的竖向滚动条压在最右边，
+  不给留出来时关标签的 ✕ 会被它盖住（用户报过点不到）。
+- **标签条的滚动条只有 2 DIP**：`ScrollbarStyle{ThumbWidth: 2, TrackWidth: 2}`。默认是 `拇指 + 6` 的命中区，
+  压在标签底部会吃掉点击（用户报过误触）。改这里要同时想清楚命中区。
+- **鼠标滚轮滚动标签条**要自己接：mygo 的滚动容器只把 **Shift**+滚轮转成横向，普通滚轮会漏到外层去滚页面。
+  所以滚动容器上挂了 `HandleInput`：`InputScroll` 且没按 Shift 时 `tabScroll.X -= ev.DY` 并返回 true
+  （`DY` 为负是向下滚，与 mygo 内部 `scrollY -= dy` 一致）。
+- **标签宽度要按「上一帧的槽宽」算，不是 `windowWidth()`**：shell 在标题栏里给窗口按钮留了位置，
+  用内容宽度算会让最后几个标签和溢出按钮压到窗口按钮底下。`tabBar` 用 `row.Bounds().W`（首帧回落到
+  `windowWidth()`），`tabWidth` / `tabTextWidth` / `fitText` 三者共用同一套尺寸，名字超长就省略，
+  具体宽度写死在标签行上（`Width` + `Clip`）——否则文字会画出自己的框、和邻居叠在一起。
+- **标签与滚动位置都以 `docSel` 为键**（`State.tabs` / `State.scrolls`）：只改路径不改项目会串到另一个项目里的同名文件。
+- **原生搜索只能滚到块**：`markdown.Options.AnchorBlock` + `Anchor` 是唯一的块级滚动入口，`find:<块号>` 前缀是搜索在用，
+  其他名字必须返回 `-1` 让 mygo 回落到标题 slug，否则目录点击会失效。
+- **标签栏宽度是算出来的**（`tabWidth` + `visibleTabs`）：可见集合以活动标签为锚点、先右后左装满；不溢出时不预留
+  溢出按钮的宽度。改布局要同步 `Content` 与 `View` 两处。
+- **`Cmd+F` 的 Escape 有先后**：有查询先清空、空查询才关面板（`SearchField` 自己也会清空，所以顺序不能交给它）。
 - **测试看不到 shell**：`sidebar.NewShell` 会真的建窗口，测试里不能用。`View` 是给测试用的并排近似布局，
   shell 的各槽位各自导出（`Left`/`LeftHeader`/`LeftToolbar`/`ContentTitle`/`Content`），
   `TestShellSlotsBuild` 逐个构建它们——改布局时保持这两条路径同步。
 
+## 文档回写规则（硬规则）
+
+1. **功能改了，文档跟着改，在同一次提交里**。用户可见的行为一变，就同时改：
+   `README.md`（用法 / 快捷键 / 已知限制 / 结构）、`AGENTS.md`（结构表、坑、改动指引），
+   以及相应 `docs/superpowers/` 下的规格或计划。实现细节与踩过的坑写进 AGENTS.md，不要写进 README。
+2. **计划执行完之后补的功能，也要回写**。执行一份计划的过程中或之后追加的东西（用户新提的需求、
+   执行中改的主意），除了当次实现之外，必须：
+   - 追加到该计划末尾的「执行后的修订」小节（计划是**历史记录**：只追加，不改写原来的任务步骤）；
+   - 若该计划的规格（`docs/superpowers/specs/`）里有被推翻的目标或非目标，同步改那份规格；
+   - 若补的功能超出原计划的「目标」，按第 3 条进 CHANGELOG。
+3. **功能变更在合适的时机写进 `CHANGELOG.md`**：
+   - 「合适的时机」= 行为定稿、测试全绿、就在那一次提交里；不要攒到最后，也不要等发版才回想。
+   - 落在四个小节之一：**新增** / **变更** / **修复** / **已知限制**（用户视角的一句话，不写实现细节）。
+   - 未发版时写在「未发布」小节；发版时把「未发布」改成版本号 + 日期，再新开一个空的「未发布」。
+   - 已知限制变了（例如某个限制消失了）要一起改掉，不能只往「新增」里加。
+4. `CHANGELOG.md` 全是“用户会看到什么”，不给内部重构、重命名、测试补强单开条目（除非它们改变了行为）；
+   内部的事写进 AGENTS.md 的坑与指引。
+
 ## 提交
 
-中文提交信息，前缀 `feat:` / `fix:` / `test:` / `docs:` / `style:`。每个行为改动都先有失败的测试。
+中文提交信息，前缀 `feat:` / `fix:` / `test:` / `docs:` / `style:`。每个行为改动都先有失败的测试；
+文档回写（README / AGENTS / CHANGELOG / 计划与规格）**并入同一个提交**，不单开一次“补文档”。
+提交前 `go vet ./... && gofmt -l . && go test ./...` 必须干净。

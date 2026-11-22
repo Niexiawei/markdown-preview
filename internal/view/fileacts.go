@@ -97,7 +97,17 @@ func (s *State) absOf(tr projectTree, n *workspace.Node) (string, error) {
 // handleShortcuts copies the document shown for the platform's Cmd+C, which
 // the title bar's button does too.
 func (s *State) handleShortcuts(c *ui.Context) {
-	if c.Shortcut(ui.Cmd, ui.KeyC) {
+	s.findShortcuts(c)
+	switch {
+	case c.Shortcut(ui.Cmd, ui.KeyC):
 		s.copyDocPath()
+	case c.Shortcut(ui.Cmd, ui.KeyW):
+		s.closeTab(s.sel)
+	case c.Shortcut(ui.Cmd, ui.KeyEqual):
+		s.zoomBy(zoomStep)
+	case c.Shortcut(ui.Cmd, ui.KeyMinus):
+		s.zoomBy(-zoomStep)
+	case c.Shortcut(ui.Cmd, ui.Key0):
+		s.resetZoom()
 	}
 }

@@ -48,9 +48,37 @@ type State struct {
 	// open is the open state of each directory of the trees, by the key
 	// "projectID:path": directories start open, and a click on one's arrow
 	// writes here, so that a reloaded tree shows what the user left open.
-	open   map[string]*bool
-	sel    docSel
-	status string
+	open map[string]*bool
+	// tabs are the documents the window has open, in the order they were
+	// opened: the tab bar shows them, and sel is always one of them.
+	tabs []docSel
+	// scrolls keeps each tab's body scroll position, so that switching back
+	// shows the document where the user left it.
+	scrolls map[docSel]*ui.ScrollState
+	sel     docSel
+	status  string
+	// tabsOpen is whether the panel listing every tab shows.
+	tabsOpen bool
+	// tabScroll is how far the strip of tabs scrolls sideways; tabShown is the
+	// tab it was last scrolled to show, and tabView the room it had as it did.
+	tabScroll ui.ScrollState
+	tabShown  docSel
+	tabView   float32
+	// tabTotal is how wide all the tabs are, as the strip was last scrolled to
+	// show one: a tab opened or closed changes it, and the place is asked for
+	// again.
+	tabTotal float32
+	// tabPending says the strip has yet to take the place asked for, because it
+	// had not laid the tabs out: the ask is repeated until it does.
+	tabPending bool
+	// tabAsk is the place the strip was last asked to slide to.
+	tabAsk float32
+	// zoom is how much larger or smaller the body's text shows than the
+	// theme's: one while it was never changed.
+	zoom float32
+	// find is the search over the document shown, which the floating panel
+	// shows.
+	find findState
 
 	// The document shown: its source, its parse, the outline built from it,
 	// and what the native markdown view shows it with.
@@ -97,8 +125,6 @@ type State struct {
 
 	sidebarW float32
 	tocW     float32
-	// docScroll is how far the document's body is scrolled, both ways.
-	docScroll ui.ScrollState
 	// tocScroll is how far the document's outline scrolls, both ways.
 	tocScroll ui.ScrollState
 	// contentWidth, when set, says how wide the window's content is on either
@@ -118,6 +144,7 @@ func New(ws *workspace.Workspace, cfg config.Config, dir string) *State {
 		cfg:        cfg,
 		activeID:   cfg.ActiveID,
 		open:       map[string]*bool{},
+		scrolls:    map[docSel]*ui.ScrollState{},
 		gone:       map[string]bool{},
 		watches:    map[string]context.CancelFunc{},
 		renderMode: map[docSel]config.RenderMode{},
@@ -221,11 +248,7 @@ func (s *State) ToggleProject(id string) {
 		s.startWatch(p.ID, p.Root)
 	} else {
 		s.stopWatch(p.ID)
-		if s.sel.project == id {
-			s.sel = docSel{}
-			s.status = ""
-			s.onDocChanged()
-		}
+		s.dropTabsOf(id)
 	}
 	s.activeID = s.cfg.ActiveID
 	s.ws.SetConfig(s.cfg)
@@ -339,9 +362,7 @@ func (s *State) removeProject(id string) {
 	s.stopWatch(id)
 	s.cfg.RemoveProject(id)
 	s.activeID = s.cfg.ActiveID
-	if s.sel.project == id {
-		s.sel = docSel{}
-	}
+	s.dropTabsOf(id)
 	delete(s.gone, id)
 	s.ws.SetConfig(s.cfg)
 	s.save()
@@ -376,19 +397,27 @@ func (s *State) reloadTree() {
 		s.status = "项目目录不可用：" + p.Root
 		s.cfg.RemoveProject(p.ID)
 		s.activeID = s.cfg.ActiveID
-		if s.sel.project == p.ID {
-			s.sel = docSel{}
-		}
+		s.dropTabsOf(p.ID)
 		s.ws.SetConfig(s.cfg)
 		s.save()
 	}
 	if s.sel.empty() {
 		return
 	}
+	// A tab pointing at a file that is no longer there shows nothing: drop
+	// those the window does not show first, then the one it does, so that its
+	// neighbour in the bar takes over.
+	for _, tab := range append([]docSel(nil), s.tabs...) {
+		if tab == s.sel {
+			continue
+		}
+		if _, err := s.ws.Stat(tab.project, tab.path); err != nil {
+			s.dropTab(tab)
+		}
+	}
 	if _, err := s.ws.Stat(s.sel.project, s.sel.path); err != nil {
-		s.sel = docSel{}
+		s.closeTab(s.sel)
 		s.status = "文件已被删除"
-		s.onDocChanged()
 	}
 }
 
@@ -403,22 +432,32 @@ func (s *State) selectDoc(rel string) {
 
 // selectDocIn shows a document of the project with projectID, which becomes
 // the active project: the MCP tools read with it when no project is named.
+// The document gets a tab, as every document the window shows does.
 func (s *State) selectDocIn(projectID, rel string) {
 	sel := docSel{project: projectID, path: rel}
 	if sel == s.sel {
 		return
 	}
-	s.sel = sel
-	s.status = ""
-	// Another document's outline starts at its top, not where the last
-	// one's scroll was left. A reload of the same document keeps it.
-	s.tocScroll.X, s.tocScroll.Y = 0, 0
 	if projectID != "" && s.cfg.SetActive(projectID) {
 		s.activeID = projectID
 		s.ws.SetConfig(s.cfg)
 		s.save()
 	}
-	s.onDocChanged()
+	s.openTab(sel)
+}
+
+// docScroll is how far the document shown is scrolled, both ways: each tab
+// keeps its own, so that switching back does not jump to the top.
+func (s *State) docScroll() *ui.ScrollState {
+	if st, ok := s.scrolls[s.sel]; ok {
+		return st
+	}
+	if s.scrolls == nil {
+		s.scrolls = map[docSel]*ui.ScrollState{}
+	}
+	st := &ui.ScrollState{}
+	s.scrolls[s.sel] = st
+	return st
 }
 
 // onDocChanged reloads the parse and the outline of the document shown.

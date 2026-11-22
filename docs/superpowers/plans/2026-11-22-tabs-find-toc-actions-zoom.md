@@ -1798,3 +1798,59 @@ git commit -m "docs: 记录标签页、目录动作与悬浮搜索的用法与�
 3. **缩放要不要记住？** 本计划只在会话内（D10）。若要，加 `cfg.Zoom float32` 并在 `normalize` 里夹到 0.8–2.0。
 4. **搜索要不要正则 / 全词 / 项目内全文件搜？** 本计划只有「当前文档、字面子串、忽略大小写」（D11）。项目内全文件搜可以复用既有的 `workspace.Search`，但那是另一个面板（结果跨文件），建议下一期。
 5. **原生模式正文高亮**：本计划接受「不高亮」（D15）。若必须高亮，需要 `markdown.Options.Block` 自绘段落，约 200 行、且要处理表格/代码块/嵌套列表，风险明显更高——请确认是否值得。
+
+
+---
+
+## 执行后的修订（用户 2026-11-22 实机反馈，已实现）
+
+1. **标签栏与标题行的顺序反过来**：标签栏改由 shell 的 `ContentTitle` 槽位（标题栏 48 DIP）构建，
+   原来在该槽位的「路径 + 复制 + 渲染开关」下沉成 `Content` 的第一行（`titleRow`，`titleRowHeight`）。
+   屏幕顺序变成：标签 → 路径与渲染开关 → 目录/正文。`View` 的测试拼装同步。搜索面板的 `Top`
+   也随之从 `HeaderHeight + tabBarHeight` 改成 `HeaderHeight + titleRowHeight`。
+   回归测试：`TestTabsSitAboveTheTitle`、`TestTitleSitsInsideItsRow`、`TestShellSlotsBuild`。
+2. **标签不再重叠、也不再压到窗口按钮**：每个标签固定宽度（`tabWidth`）并 `Clip`，名字用
+   `fitText` 按 `tabTextWidth` 截断；标签栏的可用宽度取**上一帧自己的 `Bounds().W`**（首帧回落
+   `windowWidth()`），因为 shell 在标题栏右侧给窗口按钮留了位置。回归测试：
+   `TestTabBarFitsTheRoomItIsGiven`、`TestTabBarKeepsActiveTabVisible`。
+3. **「全部已打开文件」列表左对齐**：行内改用一层 `Grow(1)` 的 `ui.Row` 顶满按钮宽度，
+   图标与文件名从左边缘排（按钮默认居中）。
+4. **目录工具条放大**：`目录` 13px，四个动作从 `IconButtonCompact` 换成 `IconButtonPlain`（32 DIP 方块、
+   20 DIP 图形），比例文字 11px。
+
+5. **标签条改为横向滚动**（用户 2026-11-22 追加：「标签可横向滚，⌄ 只作为补充」）：标签不再按可视宽度挑选，
+   全部排进 `ui.ScrollHorizontal`（`State.tabScroll`），`tabsWidth` 只决定 ⌄ 按钮出不出现；
+   `revealTab` 在构建前把活动标签滚进视野，首帧（`Bounds`/`MaxX` 未知）不记 `tabShown`。
+   回归测试：`TestTabBarScrollsAndKeepsTheListInsideItsSlot`、`TestTabScrollFollowsTheTabShown`。
+
+6. **标签条的三个小修**（用户 2026-11-22 实机反馈）：⌄ 按钮从 `IconButtonCompact` 换成 `IconButtonPlain`（32 DIP），
+   预留宽度同源（`tabOverflow`）；`revealTab` 改成**停在某个标签的起点**（原来右对齐会切出「空白 + 孤零零的 ✕」）；
+   滚动容器挂 `HandleInput` 把普通滚轮转成横向滚动（mygo 只认 Shift+滚轮）。
+   回归测试：`TestTabStripRestsOnATabStart`、`TestTabStripScrollsWithTheWheel`。
+
+7. **标题槽首部间距 24 → 8**（用户 2026-11-22）：onevra 的 sidebar 把 `titleInset` 写死成 24，
+   `ShellOptions` 不暴露；`ContentTitle` 里整行 `Translate(titleInsetWanted-titleInsetGap, 0)` 抵掉 16。
+   回归测试：`TestTabsTuckUnderTheSidebarHeader`（同时验证拉回来后点击仍落在标签上）。
+
+8. **去掉标签条自身的左右内边距**（用户 2026-11-22）：留白由 shell 的标题槽 padding 提供，
+   `tabBar` 不再 `Padding(0, t.Space(1))`，可用宽度就是这一行的整宽（`Bounds().W`，不再减 8）。
+   `TestTabsTuckUnderTheSidebarHeader` 收紧成「第一个标签正好起于 `titleInsetWanted`」。
+
+9. **标签条的停留位置、细滚动条、标题槽间距**（用户 2026-11-22 实机反馈）：
+   `revealTab` 改成「当前标签完整可见 + 左边缘落在标签起点（够不着时退到 `MaxX`）」，两端加 `tabFade` 渐隐；
+   滚动条用 `ScrollbarStyle{ThumbWidth: 2, TrackWidth: 2, Flush: true}`（默认 `拇指+6` 的命中区压在标签底部，
+   会吃掉点击）；`titleInsetWanted` 由 8 调到 12（8 看起来贴边），并且只把**标签条**往左拉，⌄ 按钮留在标题槽的
+   右侧内边距上（之前整行平移，右边多出 16 的空档）。
+   回归测试：`TestTabStripShowsTheWholeTabShown`、`TestTabStripFollowsTheRoomItHas`、`TestTabsTuckUnderTheSidebarHeader`。
+
+10. **「选中的标签完整可见」的两个真 bug**（用户 2026-11-22 再次反馈）：滚动容器的 `MaxX` 慢一帧，
+    刚打开的标签还没撑开它，原来把位置 clamp 到旧 `MaxX` 会**差整整一个标签**，而且记成"已滚到"后再不重试。
+    现在 `revealTab` 返回是否 settled，未 settled 时置 `tabPending` 下一帧重试；`tabTotal` 参与记忆
+    （关掉前面的标签会挪动当前标签）；滚轮一动清掉 `tabPending`。
+    另外「全部已打开文件」列表右侧留 `Space(3)` 给竖向滚动条，避免它盖住 ✕。
+    回归测试：`TestTabsOpenedOneByOneStayWhole`、`TestTabsListKeepsClearOfItsBar`。
+
+11. **切换标签时标签条滑动到位**（用户 2026-11-22 追加）：原来直接写 `tabScroll.X`，视觉上是瞬间跳位；
+    改成 `ScrollState.ScrollTo(x, y, ui.Smooth)`，并用 `tabAsk` 记住已请求的位置去重；范围还没算好
+    （`MaxX` 慢一帧）时不发起动画，下一帧再滑；系统「减少动态效果」时 mygo 直接到位。
+    回归测试：`TestTabsSlideToTheTabShown`。

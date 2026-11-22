@@ -26,6 +26,7 @@ func (s *State) preview(c *ui.Context) {
 	}
 	ui.Split(c, &s.tocW, func() { s.toc(c) }, body).
 		Grow(1).SplitReset(240)
+	s.findPanel(c)
 }
 
 // empty centers one line of text in a pane.
