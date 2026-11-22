@@ -1831,3 +1831,7 @@ git commit -m "docs: 记录标签页、目录动作与悬浮搜索的用法与�
 7. **标题槽首部间距 24 → 8**（用户 2026-11-22）：onevra 的 sidebar 把 `titleInset` 写死成 24，
    `ShellOptions` 不暴露；`ContentTitle` 里整行 `Translate(titleInsetWanted-titleInsetGap, 0)` 抵掉 16。
    回归测试：`TestTabsTuckUnderTheSidebarHeader`（同时验证拉回来后点击仍落在标签上）。
+
+8. **去掉标签条自身的左右内边距**（用户 2026-11-22）：留白由 shell 的标题槽 padding 提供，
+   `tabBar` 不再 `Padding(0, t.Space(1))`，可用宽度就是这一行的整宽（`Bounds().W`，不再减 8）。
+   `TestTabsTuckUnderTheSidebarHeader` 收紧成「第一个标签正好起于 `titleInsetWanted`」。

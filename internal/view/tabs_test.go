@@ -568,8 +568,8 @@ func TestTabsTuckUnderTheSidebarHeader(t *testing.T) {
 	if got, want := plain.X-pulled.X, titleInsetGap-titleInsetWanted; got != want {
 		t.Errorf("the tabs sit %v left of where the shell puts them, want %v", got, want)
 	}
-	if pulled.X > titleInsetWanted+8 {
-		t.Errorf("the first tab starts at %v, want it near the %v the app asks for", pulled.X, titleInsetWanted)
+	if pulled.X != titleInsetWanted {
+		t.Errorf("the first tab starts at %v, want the %v the app asks for: the room around the tabs is the shell's", pulled.X, titleInsetWanted)
 	}
 
 	// Pulling the row keeps the tabs under the pointer: the second one still

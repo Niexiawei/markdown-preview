@@ -249,12 +249,14 @@ func (s *State) tabBar(c *ui.Context) {
 	// The bar's own width, from the frame before: the shell pads its header for
 	// the window's caption buttons, so the content's width is not the room the
 	// bar has, and a strip laid out for more room than it has runs under them.
+	// The room is the bar's whole box: the padding around the tabs is the
+	// shell's (TitleInset), not this row's.
 	known := row.Bounds().W > 0
-	avail := row.Bounds().W - 2*t.Space(1)
+	avail := row.Bounds().W
 	if !known {
 		// The first frame has no box yet: the content's width is the closest
 		// guess, and the frame after measures the bar itself.
-		avail = s.windowWidth() - 2*t.Space(1)
+		avail = s.windowWidth()
 	}
 	widths := make([]float32, len(s.tabs))
 	for i, tab := range s.tabs {
@@ -270,7 +272,7 @@ func (s *State) tabBar(c *ui.Context) {
 	if known {
 		s.revealTab(c, widths, strip)
 	}
-	row.Padding(0, t.Space(1)).Children(func() {
+	row.Children(func() {
 		// The strip scrolls sideways rather than dropping tabs: the list beside
 		// it is a shortcut to a tab, not the only way to reach one.
 		ui.ScrollHorizontal(c).Grow(1).MinWidth(0).TrackScroll(&s.tabScroll).
