@@ -6,12 +6,23 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 
 	"mdpreview/internal/watch"
 )
+
+// settleStrip lets the strip's glide finish, as the app's own frames do while
+// it slides: a frame, then the clock, until it rests.
+func settleStrip(tt *ui.Tester) {
+	for range 40 {
+		tt.Frame()
+		tt.Advance(50 * time.Millisecond)
+	}
+	tt.Frame()
+}
 
 // TestOpeningDocsMakesTabs pins that every document the window shows becomes a
 // tab, in the order it was opened, and that opening one already open only
@@ -401,8 +412,7 @@ func TestTabBarScrollsAndKeepsTheListInsideItsSlot(t *testing.T) {
 	tt := ui.NewTester(func(c *ui.Context) {
 		ui.Row(c).Width(slot).Height(48).Children(func() { s.tabBar(c) })
 	}, int(slot), 48)
-	tt.Frame()
-	tt.Frame()
+	settleStrip(tt)
 
 	if s.tabScroll.MaxX <= 0 {
 		t.Errorf("MaxX = %v, want a strip that scrolls sideways", s.tabScroll.MaxX)
@@ -441,16 +451,14 @@ func TestTabScrollFollowsTheTabShown(t *testing.T) {
 
 	s.selectDoc(names[9])
 	tt := ui.NewTester(build, 600, 48)
-	tt.Frame()
-	tt.Frame()
+	settleStrip(tt)
 	if s.tabScroll.X <= 0 {
 		t.Errorf("X = %v, want the strip scrolled to the tenth tab", s.tabScroll.X)
 	}
 
 	s.selectDoc(names[0])
-	tt.Frame()
-	tt.Frame()
-	if got := s.tabScroll.X; got != 0 {
+	settleStrip(tt)
+	if got := s.tabScroll.X; got > 0.5 {
 		t.Errorf("X = %v, want the strip back at its start for the first tab", got)
 	}
 }
@@ -475,8 +483,7 @@ func TestTabStripScrollsWithTheWheel(t *testing.T) {
 		ui.Row(c).Width(600).Height(48).Children(func() { s.tabBar(c) })
 	}
 	tt := ui.NewTester(build, 600, 48)
-	tt.Frame()
-	tt.Frame()
+	settleStrip(tt)
 	if s.tabScroll.X != 0 {
 		t.Fatalf("X = %v, want the strip at its start", s.tabScroll.X)
 	}
@@ -512,13 +519,11 @@ func TestTabStripFollowsTheRoomItHas(t *testing.T) {
 		}
 	}
 	wide := ui.NewTester(build(900), 900, 48)
-	wide.Frame()
-	wide.Frame()
+	settleStrip(wide)
 	wideX := s.tabScroll.X
 
 	narrow := ui.NewTester(build(520), 520, 48)
-	narrow.Frame()
-	narrow.Frame()
+	settleStrip(narrow)
 	if s.tabScroll.X <= wideX {
 		t.Errorf("X = %v in the narrow strip, want more than the %v it had room for", s.tabScroll.X, wideX)
 	}
@@ -583,8 +588,7 @@ func TestTabStripShowsTheWholeTabShown(t *testing.T) {
 	for i, name := range names {
 		s.selectDoc(name)
 		tt := ui.NewTester(build, 600, 48)
-		tt.Frame()
-		tt.Frame()
+		settleStrip(tt)
 		rest, view := s.tabScroll.X, s.tabView
 		if starts[i] < rest {
 			t.Errorf("with %s shown the strip rests at %v, past the tab's own start %v", name, rest, starts[i])
@@ -660,11 +664,55 @@ func TestTabsOpenedOneByOneStayWhole(t *testing.T) {
 	tt.Frame()
 	for i, name := range names {
 		s.selectDoc(name)
-		tt.Frame()
-		tt.Frame()
+		settleStrip(tt)
 		if starts[i] < s.tabScroll.X || starts[i]+widths[i] > s.tabScroll.X+s.tabView {
 			t.Errorf("with %s shown the tab runs %v..%v, outside the strip %v..%v",
 				name, starts[i], starts[i]+widths[i], s.tabScroll.X, s.tabScroll.X+s.tabView)
 		}
+	}
+}
+
+// TestTabsSlideToTheTabShown pins the movement itself: choosing a tab out of
+// sight slides the strip to it rather than jumping there, and it comes to rest
+// where it asked for.
+func TestTabsSlideToTheTabShown(t *testing.T) {
+	s, root := newState(t)
+	var names []string
+	for i := range 10 {
+		name := fmt.Sprintf("文档-%02d-很长很长的名字.md", i)
+		names = append(names, name)
+		writeDoc(t, root, name, "# x\n")
+	}
+	s.Refresh()
+	s.SetContentWidth(func() float32 { return 600 })
+	build := func(c *ui.Context) {
+		ui.Row(c).Width(600).Height(48).Children(func() { s.tabBar(c) })
+	}
+	for _, name := range names {
+		s.selectDoc(name)
+	}
+	s.selectDoc(names[0])
+	tt := ui.NewTester(build, 600, 48)
+	settleStrip(tt)
+	if s.tabScroll.X > 0.5 {
+		t.Fatalf("X = %v, want the strip at its start", s.tabScroll.X)
+	}
+
+	s.selectDoc(names[9])
+	tt.Frame()
+	asked := s.tabAsk
+	if !s.tabScroll.Scrolling() {
+		t.Error("the strip jumped: no glide is on its way")
+	}
+	tt.Advance(120 * time.Millisecond)
+	tt.Frame()
+	if mid := s.tabScroll.X; mid <= 0 || mid >= asked {
+		t.Errorf("part way X = %v, want a slide on its way to %v", mid, asked)
+	}
+
+	tt.Advance(2 * time.Second)
+	tt.Frame()
+	if left := s.tabScroll.X - asked; left > 0.5 || left < -0.5 {
+		t.Errorf("the strip rests at %v, want the %v it asked for", s.tabScroll.X, asked)
 	}
 }

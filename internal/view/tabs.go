@@ -191,7 +191,7 @@ func (s *State) tabsWidth(c *ui.Context, widths []float32) float32 {
 // comes from the frame before, and a tab opened this frame has not grown it yet,
 // so a place clamped to that range would stop one tab short and leave the tab
 // shown cut.
-func (s *State) revealTab(c *ui.Context, widths []float32, view float32) (settled bool) {
+func (s *State) revealTab(c *ui.Context, widths []float32, view float32) bool {
 	if view <= 0 {
 		return true
 	}
@@ -227,13 +227,17 @@ func (s *State) revealTab(c *ui.Context, widths []float32, view float32) (settle
 		// The strip has not laid the tabs out yet, or has not grown to hold one
 		// opened this frame: keep asking, so that the place is set again once it
 		// has, and the tab shown is not left cut.
-		settled = false
-	default:
-		desired = min(desired, s.tabScroll.MaxX)
-		settled = true
+		return false
 	}
-	s.tabScroll.X = desired
-	return settled
+	desired = min(desired, s.tabScroll.MaxX)
+	// It slides there rather than jumping: the tabs moving under a click that
+	// chose a tab out of sight is what shows the strip moved at all. Asked again
+	// on the way, the glide turns toward the new place.
+	if desired != s.tabAsk {
+		s.tabAsk = desired
+		s.tabScroll.ScrollTo(desired, s.tabScroll.Y, ui.Smooth)
+	}
+	return true
 }
 
 // tabFade fades the ends of the strip that have more tabs beyond them.

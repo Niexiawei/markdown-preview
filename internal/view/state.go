@@ -71,6 +71,8 @@ type State struct {
 	// tabPending says the strip has yet to take the place asked for, because it
 	// had not laid the tabs out: the ask is repeated until it does.
 	tabPending bool
+	// tabAsk is the place the strip was last asked to slide to.
+	tabAsk float32
 	// zoom is how much larger or smaller the body's text shows than the
 	// theme's: one while it was never changed.
 	zoom float32
