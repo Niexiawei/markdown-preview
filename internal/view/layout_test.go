@@ -26,7 +26,7 @@ func TestBodyColumnFollowsPaneWidth(t *testing.T) {
 		width := width
 		s.SetContentWidth(func() float32 { return width })
 		_ = ui.NewTester(func(c *ui.Context) { s.Content(c) }, int(width), 700)
-		if sx := s.docScroll.MaxX; sx != 0 {
+		if sx := s.docScroll().MaxX; sx != 0 {
 			t.Errorf("width %v: MaxX = %v, want 0: the text wrapped instead of overflowing", width, sx)
 		}
 		want := width - s.tocW

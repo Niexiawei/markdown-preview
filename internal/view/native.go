@@ -181,7 +181,7 @@ func (s *State) nativePreview(c *ui.Context) {
 	// Both ways: a table, a code block or an image wider than the pane scrolls
 	// here instead of being cut at its edge. The column takes the pane's own
 	// width, so paragraphs wrap, and they re-wrap as the window resizes.
-	ui.ScrollBoth(c).TrackScroll(&s.docScroll).Fill().Padding(bodyPadding).Children(func() {
+	ui.ScrollBoth(c).TrackScroll(s.docScroll()).Fill().Padding(bodyPadding).Children(func() {
 		ui.Column(c).Width(max(200, s.bodyPaneWidth()-2*bodyPadding-2)).Gap(12).Children(func() {
 			ui.Text(c, s.sel.path).FontSize(11).TextColor(t.TextMuted)
 			markdown.View(c, s.src, &s.md)
