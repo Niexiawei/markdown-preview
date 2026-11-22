@@ -1,11 +1,13 @@
 package view
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/ui"
 
 	"mdpreview/internal/watch"
 )
@@ -162,5 +164,132 @@ func TestClosingProjectDropsItsTabs(t *testing.T) {
 	}
 	if !s.sel.empty() {
 		t.Errorf("selected = %q, want none", s.Selected())
+	}
+}
+
+// TestTabBarShowsEveryTab pins the bar above the body: every open document has
+// a tab, and no overflow button shows while they fit.
+func TestTabBarShowsEveryTab(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "alpha.md", "# A\n")
+	writeDoc(t, root, "beta.md", "# B\n")
+	s.Refresh()
+	s.selectDoc("alpha.md")
+	s.selectDoc("beta.md")
+
+	tt := ui.NewTester(func(c *ui.Context) { s.tabBar(c) }, 900, 40)
+	for _, want := range []string{"alpha.md", "beta.md"} {
+		if !tt.HasText(want) {
+			t.Errorf("tab texts = %q, want %q", tt.Texts(), want)
+		}
+	}
+	if tt.HasText("全部已打开文件") {
+		t.Errorf("tab texts = %q, want no overflow button while they fit", tt.Texts())
+	}
+}
+
+// TestTabBarOverflowsWithAButton pins the overflow: too many tabs and the
+// rightmost control lists them all, and choosing one shows it.
+func TestTabBarOverflowsWithAButton(t *testing.T) {
+	s, root := newState(t)
+	var names []string
+	for i := range 12 {
+		name := fmt.Sprintf("文档-%02d-很长很长的名字.md", i)
+		names = append(names, name)
+		writeDoc(t, root, name, "# x\n")
+	}
+	s.Refresh()
+	for _, name := range names {
+		s.selectDoc(name)
+	}
+
+	// The list opens below the bar, so the window must have room for it.
+	tt := ui.NewTester(func(c *ui.Context) { s.tabBar(c) }, 760, 460)
+	if err := tt.Click("全部已打开文件"); err != nil {
+		t.Fatalf("Click overflow: %v", err)
+	}
+	tt.Frame()
+	if !s.tabsOpen {
+		t.Fatal("the overflow button did not open the list")
+	}
+	if err := tt.Click(names[0]); err != nil {
+		t.Fatalf("Click %s: %v", names[0], err)
+	}
+	if got := s.Selected(); got != names[0] {
+		t.Errorf("selected = %q, want %q", got, names[0])
+	}
+	if s.tabsOpen {
+		t.Error("the list stayed open after choosing a tab")
+	}
+}
+
+// TestTabBarKeepsActiveTabVisible pins that the tab shown is never the one the
+// bar leaves out.
+func TestTabBarKeepsActiveTabVisible(t *testing.T) {
+	s, root := newState(t)
+	var names []string
+	for i := range 12 {
+		name := fmt.Sprintf("文档-%02d-很长很长的名字.md", i)
+		names = append(names, name)
+		writeDoc(t, root, name, "# x\n")
+	}
+	s.Refresh()
+	for _, name := range names {
+		s.selectDoc(name)
+	}
+	s.selectDoc(names[0]) // the leftmost tab is the one shown
+
+	tt := ui.NewTester(func(c *ui.Context) { s.tabBar(c) }, 520, 40)
+	rect, ok := tt.Find(names[0])
+	if !ok {
+		t.Fatalf("tab texts = %q, want the active tab's name", tt.Texts())
+	}
+	if rect.X+rect.W > 520 {
+		t.Errorf("the active tab ends at %v, past the window's 520", rect.X+rect.W)
+	}
+}
+
+// TestClosingATabDoesNotActivateIt pins the close button's click: it closes the
+// tab it sits in rather than switching to it first.
+func TestClosingATabDoesNotActivateIt(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "alpha.md", "# A\n")
+	writeDoc(t, root, "beta.md", "# B\n")
+	s.Refresh()
+	s.selectDoc("alpha.md")
+	s.selectDoc("beta.md")
+
+	tt := ui.NewTester(func(c *ui.Context) { s.tabBar(c) }, 900, 40)
+	if err := tt.Click("关闭 alpha.md"); err != nil {
+		t.Fatalf("Click close: %v", err)
+	}
+	if got := s.Selected(); got != "beta.md" {
+		t.Errorf("selected = %q, want beta.md: closing a tab is not switching to it", got)
+	}
+	if s.hasTab(docSel{project: s.sel.project, path: "alpha.md"}) {
+		t.Error("alpha.md still has a tab")
+	}
+}
+
+// TestTabBarSitsAboveThePreview pins the bar's place in the shell's page: the
+// tab row comes before the body, under the title.
+func TestTabBarSitsAboveThePreview(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "alpha.md", "# A\n\n正文标记\n")
+	s.Refresh()
+	s.selectDoc("alpha.md")
+
+	tt := ui.NewTester(func(c *ui.Context) { s.Content(c) }, 900, 700)
+	// The tab's own accessible name, and a paragraph the body alone shows.
+	tab, ok := tt.Find("文档：alpha.md")
+	if !ok {
+		t.Fatalf("texts = %q, want the tab", tt.Texts())
+	}
+	body, ok := tt.Find("正文标记")
+	if !ok {
+		t.Fatalf("texts = %q, want the body's paragraph", tt.Texts())
+	}
+	if tab.Y+tab.H > body.Y {
+		t.Errorf("tab at %v..%v, body at %v: the bar is not above the body", tab.Y, tab.Y+tab.H, body.Y)
 	}
 }

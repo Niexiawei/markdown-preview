@@ -28,6 +28,7 @@ func (s *State) View(c *ui.Context) {
 			// As the shell's header row: a fixed height the title bar fills,
 			// which the shell pads and clips.
 			ui.Row(c).Height(sidebar.HeaderHeight(c)).Children(func() { s.contentTitle(c) })
+			s.tabBar(c)
 			s.preview(c)
 			s.statusBar(c)
 		})
@@ -60,6 +61,7 @@ func (s *State) Content(c *ui.Context) {
 	s.handleShortcuts(c)
 	ui.Column(c).Fill().Children(func() {
 		ui.Row(c).Height(sidebar.HeaderHeight(c))
+		s.tabBar(c)
 		ui.Column(c).Grow(1).Children(func() {
 			s.preview(c)
 			s.statusBar(c)

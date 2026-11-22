@@ -57,6 +57,8 @@ type State struct {
 	scrolls map[docSel]*ui.ScrollState
 	sel     docSel
 	status  string
+	// tabsOpen is whether the panel listing every tab shows.
+	tabsOpen bool
 
 	// The document shown: its source, its parse, the outline built from it,
 	// and what the native markdown view shows it with.
