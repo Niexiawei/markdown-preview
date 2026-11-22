@@ -390,9 +390,20 @@ func (s *State) reloadTree() {
 	if s.sel.empty() {
 		return
 	}
+	// A tab pointing at a file that is no longer there shows nothing: drop
+	// those the window does not show first, then the one it does, so that its
+	// neighbour in the bar takes over.
+	for _, tab := range append([]docSel(nil), s.tabs...) {
+		if tab == s.sel {
+			continue
+		}
+		if _, err := s.ws.Stat(tab.project, tab.path); err != nil {
+			s.dropTab(tab)
+		}
+	}
 	if _, err := s.ws.Stat(s.sel.project, s.sel.path); err != nil {
-		s.status = "文件已被删除"
 		s.closeTab(s.sel)
+		s.status = "文件已被删除"
 	}
 }
 

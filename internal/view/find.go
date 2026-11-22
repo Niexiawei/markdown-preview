@@ -33,10 +33,15 @@ const (
 // floats, the phrase, where it matches, and which match the body shows.
 type findState struct {
 	open      bool
+	needFocus bool
 	query     string
 	matches   []workspace.Match
 	current   int // 0-based into matches
 	truncated bool
+	// lines are the source's lines, kept from the last load: the preview
+	// reads them every frame, and splitting the source per frame is the kind
+	// of work the window's thread must not do.
+	lines []string
 }
 
 // findable reports whether there is a document to search.
@@ -49,6 +54,9 @@ func (s *State) openFind() {
 		return
 	}
 	s.find.open = true
+	// The field takes the keyboard as the panel opens, even when the last
+	// phrase is still in it: the user asked to search, not to read.
+	s.find.needFocus = true
 	if s.find.query != "" {
 		s.refreshMatches()
 	}
@@ -202,8 +210,11 @@ func (s *State) findField(c *ui.Context) {
 	ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(t.Space(0.5)).Children(func() {
 		field := ui.SearchField(c, &s.find.query).Label("在文档中查找")
 		field.Grow(1).FontSize(12)
-		if s.find.query == "" {
+		if s.find.needFocus {
+			// AutoFocus gives the focus once, where Focus would take it back
+			// every frame, from the list or the buttons beside the field.
 			field.AutoFocus()
+			s.find.needFocus = false
 		}
 		switch {
 		case field.Changed():
@@ -234,7 +245,9 @@ func (s *State) findCount() string {
 	}
 	count := strconv.Itoa(s.find.current+1) + "/" + strconv.Itoa(len(s.find.matches))
 	if s.find.truncated {
-		return "前 " + strconv.Itoa(len(s.find.matches)) + " 处"
+		// Where the body is, and that the list stops before the document
+		// does: the count alone would claim the document has 500 matches.
+		return count + "（前 " + strconv.Itoa(len(s.find.matches)) + " 处）"
 	}
 	return count
 }
@@ -280,21 +293,26 @@ func (s *State) findPreview(c *ui.Context) {
 	lines := strings.Split(s.src, "\n")
 	from := max(1, m.Line-findContext)
 	to := min(len(lines), m.Line+findContext)
+	// The context sits in a recessed card: without it the last list row and
+	// the match's own line read as one run of rows.
 	width := findPaneWidth - 2*t.Space(1)
-	ui.ScrollBoth(c).MaxHeight(findPreviewSize).Children(func() {
-		ui.Column(c).MinWidth(width).Gap(t.Space(0.25)).Children(func() {
-			for n := from; n <= to; n++ {
-				text := strings.TrimSuffix(lines[n-1], "\r")
-				row := ui.Row(c).AlignItems(ui.Center).Gap(t.Space(0.75))
-				if n == m.Line {
-					row.Background(t.Accent.Alpha(0.08))
+	ui.Column(c).Padding(t.Space(0.5)).Radius(t.Radius).
+		Background(t.Background).Children(func() {
+		ui.ScrollBoth(c).MaxHeight(findPreviewSize).Children(func() {
+			ui.Column(c).MinWidth(width).Gap(t.Space(0.25)).Children(func() {
+				for n := from; n <= to; n++ {
+					text := strings.TrimSuffix(lines[n-1], "\r")
+					row := ui.Row(c).AlignItems(ui.Center).Gap(t.Space(0.75))
+					if n == m.Line {
+						row.Background(t.Accent.Alpha(0.08))
+					}
+					row.Children(func() {
+						components.Text(c, strconv.Itoa(n)).FontSize(10).
+							TextColor(t.TextMuted).Width(t.Rem(2.5))
+						s.markedLine(c, text, n == m.Line)
+					})
 				}
-				row.Children(func() {
-					components.Text(c, strconv.Itoa(n)).FontSize(10).
-						TextColor(t.TextMuted).Width(t.Rem(2.5))
-					s.markedLine(c, text, n == m.Line)
-				})
-			}
+			})
 		})
 	})
 }

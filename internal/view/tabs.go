@@ -132,13 +132,15 @@ func tabWidth(c *ui.Context, name string) float32 {
 }
 
 // visibleTabs returns the tabs the bar shows, and whether any are left out: as
-// many as fit, the one shown first, so that it is never the one cut.
+// many as fit, counting the gap between them, the one shown first, so that it is
+// never the one cut.
 func (s *State) visibleTabs(c *ui.Context, avail float32) ([]docSel, bool) {
+	gap := c.Theme().Space(0.5)
 	widths := make([]float32, len(s.tabs))
 	total := float32(0)
 	for i, tab := range s.tabs {
 		widths[i] = tabWidth(c, trimEllipsis(path.Base(tab.path), 40))
-		total += widths[i]
+		total += widths[i] + gap
 	}
 	if total <= avail {
 		return s.tabs, false
@@ -148,18 +150,19 @@ func (s *State) visibleTabs(c *ui.Context, avail float32) ([]docSel, bool) {
 		active = 0
 	}
 	// The tab shown first, then as many on either side as fit, right before
-	// left: the next tab is likelier to be the one wanted.
+	// left: the next tab is likelier to be the one wanted. Each one costs its
+	// width and the gap before it.
 	room, from, to := avail-widths[active], active, active
 	for {
 		grew := false
-		if to+1 < len(widths) && widths[to+1] <= room {
+		if to+1 < len(widths) && widths[to+1]+gap <= room {
 			to++
-			room -= widths[to]
+			room -= widths[to] + gap
 			grew = true
 		}
-		if from-1 >= 0 && widths[from-1] <= room {
+		if from-1 >= 0 && widths[from-1]+gap <= room {
 			from--
-			room -= widths[from]
+			room -= widths[from] + gap
 			grew = true
 		}
 		if !grew {

@@ -41,6 +41,7 @@ func (s *State) loadDoc() {
 	// Another document is another search: the matches of the last one name
 	// lines that no longer mean the same thing.
 	s.find.matches, s.find.current, s.find.truncated = nil, 0, false
+	s.find.lines = strings.Split(src, "\n")
 	if s.find.open && s.find.query != "" {
 		s.refreshMatches()
 	}

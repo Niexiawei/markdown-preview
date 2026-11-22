@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/egoist/mygo"
@@ -239,13 +240,22 @@ func TestTabBarKeepsActiveTabVisible(t *testing.T) {
 	}
 	s.selectDoc(names[0]) // the leftmost tab is the one shown
 
-	tt := ui.NewTester(func(c *ui.Context) { s.tabBar(c) }, 520, 40)
+	tt := ui.NewTester(func(c *ui.Context) { s.tabBar(c) }, 520, 400)
 	rect, ok := tt.Find(names[0])
 	if !ok {
 		t.Fatalf("tab texts = %q, want the active tab's name", tt.Texts())
 	}
 	if rect.X+rect.W > 520 {
 		t.Errorf("the active tab ends at %v, past the window's 520", rect.X+rect.W)
+	}
+	// The overflow button shares the room the tabs left: it must stay inside
+	// the window, or nothing lists the tabs that were cut.
+	over, ok := tt.Find("全部已打开文件")
+	if !ok {
+		t.Fatalf("tab texts = %q, want the overflow button", tt.Texts())
+	}
+	if over.X+over.W > 520 {
+		t.Errorf("the overflow button ends at %v, past the window's 520", over.X+over.W)
 	}
 }
 
@@ -291,5 +301,47 @@ func TestTabBarSitsAboveThePreview(t *testing.T) {
 	}
 	if tab.Y+tab.H > body.Y {
 		t.Errorf("tab at %v..%v, body at %v: the bar is not above the body", tab.Y, tab.Y+tab.H, body.Y)
+	}
+}
+
+// TestRefreshDropsTabsOfGoneFiles pins that a reload prunes tabs pointing at
+// files that are no longer there, even when no change event reported them, and
+// says so while switching to a neighbour.
+func TestRefreshDropsTabsOfGoneFiles(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "alpha.md", "# A\n")
+	writeDoc(t, root, "beta.md", "# B\n")
+	s.Refresh()
+	s.selectDoc("alpha.md")
+	s.selectDoc("beta.md")
+
+	if err := os.Remove(filepath.Join(root, "beta.md")); err != nil {
+		t.Fatal(err)
+	}
+	s.Refresh()
+	if s.hasTab(docSel{project: s.sel.project, path: "beta.md"}) {
+		t.Errorf("tabs = %v, want the deleted file's tab gone", s.tabs)
+	}
+	if got := s.Selected(); got != "alpha.md" {
+		t.Errorf("selected = %q, want the neighbour", got)
+	}
+	if !strings.Contains(s.Status(), "删除") {
+		t.Errorf("status = %q, want the deletion reported", s.Status())
+	}
+
+	// The same for a tab the window does not show: it is pruned too, and the
+	// document shown stays.
+	writeDoc(t, root, "gamma.md", "# G\n")
+	s.Refresh()
+	s.selectDoc("gamma.md")
+	if err := os.Remove(filepath.Join(root, "alpha.md")); err != nil {
+		t.Fatal(err)
+	}
+	s.Refresh()
+	if s.hasTab(docSel{project: s.sel.project, path: "alpha.md"}) {
+		t.Errorf("tabs = %v, want the tab of the file gone from disk dropped", s.tabs)
+	}
+	if got := s.Selected(); got != "gamma.md" {
+		t.Errorf("selected = %q, want the document shown to stay", got)
 	}
 }

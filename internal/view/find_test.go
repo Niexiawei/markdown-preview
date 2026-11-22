@@ -1,6 +1,7 @@
 package view
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -258,5 +259,66 @@ func TestClosingTheFindPanelStopsThePageHighlight(t *testing.T) {
 	s.openFind()
 	if !s.find.open {
 		t.Error("the panel did not open again")
+	}
+}
+
+// TestFindFieldTakesTypingWhenReopened pins that the panel's field takes the
+// keyboard every time the panel opens, even with the last phrase still in it.
+func TestFindFieldTakesTypingWhenReopened(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", "导入目标\n")
+	s.Refresh()
+	s.selectDoc("a.md")
+
+	tt := ui.NewTester(func(c *ui.Context) { s.Content(c) }, 900, 700)
+	tt.Key(ui.Cmd, ui.KeyF)
+	tt.Frame()
+	tt.Type("导入")
+	tt.Frame()
+	if s.find.query != "导入" {
+		t.Fatalf("query = %q, want what was typed", s.find.query)
+	}
+	if len(s.find.matches) != 1 {
+		t.Fatalf("matches = %v, want the typed phrase found", s.find.matches)
+	}
+
+	tt.Key(0, ui.KeyEscape)
+	tt.Frame()
+	if s.find.query != "" {
+		t.Fatalf("query = %q, want Escape to empty it", s.find.query)
+	}
+	// The phrase a close keeps, as the panel's Escape leaves it: opening again
+	// searches for it once more.
+	s.find.query = "导入"
+	s.closeFind()
+	tt.Frame()
+
+	tt.Key(ui.Cmd, ui.KeyF)
+	tt.Frame()
+	tt.Type("目标")
+	tt.Frame()
+	if s.find.query != "导入目标" {
+		t.Errorf("query = %q, want the typing to land in the reopened field", s.find.query)
+	}
+}
+
+// TestFindCountSaysWhenItCapped pins the panel's count once the source has more
+// matches than the panel lists.
+func TestFindCountSaysWhenItCapped(t *testing.T) {
+	s, root := newState(t)
+	var b strings.Builder
+	for i := range 600 {
+		b.WriteString("目标 " + strconv.Itoa(i) + "\n")
+	}
+	writeDoc(t, root, "a.md", b.String())
+	s.Refresh()
+	s.selectDoc("a.md")
+	openFindOn(s, "目标")
+
+	if !s.find.truncated {
+		t.Fatal("truncated = false, want the source's extra matches reported")
+	}
+	if got := s.findCount(); !strings.Contains(got, "前") || !strings.Contains(got, "1/") {
+		t.Errorf("count = %q, want both the position and the cap", got)
 	}
 }
