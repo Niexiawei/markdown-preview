@@ -454,3 +454,83 @@ func TestTabScrollFollowsTheTabShown(t *testing.T) {
 		t.Errorf("X = %v, want the strip back at its start for the first tab", got)
 	}
 }
+
+// TestTabStripScrollsWithTheWheel pins the wheel over the strip: it moves the
+// tabs sideways, since the strip has no other axis for the wheel to scroll.
+func TestTabStripScrollsWithTheWheel(t *testing.T) {
+	s, root := newState(t)
+	var names []string
+	for i := range 10 {
+		name := fmt.Sprintf("文档-%02d-很长很长的名字.md", i)
+		names = append(names, name)
+		writeDoc(t, root, name, "# x\n")
+	}
+	s.Refresh()
+	for _, name := range names {
+		s.selectDoc(name)
+	}
+	s.selectDoc(names[0]) // the strip rests at its start
+	s.SetContentWidth(func() float32 { return 600 })
+	build := func(c *ui.Context) {
+		ui.Row(c).Width(600).Height(48).Children(func() { s.tabBar(c) })
+	}
+	tt := ui.NewTester(build, 600, 48)
+	tt.Frame()
+	tt.Frame()
+	if s.tabScroll.X != 0 {
+		t.Fatalf("X = %v, want the strip at its start", s.tabScroll.X)
+	}
+
+	tt.Wheel(300, 20, 0, -120)
+	tt.Frame()
+	tt.Frame()
+	if s.tabScroll.X <= 0 {
+		t.Errorf("X = %v, want the wheel to scroll the strip sideways", s.tabScroll.X)
+	}
+}
+
+// TestTabStripRestsOnATabStart pins where the strip comes to rest: at the start
+// of a tab, so that no tab is cut down to its close button and read as a stray ✕
+// in blank space.
+func TestTabStripRestsOnATabStart(t *testing.T) {
+	s, root := newState(t)
+	var names []string
+	for i := range 10 {
+		name := fmt.Sprintf("文档-%02d-很长很长的名字.md", i)
+		names = append(names, name)
+		writeDoc(t, root, name, "# x\n")
+	}
+	s.Refresh()
+	s.SetContentWidth(func() float32 { return 600 })
+
+	// The starts of the tabs, measured as the bar measures them.
+	var starts []float32
+	build := func(c *ui.Context) {
+		starts = starts[:0]
+		x := float32(0)
+		for _, name := range names {
+			starts = append(starts, x)
+			x += tabWidth(c, name) + c.Theme().Space(0.5)
+		}
+		ui.Row(c).Width(600).Height(48).Children(func() { s.tabBar(c) })
+	}
+
+	for _, name := range names {
+		s.selectDoc(name)
+		tt := ui.NewTester(build, 600, 48)
+		tt.Frame()
+		tt.Frame()
+		rest := s.tabScroll.X
+		onStart := false
+		for _, start := range starts {
+			if rest == start {
+				onStart = true
+				break
+			}
+		}
+		if !onStart {
+			t.Errorf("with %s shown the strip rests at %v, which is not the start of a tab: %v",
+				name, rest, starts)
+		}
+	}
+}

@@ -132,6 +132,10 @@ const tabIcon float32 = 14
 // tab is never wider than the room the bar made for it.
 func tabClose(c *ui.Context) float32 { return max(20, c.Theme().Rem(1.25)) }
 
+// tabOverflow is the room the button listing every tab takes: an icon button of
+// the plain size, which reads as a control rather than as decoration.
+func tabOverflow(c *ui.Context) float32 { return max(32, c.Theme().Rem(2)) }
+
 func tabPad(c *ui.Context) float32 { return c.Theme().Space(1) }
 
 // tabTextWidth is how wide the name of a tab can be inside a tab of width.
@@ -200,19 +204,37 @@ func (s *State) revealTab(c *ui.Context, widths []float32, view float32) {
 	}
 	s.tabShown = s.sel
 	gap := c.Theme().Space(0.5)
+	starts := make([]float32, len(widths))
 	x := float32(0)
-	for i, tab := range s.tabs {
-		if tab == s.sel {
-			if x < s.tabScroll.X {
-				s.tabScroll.X = x
-			}
-			if right := x + widths[i]; right > s.tabScroll.X+view {
-				s.tabScroll.X = right - view
-			}
+	for i, w := range widths {
+		starts[i] = x
+		x += w + gap
+	}
+	active := s.tabIndex(s.sel)
+	if active < 0 {
+		return
+	}
+	// The strip comes to rest where a tab begins, never in the middle of one: a
+	// tab cut down to its close button reads as a stray ✕ in blank space.
+	if starts[active] < s.tabScroll.X {
+		s.tabScroll.X = starts[active]
+		return
+	}
+	if widths[active] >= view {
+		s.tabScroll.X = starts[active]
+		return
+	}
+	target := starts[active] + widths[active] - view
+	if target <= s.tabScroll.X {
+		return
+	}
+	for i := len(starts) - 1; i >= 0; i-- {
+		if starts[i] <= target {
+			s.tabScroll.X = starts[i]
 			return
 		}
-		x += widths[i] + gap
 	}
+	s.tabScroll.X = 0
 }
 
 // tabBar builds the header's row: the tabs of the open documents, scrolling
@@ -241,7 +263,7 @@ func (s *State) tabBar(c *ui.Context) {
 	overflow := s.tabsWidth(c, widths) > avail
 	strip := avail
 	if overflow {
-		strip -= max(20, t.Rem(1.25)) + t.Space(0.5)
+		strip -= tabOverflow(c) + t.Space(0.5)
 	}
 	// The strip is scrolled before it is built: a ScrollState set after its
 	// container built this frame is a place it never takes.
@@ -251,7 +273,17 @@ func (s *State) tabBar(c *ui.Context) {
 	row.Padding(0, t.Space(1)).Children(func() {
 		// The strip scrolls sideways rather than dropping tabs: the list beside
 		// it is a shortcut to a tab, not the only way to reach one.
-		ui.ScrollHorizontal(c).Grow(1).MinWidth(0).TrackScroll(&s.tabScroll).Children(func() {
+		ui.ScrollHorizontal(c).Grow(1).MinWidth(0).TrackScroll(&s.tabScroll).
+			// A plain wheel scrolls the strip: it only goes sideways, where the
+			// wheel's own axis would scroll the page under it instead.
+			HandleInput(func(ev ui.InputEvent) bool {
+				if ev.Kind != ui.InputScroll || ev.Mods&ui.Shift != 0 || ev.DY == 0 {
+					return false
+				}
+				// A notch down moves the strip on, as it scrolls a column down.
+				s.tabScroll.X -= ev.DY
+				return true
+			}).Children(func() {
 			ui.Row(c).Height(tabBarHeight - 2*t.Space(1)).Gap(t.Space(0.5)).
 				AlignItems(ui.Center).Children(func() {
 				for i, tab := range s.tabs {
@@ -262,7 +294,7 @@ func (s *State) tabBar(c *ui.Context) {
 		if !overflow {
 			return
 		}
-		button := components.IconButton(c, lucide.ChevronDown(), "全部已打开文件", components.IconButtonCompact)
+		button := components.IconButton(c, lucide.ChevronDown(), "全部已打开文件", components.IconButtonPlain)
 		if button.Clicked() {
 			s.tabsOpen = !s.tabsOpen
 		}

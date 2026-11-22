@@ -1822,3 +1822,8 @@ git commit -m "docs: 记录标签页、目录动作与悬浮搜索的用法与�
    全部排进 `ui.ScrollHorizontal`（`State.tabScroll`），`tabsWidth` 只决定 ⌄ 按钮出不出现；
    `revealTab` 在构建前把活动标签滚进视野，首帧（`Bounds`/`MaxX` 未知）不记 `tabShown`。
    回归测试：`TestTabBarScrollsAndKeepsTheListInsideItsSlot`、`TestTabScrollFollowsTheTabShown`。
+
+6. **标签条的三个小修**（用户 2026-11-22 实机反馈）：⌄ 按钮从 `IconButtonCompact` 换成 `IconButtonPlain`（32 DIP），
+   预留宽度同源（`tabOverflow`）；`revealTab` 改成**停在某个标签的起点**（原来右对齐会切出「空白 + 孤零零的 ✕」）；
+   滚动容器挂 `HandleInput` 把普通滚轮转成横向滚动（mygo 只认 Shift+滚轮）。
+   回归测试：`TestTabStripRestsOnATabStart`、`TestTabStripScrollsWithTheWheel`。
