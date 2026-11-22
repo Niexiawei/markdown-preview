@@ -1798,3 +1798,22 @@ git commit -m "docs: 记录标签页、目录动作与悬浮搜索的用法与�
 3. **缩放要不要记住？** 本计划只在会话内（D10）。若要，加 `cfg.Zoom float32` 并在 `normalize` 里夹到 0.8–2.0。
 4. **搜索要不要正则 / 全词 / 项目内全文件搜？** 本计划只有「当前文档、字面子串、忽略大小写」（D11）。项目内全文件搜可以复用既有的 `workspace.Search`，但那是另一个面板（结果跨文件），建议下一期。
 5. **原生模式正文高亮**：本计划接受「不高亮」（D15）。若必须高亮，需要 `markdown.Options.Block` 自绘段落，约 200 行、且要处理表格/代码块/嵌套列表，风险明显更高——请确认是否值得。
+
+
+---
+
+## 执行后的修订（用户 2026-11-22 实机反馈，已实现）
+
+1. **标签栏与标题行的顺序反过来**：标签栏改由 shell 的 `ContentTitle` 槽位（标题栏 48 DIP）构建，
+   原来在该槽位的「路径 + 复制 + 渲染开关」下沉成 `Content` 的第一行（`titleRow`，`titleRowHeight`）。
+   屏幕顺序变成：标签 → 路径与渲染开关 → 目录/正文。`View` 的测试拼装同步。搜索面板的 `Top`
+   也随之从 `HeaderHeight + tabBarHeight` 改成 `HeaderHeight + titleRowHeight`。
+   回归测试：`TestTabsSitAboveTheTitle`、`TestTitleSitsInsideItsRow`、`TestShellSlotsBuild`。
+2. **标签不再重叠、也不再压到窗口按钮**：每个标签固定宽度（`tabWidth`）并 `Clip`，名字用
+   `fitText` 按 `tabTextWidth` 截断；标签栏的可用宽度取**上一帧自己的 `Bounds().W`**（首帧回落
+   `windowWidth()`），因为 shell 在标题栏右侧给窗口按钮留了位置。回归测试：
+   `TestTabBarFitsTheRoomItIsGiven`、`TestTabBarKeepsActiveTabVisible`。
+3. **「全部已打开文件」列表左对齐**：行内改用一层 `Grow(1)` 的 `ui.Row` 顶满按钮宽度，
+   图标与文件名从左边缘排（按钮默认居中）。
+4. **目录工具条放大**：`目录` 13px，四个动作从 `IconButtonCompact` 换成 `IconButtonPlain`（32 DIP 方块、
+   20 DIP 图形），比例文字 11px。

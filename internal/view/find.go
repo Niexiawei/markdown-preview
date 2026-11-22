@@ -197,7 +197,9 @@ func (s *State) findPanel(c *ui.Context) {
 	ui.Overlay(c, func() {
 		ui.Column(c).Absolute().
 			Right(t.Space(2)).
-			Top(sidebar.HeaderHeight(c)+tabBarHeight+t.Space(2)).
+			// Under the header, which holds the tabs, and under the title
+			// row the page shows first.
+			Top(sidebar.HeaderHeight(c)+titleRowHeight+t.Space(2)).
 			Width(findPaneWidth).
 			Radius(t.Radius*1.5).Background(t.Surface).
 			Border(1, t.Border).

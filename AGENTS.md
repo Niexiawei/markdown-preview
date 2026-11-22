@@ -102,6 +102,13 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
   `docs/a.md` 会互相串。目录折叠键是 `项目ID + ":" + 路径`，项目节点的键是 `"project:" + 项目ID`。
 - **树只在打开项目数 ≥ 2 时多一层项目名**：`fileTree` 里按 `len(s.trees)` 分叉，改布局时别让单项目也长出这层。
 - **状态栏只放提示文字**（`statusBar`，高 24）：渲染开关、路径都不在这里，它们在标题栏。
+- **标签栏在 shell 的 `ContentTitle` 槽位**（标题栏那 48 DIP），文档路径 + 复制 + 渲染开关是 `Content` 的第一行
+  （`titleRow`，高 `titleRowHeight`）。别再把这些塞回彼此的槽位：用户要求 tab 在文件名字那一行之上；
+  `View` 与 `Content` 的拼装要保持一致（`TestTabsSitAboveTheTitle`）。
+- **标签宽度要按「上一帧的槽宽」算，不是 `windowWidth()`**：shell 在标题栏里给窗口按钮留了位置，
+  用内容宽度算会让最后几个标签和溢出按钮压到窗口按钮底下。`tabBar` 用 `row.Bounds().W`（首帧回落到
+  `windowWidth()`），`tabWidth` / `tabTextWidth` / `fitText` 三者共用同一套尺寸，名字超长就省略，
+  具体宽度写死在标签行上（`Width` + `Clip`）——否则文字会画出自己的框、和邻居叠在一起。
 - **标签与滚动位置都以 `docSel` 为键**（`State.tabs` / `State.scrolls`）：只改路径不改项目会串到另一个项目里的同名文件。
 - **原生搜索只能滚到块**：`markdown.Options.AnchorBlock` + `Anchor` 是唯一的块级滚动入口，`find:<块号>` 前缀是搜索在用，
   其他名字必须返回 `-1` 让 mygo 回落到标题 slug，否则目录点击会失效。

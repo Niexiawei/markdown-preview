@@ -24,11 +24,11 @@ func (s *State) View(c *ui.Context) {
 			ui.Scroll(c).Grow(1).Children(func() { s.fileTree(c) })
 			s.leftToolbar(c)
 		})
-		ui.Column(c).Grow(1).Children(func() {
-			// As the shell's header row: a fixed height the title bar fills,
-			// which the shell pads and clips.
-			ui.Row(c).Height(sidebar.HeaderHeight(c)).Children(func() { s.contentTitle(c) })
-			s.tabBar(c)
+		ui.Column(c).Grow(1).MinWidth(0).FillHeight().Clip().Children(func() {
+			// As the shell's header row: the tabs sit in it, and the title
+			// row is the first thing the page shows under it.
+			ui.Row(c).Height(sidebar.HeaderHeight(c)).Children(func() { s.ContentTitle(c) })
+			s.titleRow(c)
 			s.preview(c)
 			s.statusBar(c)
 		})
@@ -52,21 +52,34 @@ func (s *State) LeftHeader(c *ui.Context) { s.leftHeader(c) }
 // open, reload and serve documents.
 func (s *State) LeftToolbar(c *ui.Context) { s.leftToolbar(c) }
 
-// ContentTitle is the shell's titlebar area: the document shown.
-func (s *State) ContentTitle(c *ui.Context) { s.contentTitle(c) }
+// ContentTitle is the shell's titlebar area: the tabs of the documents the
+// window has open. The title row under them is the page's own.
+func (s *State) ContentTitle(c *ui.Context) { s.tabBar(c) }
 
 // Content is the shell's page: the outline and the body, with the status bar
 // under them.
 func (s *State) Content(c *ui.Context) {
 	s.handleShortcuts(c)
 	ui.Column(c).Fill().Children(func() {
+		// The header, which holds the tabs, floats over the top of the page.
 		ui.Row(c).Height(sidebar.HeaderHeight(c))
-		s.tabBar(c)
+		s.titleRow(c)
 		ui.Column(c).Grow(1).Children(func() {
 			s.preview(c)
 			s.statusBar(c)
 		})
 	})
+}
+
+// titleRow is the room the document's title and mode switch take, between the
+// tabs in the header and the page's own content, in DIPs.
+const titleRowHeight float32 = 34
+
+// titleRow builds the row under the tabs: the document shown, the button that
+// copies its path, and the rendering mode it shows with.
+func (s *State) titleRow(c *ui.Context) {
+	ui.Row(c).Height(titleRowHeight).Children(func() { s.contentTitle(c) })
+	ui.Divider(c)
 }
 
 // leftHeader builds the project panel: the active project's name, and under it

@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/egoist/mygo/ui"
-	"github.com/oneo-me/onevra/source/shells/sidebar"
 
 	"mdpreview/internal/config"
 )
@@ -45,7 +44,7 @@ func TestModeToggleSitsWithTheDocumentName(t *testing.T) {
 	s.Refresh()
 	s.selectDoc("notes/a.md")
 
-	tt := ui.NewTester(func(c *ui.Context) { s.ContentTitle(c) }, 900, 40)
+	tt := ui.NewTester(func(c *ui.Context) { s.titleRow(c) }, 900, 40)
 	for _, want := range []string{"alpha/notes/a.md", "原生", "WebView"} {
 		if !tt.HasText(want) {
 			t.Errorf("title texts = %q, want %q", tt.Texts(), want)
@@ -131,7 +130,7 @@ func TestModeToggleIsOneSegmentedControl(t *testing.T) {
 	s.Refresh()
 	s.selectDoc("notes/a.md")
 
-	tt := ui.NewTester(func(c *ui.Context) { s.ContentTitle(c) }, 900, 48)
+	tt := ui.NewTester(func(c *ui.Context) { s.titleRow(c) }, 900, 40)
 	if tt.HasText("渲染方式：原生") {
 		t.Errorf("texts = %q, want no per-segment label: the segmented control names itself", tt.Texts())
 	}
@@ -159,7 +158,7 @@ func TestTitleFitsNarrowWindow(t *testing.T) {
 	s.Refresh()
 	s.selectDoc(doc)
 
-	build := func(c *ui.Context) { s.ContentTitle(c) }
+	build := func(c *ui.Context) { s.titleRow(c) }
 	wide := ui.NewTester(build, 900, 48)
 	natural, ok := wide.Find("WebView")
 	if !ok {
@@ -192,7 +191,7 @@ func TestTitleCopiesTheDocumentPath(t *testing.T) {
 	sys := &fakeSystem{}
 	s.SetSystem(sys)
 
-	tt := ui.NewTester(func(c *ui.Context) { s.ContentTitle(c) }, 900, 48)
+	tt := ui.NewTester(func(c *ui.Context) { s.titleRow(c) }, 900, 40)
 	if err := tt.Click("复制文档路径"); err != nil {
 		t.Fatalf("Click: %v", err)
 	}
@@ -226,36 +225,23 @@ func TestTOCScrollSurvivesAReloadButNotADocumentChange(t *testing.T) {
 	}
 }
 
-// TestTitleSitsInsideTheHeaderSlot pins the title bar to the room the shell
-// gives it: the shell pads its header by 6 DIP top and bottom, clips what
-// overflows, and the mode switch must stay inside that slot rather than being
-// cut by it.
-func TestTitleSitsInsideTheHeaderSlot(t *testing.T) {
+// TestTitleSitsInsideItsRow pins the title row to the room the page gives it:
+// the row is titleRowHeight tall, and the mode switch must sit inside it rather
+// than being cut by it.
+func TestTitleSitsInsideItsRow(t *testing.T) {
 	s, root := newState(t)
 	writeDoc(t, root, "a.md", "# A\n")
 	s.Refresh()
 	s.selectDoc("a.md")
 
-	const pad float32 = 6
-	var header, slotTop, slotBottom float32
-	tt := ui.NewTester(func(c *ui.Context) {
-		header = sidebar.HeaderHeight(c)
-		slotTop, slotBottom = pad, header-pad
-		ui.Row(c).Height(header).Padding(pad, 8).Children(func() {
-			ui.Row(c).Grow(1).MinWidth(0).FillHeight().Clip().Children(func() {
-				s.ContentTitle(c)
-			})
-		})
-	}, 900, 48)
-
+	tt := ui.NewTester(func(c *ui.Context) { s.titleRow(c) }, 900, 40)
 	for _, label := range []string{"原生", "WebView"} {
 		rect, ok := tt.Find(label)
 		if !ok {
 			t.Fatalf("texts = %q, want %q", tt.Texts(), label)
 		}
-		if rect.Y < slotTop+6 || rect.Y+rect.H > slotBottom-6 {
-			t.Errorf("%q shows at %v, outside the header's slot %v..%v",
-				label, rect, slotTop+6, slotBottom-6)
+		if rect.Y < 0 || rect.Y+rect.H > titleRowHeight {
+			t.Errorf("%q shows at %v, outside the row 0..%v", label, rect, titleRowHeight)
 		}
 	}
 }

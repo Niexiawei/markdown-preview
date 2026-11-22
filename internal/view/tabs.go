@@ -115,20 +115,60 @@ func (s *State) renameTab(from, to docSel) {
 	}
 }
 
+// tabsMenuWidth is how wide the list of all tabs is, in DIPs, and
+// tabListTextWidth how much of a name its rows show.
+const tabsMenuWidth float32 = 260
+
+const tabListTextWidth float32 = tabsMenuWidth - 3*8 - 20 - tabIcon - 4
+
 // tabBarHeight is the room the tab bar takes above the body, in DIPs.
 const tabBarHeight float32 = 36
 
 // tabIcon is the room the document icon takes in a tab, in DIPs.
 const tabIcon float32 = 14
 
+// tabClose is the room the close button takes, and tabPad the room on either
+// side of a tab's name: the same numbers the fit and the layout use, so that a
+// tab is never wider than the room the bar made for it.
+func tabClose(c *ui.Context) float32 { return max(20, c.Theme().Rem(1.25)) }
+
+func tabPad(c *ui.Context) float32 { return c.Theme().Space(1) }
+
+// tabTextWidth is how wide the name of a tab can be inside a tab of width.
+func tabTextWidth(c *ui.Context, width float32) float32 {
+	return width - tabClose(c) - 2*tabPad(c) - tabIcon - c.Theme().Space(0.5)
+}
+
 // tabWidth is how wide the tab of name is: as wide as its name needs, held
 // between the narrowest that still shows a name and the widest that leaves
 // room for the next one.
 func tabWidth(c *ui.Context, name string) float32 {
 	t := c.Theme()
-	pad := t.Space(1.5)
 	w, _ := c.MeasureText(0, ui.Span{Text: name, Font: t.Font, Size: t.FontSize})
-	return min(t.Rem(12), max(t.Rem(6), w+2*pad+tabIcon+t.Space(1)+20))
+	return min(t.Rem(12), max(t.Rem(7), w+tabClose(c)+2*tabPad(c)+tabIcon+t.Space(0.5)))
+}
+
+// fitText trims text to the width it has, ending what is left with an ellipsis:
+// a tab shows one line of a document's name, not the whole of it.
+func fitText(c *ui.Context, text string, width float32) string {
+	t := c.Theme()
+	measure := func(s string) float32 {
+		w, _ := c.MeasureText(0, ui.Span{Text: s, Font: t.Font, Size: t.FontSize})
+		return w
+	}
+	if width <= 0 {
+		return ""
+	}
+	if measure(text) <= width {
+		return text
+	}
+	runes := []rune(text)
+	for n := len(runes) - 1; n > 0; n-- {
+		if s := string(runes[:n]) + "…"; measure(s) <= width {
+			return s
+		}
+	}
+	return "…"
 }
 
 // visibleTabs returns the tabs the bar shows, and whether any are left out: as
@@ -172,26 +212,30 @@ func (s *State) visibleTabs(c *ui.Context, avail float32) ([]docSel, bool) {
 	return s.tabs[from : to+1], true
 }
 
-// tabBar builds the row above the body: a tab per open document, which a click
-// shows and its close button closes, and, when they do not fit, the button
-// listing all of them.
+// tabBar builds the header's row: a tab per open document, which a click shows
+// and its close button closes, and, when they do not fit, the button listing all
+// of them.
 func (s *State) tabBar(c *ui.Context) {
 	t := c.Theme()
+	row := ui.Row(c).Key("tab-bar").FillWidth().Height(tabBarHeight).AlignItems(ui.Center)
 	if len(s.tabs) == 0 {
-		ui.Row(c).Height(tabBarHeight)
 		return
 	}
-	// The overflow button is one compact square and the gap before it, and it
-	// only appears, and takes room, when the tabs do not all fit.
-	avail := s.windowWidth() - 2*t.Space(1)
+	// The bar's own width, from the frame before: the shell pads its header for
+	// the window's caption buttons, so the content's width is not the room the
+	// bar has, and a tab laid out for more room than it has runs under them.
+	avail := row.Bounds().W - 2*t.Space(1)
+	if avail <= 0 {
+		avail = s.windowWidth() - 2*t.Space(1)
+	}
 	shown, cut := s.visibleTabs(c, avail)
 	if cut {
-		shown, _ = s.visibleTabs(c, avail-max(20, t.Rem(1.25))-t.Space(1))
+		// The overflow button takes its own room, so one fewer tab fits.
+		shown, _ = s.visibleTabs(c, avail-max(20, t.Rem(1.25))-t.Space(0.5))
 	}
-	ui.Row(c).FillWidth().Height(tabBarHeight).AlignItems(ui.Center).
-		Padding(0, t.Space(1)).Gap(t.Space(0.5)).Children(func() {
+	row.Padding(0, t.Space(1)).Gap(t.Space(0.5)).Children(func() {
 		for _, tab := range shown {
-			s.tab(c, tab)
+			s.tab(c, tab, tabWidth(c, path.Base(tab.path)))
 		}
 		if !cut {
 			return
@@ -205,24 +249,31 @@ func (s *State) tabBar(c *ui.Context) {
 	})
 }
 
-// tab builds one tab: its name, which a click shows, and the button closing it.
-func (s *State) tab(c *ui.Context, tab docSel) {
+// tab builds one tab of the bar, width wide: its name, which a click shows, and
+// the button closing it, side by side rather than nested, so that a close is
+// never also a switch.
+func (s *State) tab(c *ui.Context, tab docSel, width float32) {
 	t := c.Theme()
 	inner := tabBarHeight - 2*t.Space(1)
-	row := ui.Row(c).Height(inner).Radius(t.Radius).AlignItems(ui.Center)
+	closeW := tabClose(c)
+	row := ui.Row(c).Width(width).Height(inner).Radius(t.Radius).
+		AlignItems(ui.Center).Clip()
 	if tab == s.sel {
 		row.Background(selectedRowTint(t))
 	}
 	row.Children(func() {
-		// The name is the clickable part and the close button its sibling:
-		// nesting one button in another would let a close also switch to the
-		// tab it closes.
 		name := components.Button(c, "", components.ButtonGhost).
 			Label("文档："+tab.path).Height(inner).
-			Padding(t.Space(0.75), t.Space(1))
-		name.Gap(t.Space(0.5)).Children(func() {
-			components.Icon(c, lucide.FileText()).Size(tabIcon, tabIcon).TextColor(t.TextMuted)
-			components.Text(c, trimEllipsis(path.Base(tab.path), 40)).FontSize(12).SingleLine()
+			Padding(t.Space(0.75), tabPad(c))
+		name.Width(max(0, width-closeW)).Children(func() {
+			// A row of its own, grown to the button's width, keeps the icon
+			// and the name at the tab's left edge: a button centres what it
+			// holds, and the name is what the tab is read by.
+			ui.Row(c).Grow(1).Gap(t.Space(0.5)).AlignItems(ui.Center).Children(func() {
+				components.Icon(c, lucide.FileText()).Size(tabIcon, tabIcon).TextColor(t.TextMuted)
+				components.Text(c, fitText(c, path.Base(tab.path), tabTextWidth(c, width))).
+					FontSize(12).SingleLine()
+			})
 		})
 		if name.Clicked() {
 			s.openTab(tab)
@@ -248,7 +299,8 @@ func (s *State) tabsMenu(c *ui.Context) {
 	})
 }
 
-// tabRow builds one row of the list of all tabs.
+// tabRow builds one row of the list of all tabs: the name from the row's left
+// edge, and the button closing it at the right.
 func (s *State) tabRow(c *ui.Context, tab docSel) {
 	t := c.Theme()
 	row := ui.Row(c).Radius(t.Radius).AlignItems(ui.Center)
@@ -257,9 +309,14 @@ func (s *State) tabRow(c *ui.Context, tab docSel) {
 	}
 	row.Children(func() {
 		name := components.Button(c, "", components.ButtonGhost).Label("打开：" + tab.path)
-		name.Grow(1).Gap(t.Space(0.75)).Children(func() {
-			components.Icon(c, lucide.FileText()).Size(tabIcon, tabIcon).TextColor(t.TextMuted)
-			components.Text(c, trimEllipsis(path.Base(tab.path), 32)).FontSize(12).SingleLine()
+		name.Grow(1).Children(func() {
+			// As a tab of the bar: a row of its own, grown to the button's
+			// width, so that a short name still starts at the left.
+			ui.Row(c).Grow(1).Gap(t.Space(0.5)).AlignItems(ui.Center).Children(func() {
+				components.Icon(c, lucide.FileText()).Size(tabIcon, tabIcon).TextColor(t.TextMuted)
+				components.Text(c, fitText(c, path.Base(tab.path), tabListTextWidth)).
+					FontSize(12).SingleLine()
+			})
 		})
 		if name.Clicked() {
 			s.openTab(tab)

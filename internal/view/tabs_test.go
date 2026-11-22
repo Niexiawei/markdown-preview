@@ -213,7 +213,9 @@ func TestTabBarOverflowsWithAButton(t *testing.T) {
 	if !s.tabsOpen {
 		t.Fatal("the overflow button did not open the list")
 	}
-	if err := tt.Click(names[0]); err != nil {
+	// The list's own accessible name: the row's text is what fits, the label
+	// is the whole path.
+	if err := tt.Click("打开：" + names[0]); err != nil {
 		t.Fatalf("Click %s: %v", names[0], err)
 	}
 	if got := s.Selected(); got != names[0] {
@@ -241,7 +243,7 @@ func TestTabBarKeepsActiveTabVisible(t *testing.T) {
 	s.selectDoc(names[0]) // the leftmost tab is the one shown
 
 	tt := ui.NewTester(func(c *ui.Context) { s.tabBar(c) }, 520, 400)
-	rect, ok := tt.Find(names[0])
+	rect, ok := tt.Find("文档：" + names[0])
 	if !ok {
 		t.Fatalf("tab texts = %q, want the active tab's name", tt.Texts())
 	}
@@ -281,26 +283,35 @@ func TestClosingATabDoesNotActivateIt(t *testing.T) {
 	}
 }
 
-// TestTabBarSitsAboveThePreview pins the bar's place in the shell's page: the
-// tab row comes before the body, under the title.
-func TestTabBarSitsAboveThePreview(t *testing.T) {
+// TestTabsSitAboveTheTitle pins the order the user asked for: the tabs are the
+// top row of the preview (in the shell's header slot), the document's path and
+// mode switch come under them, and the body under that.
+func TestTabsSitAboveTheTitle(t *testing.T) {
 	s, root := newState(t)
 	writeDoc(t, root, "alpha.md", "# A\n\n正文标记\n")
 	s.Refresh()
 	s.selectDoc("alpha.md")
 
-	tt := ui.NewTester(func(c *ui.Context) { s.Content(c) }, 900, 700)
-	// The tab's own accessible name, and a paragraph the body alone shows.
+	tt := ui.NewTester(s.View, 900, 700)
+	// The tab's own accessible name, the title row's mode switch, and a
+	// paragraph the body alone shows.
 	tab, ok := tt.Find("文档：alpha.md")
 	if !ok {
 		t.Fatalf("texts = %q, want the tab", tt.Texts())
+	}
+	title, ok := tt.Find("WebView")
+	if !ok {
+		t.Fatalf("texts = %q, want the title row's mode switch", tt.Texts())
 	}
 	body, ok := tt.Find("正文标记")
 	if !ok {
 		t.Fatalf("texts = %q, want the body's paragraph", tt.Texts())
 	}
-	if tab.Y+tab.H > body.Y {
-		t.Errorf("tab at %v..%v, body at %v: the bar is not above the body", tab.Y, tab.Y+tab.H, body.Y)
+	if tab.Y+tab.H > title.Y {
+		t.Errorf("tab at %v..%v, title at %v: the tabs are not above the title", tab.Y, tab.Y+tab.H, title.Y)
+	}
+	if title.Y+title.H > body.Y {
+		t.Errorf("title at %v..%v, body at %v: the title is not above the body", title.Y, title.Y+title.H, body.Y)
 	}
 }
 
@@ -364,5 +375,49 @@ func TestCmdWClosesTheTab(t *testing.T) {
 	}
 	if got := s.Selected(); got != "alpha.md" {
 		t.Errorf("selected = %q, want the neighbour", got)
+	}
+}
+
+// TestTabBarFitsTheRoomItIsGiven pins the bar to the slot it builds in rather
+// than to the window's content width: the shell reserves room in its header for
+// the window's caption buttons, so a bar laid out for the content's width runs
+// its last tabs and its overflow button under them.
+func TestTabBarFitsTheRoomItIsGiven(t *testing.T) {
+	s, root := newState(t)
+	var names []string
+	for i := range 8 {
+		name := fmt.Sprintf("文档-%02d-很长很长的名字.md", i)
+		names = append(names, name)
+		writeDoc(t, root, name, "# x\n")
+	}
+	s.Refresh()
+	for _, name := range names {
+		s.selectDoc(name)
+	}
+	// The window's content is wide, the header slot the bar builds in is not.
+	s.SetContentWidth(func() float32 { return 1400 })
+
+	const slot float32 = 520
+	tt := ui.NewTester(func(c *ui.Context) {
+		ui.Row(c).Width(slot).Height(48).Children(func() { s.tabBar(c) })
+	}, int(slot), 48)
+	tt.Frame()
+	tt.Frame()
+
+	over, ok := tt.Find("全部已打开文件")
+	if !ok {
+		t.Fatalf("tab texts = %q, want the overflow button", tt.Texts())
+	}
+	if over.X+over.W > slot {
+		t.Errorf("the overflow button ends at %v, past the slot's %v", over.X+over.W, slot)
+	}
+	for _, name := range names {
+		rect, ok := tt.Find("文档：" + name)
+		if !ok {
+			continue
+		}
+		if rect.X+rect.W > slot {
+			t.Errorf("the tab of %s ends at %v, past the slot's %v", name, rect.X+rect.W, slot)
+		}
 	}
 }

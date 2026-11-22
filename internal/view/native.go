@@ -166,7 +166,7 @@ func (s *State) toc(c *ui.Context) {
 	t := c.Theme()
 	ui.Column(c).Fill().Padding(tocPadding).Children(func() {
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
-			components.Text(c, "目录").FontSize(11).TextColor(t.TextMuted)
+			components.Text(c, "目录").FontSize(13).TextColor(t.TextMuted)
 			ui.Spacer(c)
 			s.tocActions(c)
 		})
@@ -188,23 +188,25 @@ func (s *State) toc(c *ui.Context) {
 }
 
 // tocActions builds the outline's bulk actions: unfold or fold every heading of
-// the document shown. Without headings there is nothing to fold.
+// the document shown, and the body's zoom. The buttons are the plain size rather
+// than the compact one: at the outline's density the compact ones read as
+// decoration.
 func (s *State) tocActions(c *ui.Context) {
 	hasHeads := len(s.headings) > 0
-	if components.IconButton(c, lucide.UnfoldVertical(), "展开全部目录", components.IconButtonCompact).
+	if components.IconButton(c, lucide.UnfoldVertical(), "展开全部目录", components.IconButtonPlain).
 		Disabled(!hasHeads).Clicked() {
 		s.setTOC(true)
 	}
-	if components.IconButton(c, lucide.FoldVertical(), "折叠全部目录", components.IconButtonCompact).
+	if components.IconButton(c, lucide.FoldVertical(), "折叠全部目录", components.IconButtonPlain).
 		Disabled(!hasHeads).Clicked() {
 		s.setTOC(false)
 	}
 	t := c.Theme()
-	if components.IconButton(c, lucide.ZoomOut(), "缩小正文", components.IconButtonCompact).Clicked() {
+	if components.IconButton(c, lucide.ZoomOut(), "缩小正文", components.IconButtonPlain).Clicked() {
 		s.zoomBy(-zoomStep)
 	}
-	components.Text(c, itoa(s.zoomPercent())+"%").FontSize(10).TextColor(t.TextMuted)
-	if components.IconButton(c, lucide.ZoomIn(), "放大正文", components.IconButtonCompact).Clicked() {
+	components.Text(c, itoa(s.zoomPercent())+"%").FontSize(11).TextColor(t.TextMuted)
+	if components.IconButton(c, lucide.ZoomIn(), "放大正文", components.IconButtonPlain).Clicked() {
 		s.zoomBy(zoomStep)
 	}
 }
