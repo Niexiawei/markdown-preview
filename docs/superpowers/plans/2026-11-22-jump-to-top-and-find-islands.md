@@ -553,3 +553,7 @@ git commit -m "docs: 回写跳转与搜索浮岛的结构、坑与规格"
    计划里"只写状态栏"的说法作废。
 5. **上下文岛不再套内层凹槽**：浮岛本身是卡片，再套 `t.Background` 就成三层底色；改成岛顶一行
    `第 N 行上下文` 做区分（渲染成 PNG 目检过）。
+6. **跳转在顶上留 16 DIP**（用户验收追加）：原计划是"顶边对齐窗格顶边"，实机上标题贴着边缘太紧。现在正文滚动容器
+   有一个 16 DIP 的**透明上边框**（`bodyJumpGap`），内边距相应减 16（静止时样子不变），reveal 对齐边框于是正好留出
+   16；webview 侧加 `scroll-margin-top: calc(16px * var(--md-scale))`。回归测试
+   `TestTOCJumpLeavesRoomAboveTheHeading`、`TestDocHTMLLeavesRoomAboveHeadings`。

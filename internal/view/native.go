@@ -298,6 +298,13 @@ func (s *State) tocItems(c *ui.Context, nodes []*tocNode) {
 // bodyPadding is the room around a document's body, in DIPs.
 const bodyPadding float32 = 28
 
+// bodyJumpGap is the room a jump leaves between the pane's top edge and the
+// block it brings there, in DIPs. It is the body's top border, because
+// ScrollIntoView lines a block up with the container's border and counts none of
+// its padding: a border is the only room it leaves. The padding above is less by
+// as much, so that the body at rest looks as it did.
+const bodyJumpGap float32 = 16
+
 // nativePreview builds the document's body with the native markdown view.
 func (s *State) nativePreview(c *ui.Context) {
 	t := c.Theme()
@@ -326,10 +333,13 @@ func (s *State) nativePreview(c *ui.Context) {
 	if s.jump > 0 {
 		s.md.Block = s.jumpMarker
 	}
-	ui.ScrollBoth(c).TrackScroll(s.docScroll()).Fill().Padding(bodyPadding).Children(func() {
-		ui.Column(c).Width(max(200, s.bodyPaneWidth()-2*bodyPadding-2)).Gap(12).Children(func() {
-			ui.Text(c, s.sel.path).FontSize(11).TextColor(t.TextMuted)
-			markdown.View(c, s.src, &s.md)
+	ui.ScrollBoth(c).TrackScroll(s.docScroll()).Fill().
+		Padding(bodyPadding-bodyJumpGap, bodyPadding, bodyPadding, bodyPadding).
+		BorderWidth(bodyJumpGap, 0, 0, 0).BorderColor(ui.Transparent).
+		Children(func() {
+			ui.Column(c).Width(max(200, s.bodyPaneWidth()-2*bodyPadding-2)).Gap(12).Children(func() {
+				ui.Text(c, s.sel.path).FontSize(11).TextColor(t.TextMuted)
+				markdown.View(c, s.src, &s.md)
+			})
 		})
-	})
 }

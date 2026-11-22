@@ -328,3 +328,28 @@ func TestJumpAskResetsTheFrameStamp(t *testing.T) {
 		t.Errorf("jumpSeen = %v, want a new ask to start without a stamp", s.jumpSeen)
 	}
 }
+
+// TestTOCJumpLeavesRoomAboveTheHeading pins the room a jump leaves: the chapter
+// lands 16 DIP under the pane's top edge, not flush against it, so that the
+// heading reads as a heading rather than as the first line of the page.
+func TestTOCJumpLeavesRoomAboveTheHeading(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", sections(8))
+	s.Refresh()
+	s.selectDoc("a.md")
+
+	// The body alone, so that the heading's text names its own box.
+	tt := ui.NewTester(func(c *ui.Context) { s.nativePreview(c) }, 700, 600)
+	tt.Frame()
+	s.gotoHeading("第-6-节")
+	tt.Frame()
+	tt.Advance(time.Second)
+	tt.Frame()
+	rect, ok := tt.Find("第 6 节")
+	if !ok {
+		t.Fatalf("texts = %q, want the heading", tt.Texts())
+	}
+	if rect.Y < 12 || rect.Y > 20 {
+		t.Errorf("heading at Y=%v, want the 16 DIP a jump leaves above it", rect.Y)
+	}
+}

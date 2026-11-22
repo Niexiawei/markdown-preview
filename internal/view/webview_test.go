@@ -226,3 +226,13 @@ func TestDocURLHasNoHeading(t *testing.T) {
 		t.Errorf("address = %q, want no heading in it", got)
 	}
 }
+
+// TestDocHTMLLeavesRoomAboveHeadings pins the page's half of the room a jump
+// leaves: scrollIntoView counts scroll-margin, as the native body leaves it with
+// its top border.
+func TestDocHTMLLeavesRoomAboveHeadings(t *testing.T) {
+	html := docHTML(t.TempDir(), "# A\n", "1", 1)
+	if !strings.Contains(html, "scroll-margin-top") {
+		t.Errorf("page = %q, want room above the headings", html)
+	}
+}

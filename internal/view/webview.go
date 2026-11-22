@@ -373,7 +373,12 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 article { max-width: 820px; }
-h1, h2, h3, h4, h5, h6 { line-height: 1.3; margin: 1.4em 0 0.55em; font-weight: 600; }
+h1, h2, h3, h4, h5, h6 {
+  line-height: 1.3; margin: 1.4em 0 0.55em; font-weight: 600;
+  /* The room a jump leaves above the heading, as the native body's top border
+     leaves it (native.go's bodyJumpGap): scrollIntoView counts it. */
+  scroll-margin-top: calc(16px * var(--md-scale));
+}
 h1 { font-size: 1.9em; margin-top: 0.2em; }
 h2 { font-size: 1.45em; border-bottom: 1px solid rgba(0,0,0,0.08); padding-bottom: 0.25em; }
 h3 { font-size: 1.2em; }
