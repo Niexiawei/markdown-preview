@@ -1854,3 +1854,13 @@ git commit -m "docs: 记录标签页、目录动作与悬浮搜索的用法与�
     改成 `ScrollState.ScrollTo(x, y, ui.Smooth)`，并用 `tabAsk` 记住已请求的位置去重；范围还没算好
     （`MaxX` 慢一帧）时不发起动画，下一帧再滑；系统「减少动态效果」时 mygo 直接到位。
     回归测试：`TestTabsSlideToTheTabShown`。
+
+12. **搜索命中跳转的落点与平滑（用户 2026-11-22 追加，D14 的 `AnchorBlock` 方案作废）**：本计划的 D14 用
+    `State.anchor = "find:<块号>"` + `markdown.Options.AnchorBlock` 让 mygo 滚到命中的块，那是
+    `ScrollNearest` + 无动画（目标只露出一点、一帧跳过去）。现在改成与目录跳转共用一条路：`State.jump`
+    + `Options.Block` 钩子建零高标记 + `ScrollIntoView({Block: ScrollStart, Animation: ui.Smooth})`，
+    `find:` 前缀与 `anchorBlock` 删除。详见
+    `docs/superpowers/plans/2026-11-22-jump-to-top-and-find-islands.md`。
+13. **搜索面板从"一整块卡片里叠三段"改成三块浮岛**（D12/D13 的外观部分被取代）：输入框、匹配行、
+    上下文各一块圆角卡片（`findIsland`），块间留 6 DIP 露出正文，上下文岛顶上一行 `第 N 行上下文`。
+    行为与数据不变（同一套 `FindIn` + `findState`）。
