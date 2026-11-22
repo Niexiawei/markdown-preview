@@ -38,6 +38,12 @@ func (s *State) loadDoc() {
 		return
 	}
 	s.doc, s.headings, s.src = doc, headings, src
+	// Another document is another search: the matches of the last one name
+	// lines that no longer mean the same thing.
+	s.find.matches, s.find.current, s.find.truncated = nil, 0, false
+	if s.find.open && s.find.query != "" {
+		s.refreshMatches()
+	}
 	if abs, err := s.ws.AbsOf(p.ID, s.sel.path); err == nil {
 		s.md.LoadImage = markdown.FileImages(filepath.Dir(abs))
 	}
@@ -45,6 +51,7 @@ func (s *State) loadDoc() {
 	s.md.OnLink = s.followLink
 	s.md.Anchor = s.anchor
 	s.md.AnchorVersion = s.anchorVer
+	s.md.AnchorBlock = s.anchorBlock
 	s.rev++
 	s.loadWebDoc()
 }

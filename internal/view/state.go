@@ -62,6 +62,9 @@ type State struct {
 	// zoom is how much larger or smaller the body's text shows than the
 	// theme's: one while it was never changed.
 	zoom float32
+	// find is the search over the document shown, which the floating panel
+	// shows.
+	find findState
 
 	// The document shown: its source, its parse, the outline built from it,
 	// and what the native markdown view shows it with.
