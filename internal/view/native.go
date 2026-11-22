@@ -95,7 +95,9 @@ func (s *State) jumpToBlock(b int) {
 		}
 		b = p
 	}
-	s.jump = b
+	// A new ask starts without the stamp of the last one's frame, which
+	// would otherwise read as "the frame is over" and drop it.
+	s.jump, s.jumpSeen = b, time.Time{}
 }
 
 // blockOfHeading returns the block of d that holds the heading of slug, 0 when

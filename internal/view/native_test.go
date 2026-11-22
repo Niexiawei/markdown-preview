@@ -276,3 +276,55 @@ func TestTOCJumpWithoutAWebViewFallsBackToTheBody(t *testing.T) {
 		t.Errorf("jump = %d, want the heading's block %d", s.jump, want)
 	}
 }
+
+// TestJumpAfterAnotherDocumentStillJumps pins that a jump asked for later is not
+// dropped by the frame stamp of an earlier one: switching documents, and coming
+// back to the outline, still glides the body to the chapter clicked.
+func TestJumpAfterAnotherDocumentStillJumps(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", sections(8))
+	writeDoc(t, root, "b.md", "另一个文档\n")
+	s.Refresh()
+	s.selectDoc("a.md")
+
+	tt := newTester(s)
+	if err := tt.Click("第 6 节"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	tt.Advance(time.Second)
+	tt.Frame()
+	first := s.docScroll().Y
+	if first <= 0 {
+		t.Fatalf("Y = %v, want the first jump to have scrolled", first)
+	}
+
+	s.selectDoc("b.md")
+	s.selectDoc("a.md")
+	tt.Frame()
+	if err := tt.Click("第 2 节"); err != nil {
+		t.Fatalf("Click after coming back: %v", err)
+	}
+	tt.Advance(time.Second)
+	tt.Frame()
+	if got := s.docScroll().Y; got >= first-100 {
+		t.Errorf("Y = %v after jumping to the second section, want well above %v", got, first)
+	}
+}
+
+// TestJumpAskResetsTheFrameStamp pins the stamp's meaning: it says when the
+// current ask was built into a marker, so a new ask must start without one,
+// as after another document replaced the one an earlier ask was made in.
+func TestJumpAskResetsTheFrameStamp(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", sections(8))
+	s.Refresh()
+	s.selectDoc("a.md")
+	s.jumpSeen = time.Unix(1, 0) // as the frame that built a marker left it
+	s.jumpToBlock(blockOfHeading(s.doc, "第-2-节"))
+	if s.jump == 0 {
+		t.Fatal("no jump was asked for")
+	}
+	if !s.jumpSeen.IsZero() {
+		t.Errorf("jumpSeen = %v, want a new ask to start without a stamp", s.jumpSeen)
+	}
+}
