@@ -8,6 +8,8 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/markdown"
 	"github.com/egoist/mygo/ui/markdown/parser"
+	"github.com/oneo-me/onevra/source/components"
+	"github.com/oneo-me/onevra/source/icons/lucide"
 
 	"mdpreview/internal/workspace"
 )
@@ -121,13 +123,40 @@ func buildTOC(headings []workspace.Heading) []*tocNode {
 // tocPadding is the room around the outline, in DIPs.
 const tocPadding float32 = 8
 
+// tocKey is where the outline's open state lives for a heading of the document
+// shown: by project and path first, so that two documents whose headings share
+// a name do not unfold each other.
+func (s *State) tocKey(slug string) string {
+	return "toc:" + s.sel.project + ":" + s.sel.path + ":" + slug
+}
+
+// setTOC unfolds or folds every heading of the document shown.
+func (s *State) setTOC(open bool) {
+	var walk func([]*tocNode)
+	walk = func(nodes []*tocNode) {
+		for _, n := range nodes {
+			if len(n.children) == 0 {
+				continue
+			}
+			b := open
+			s.open[s.tocKey(n.h.Slug)] = &b
+			walk(n.children)
+		}
+	}
+	walk(buildTOC(s.headings))
+}
+
 // toc builds the document's outline, whose entries scroll the body to their
 // heading. The outline scrolls both ways, and keeps its rows as wide as the
 // pane, so that a click on one lands wherever on it the pointer is.
 func (s *State) toc(c *ui.Context) {
 	t := c.Theme()
 	ui.Column(c).Fill().Padding(tocPadding).Children(func() {
-		ui.Text(c, "目录").FontSize(11).TextColor(t.TextMuted)
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
+			components.Text(c, "目录").FontSize(11).TextColor(t.TextMuted)
+			ui.Spacer(c)
+			s.tocActions(c)
+		})
 		if len(s.headings) == 0 {
 			return
 		}
@@ -145,11 +174,25 @@ func (s *State) toc(c *ui.Context) {
 	})
 }
 
+// tocActions builds the outline's bulk actions: unfold or fold every heading of
+// the document shown. Without headings there is nothing to fold.
+func (s *State) tocActions(c *ui.Context) {
+	hasHeads := len(s.headings) > 0
+	if components.IconButton(c, lucide.UnfoldVertical(), "展开全部目录", components.IconButtonCompact).
+		Disabled(!hasHeads).Clicked() {
+		s.setTOC(true)
+	}
+	if components.IconButton(c, lucide.FoldVertical(), "折叠全部目录", components.IconButtonCompact).
+		Disabled(!hasHeads).Clicked() {
+		s.setTOC(false)
+	}
+}
+
 func (s *State) tocItems(c *ui.Context, nodes []*tocNode) {
 	for _, n := range nodes {
 		n := n
 		if len(n.children) > 0 {
-			item := ui.TreeItem(c, n.h.Text, s.openOf("toc:"+n.h.Slug), func() {
+			item := ui.TreeItem(c, n.h.Text, s.openOf(s.tocKey(n.h.Slug)), func() {
 				s.tocItems(c, n.children)
 			}).Selected(n.h.Slug == s.anchor)
 			if item.Clicked() {

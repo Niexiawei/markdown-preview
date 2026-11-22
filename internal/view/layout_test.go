@@ -259,3 +259,83 @@ func TestTitleSitsInsideTheHeaderSlot(t *testing.T) {
 		}
 	}
 }
+
+// TestExpandAllOnlyTouchesTheCurrentDocument pins the outline's two bulk
+// actions: expanding every heading of the document shown unfolds its outline,
+// and not another document's headings of the same name.
+func TestExpandAllOnlyTouchesTheCurrentDocument(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", "# 总览\n\n## 范围\n\n### 细节\n")
+	writeDoc(t, root, "b.md", "# 总览\n\n## 范围\n\n### 细节\n")
+	s.Refresh()
+	s.selectDoc("a.md")
+	s.selectDoc("b.md") // b.md shows; a.md keeps its own open state
+
+	tt := ui.NewTester(func(c *ui.Context) { s.toc(c) }, 240, 400)
+	if err := tt.Click("折叠全部目录"); err != nil {
+		t.Fatalf("Click collapse: %v", err)
+	}
+	tt.Frame()
+	if tt.HasText("范围") {
+		t.Errorf("outline texts = %q, want only the top level after folding all", tt.Texts())
+	}
+	if err := tt.Click("展开全部目录"); err != nil {
+		t.Fatalf("Click expand: %v", err)
+	}
+	tt.Frame()
+	for _, want := range []string{"范围", "细节"} {
+		if !tt.HasText(want) {
+			t.Errorf("outline texts = %q, want %q after expanding all", tt.Texts(), want)
+		}
+	}
+
+	s.selectDoc("a.md")
+	tt.Frame()
+	if !tt.HasText("范围") {
+		t.Errorf("outline texts = %q, want a.md untouched by b.md's bulk action", tt.Texts())
+	}
+}
+
+// TestCollapseAllFoldsTheOutline pins the other direction: folding every
+// heading leaves only the top level, and a click still jumps.
+func TestCollapseAllFoldsTheOutline(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", "# 一\n\n## 二\n\n### 三\n")
+	s.Refresh()
+	s.selectDoc("a.md")
+
+	tt := ui.NewTester(func(c *ui.Context) { s.toc(c) }, 240, 400)
+	if err := tt.Click("折叠全部目录"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	tt.Frame()
+	if tt.HasText("二") || tt.HasText("三") {
+		t.Errorf("outline texts = %q, want only the top level", tt.Texts())
+	}
+	if err := tt.Click("一"); err != nil {
+		t.Fatalf("Click heading: %v", err)
+	}
+	if s.anchor != "一" {
+		t.Errorf("anchor = %q, want the top-level heading", s.anchor)
+	}
+}
+
+// TestTOCBulkActionsAreDisabledWithoutHeadings pins that the two bulk actions
+// do nothing on a document without headings, rather than erroring.
+func TestTOCBulkActionsAreDisabledWithoutHeadings(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "plain.md", "没有标题的正文\n")
+	s.Refresh()
+	s.selectDoc("plain.md")
+
+	tt := ui.NewTester(func(c *ui.Context) { s.toc(c) }, 240, 400)
+	for _, label := range []string{"展开全部目录", "折叠全部目录"} {
+		if _, ok := tt.Find(label); !ok {
+			t.Errorf("outline texts = %q, want %q", tt.Texts(), label)
+		}
+	}
+	s.setTOC(true)
+	if len(s.open) != 0 {
+		t.Errorf("open = %v, want nothing written without headings", s.open)
+	}
+}
