@@ -608,3 +608,63 @@ func TestTabStripShowsTheWholeTabShown(t *testing.T) {
 		}
 	}
 }
+
+// TestTabsListKeepsClearOfItsBar pins the room the list of all tabs leaves for
+// the bar it scrolls by: a close button under that bar takes presses meant for
+// neither, so the buttons end short of it.
+func TestTabsListKeepsClearOfItsBar(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "alpha.md", "# A\n")
+	s.Refresh()
+	s.selectDoc("alpha.md")
+
+	tt := ui.NewTester(func(c *ui.Context) { s.tabsMenu(c) }, int(tabsMenuWidth), 300)
+	close, ok := tt.Find("关闭 alpha.md")
+	if !ok {
+		t.Fatalf("texts = %q, want the row's close button", tt.Texts())
+	}
+	if gap := tabsMenuWidth - (close.X + close.W); gap < 10 {
+		t.Errorf("the close button ends %v from the list's edge, want room for the bar", gap)
+	}
+}
+
+// TestTabsOpenedOneByOneStayWhole pins the strip's place against the frame it
+// lags behind: a tab opened this frame has not grown the strip's range yet, so a
+// place clamped to that range would stop one tab short and leave the tab shown
+// cut — and the strip would never correct itself, the ask counting as answered.
+func TestTabsOpenedOneByOneStayWhole(t *testing.T) {
+	s, root := newState(t)
+	var names []string
+	for i := range 10 {
+		name := fmt.Sprintf("文档-%02d-很长很长的名字.md", i)
+		names = append(names, name)
+		writeDoc(t, root, name, "# x\n")
+	}
+	s.Refresh()
+	s.SetContentWidth(func() float32 { return 600 })
+
+	var starts, widths []float32
+	build := func(c *ui.Context) {
+		starts, widths = starts[:0], widths[:0]
+		x := float32(0)
+		for _, name := range names {
+			w := tabWidth(c, name)
+			starts = append(starts, x)
+			widths = append(widths, w)
+			x += w + c.Theme().Space(0.5)
+		}
+		ui.Row(c).Width(600).Height(48).Children(func() { s.tabBar(c) })
+	}
+
+	tt := ui.NewTester(build, 600, 48)
+	tt.Frame()
+	for i, name := range names {
+		s.selectDoc(name)
+		tt.Frame()
+		tt.Frame()
+		if starts[i] < s.tabScroll.X || starts[i]+widths[i] > s.tabScroll.X+s.tabView {
+			t.Errorf("with %s shown the tab runs %v..%v, outside the strip %v..%v",
+				name, starts[i], starts[i]+widths[i], s.tabScroll.X, s.tabScroll.X+s.tabView)
+		}
+	}
+}

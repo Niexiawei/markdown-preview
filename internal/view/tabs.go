@@ -115,11 +115,8 @@ func (s *State) renameTab(from, to docSel) {
 	}
 }
 
-// tabsMenuWidth is how wide the list of all tabs is, in DIPs, and
-// tabListTextWidth how much of a name its rows show.
+// tabsMenuWidth is how wide the list of all tabs is, in DIPs.
 const tabsMenuWidth float32 = 260
-
-const tabListTextWidth float32 = tabsMenuWidth - 3*8 - 20 - tabIcon - 4
 
 // tabBarHeight is the room the tab bar takes above the body, in DIPs.
 const tabBarHeight float32 = 36
@@ -189,20 +186,15 @@ func (s *State) tabsWidth(c *ui.Context, widths []float32) float32 {
 	return total
 }
 
-// revealTab scrolls the strip so that the tab shown shows: switching by the
-// tree, a link or a shortcut brings the tab into view, while the user's own
-// scrolling of the strip is left alone as long as the tab stays the same.
-func (s *State) revealTab(c *ui.Context, widths []float32, view float32) {
-	if view <= 0 || (s.tabShown == s.sel && s.tabView == view) {
-		return
+// revealTab scrolls the strip so that the tab shown shows, reporting whether
+// the place it set is the place the strip can rest at: the strip's own range
+// comes from the frame before, and a tab opened this frame has not grown it yet,
+// so a place clamped to that range would stop one tab short and leave the tab
+// shown cut.
+func (s *State) revealTab(c *ui.Context, widths []float32, view float32) (settled bool) {
+	if view <= 0 {
+		return true
 	}
-	// The strip knows how far it scrolls from the frame before: until it does,
-	// a place set here would be clamped back to the start, and the tab shown
-	// would never come into view.
-	if s.tabScroll.MaxX <= 0 && s.tabsWidth(c, widths) > view {
-		return
-	}
-	s.tabShown, s.tabView = s.sel, view
 	gap := c.Theme().Space(0.5)
 	starts := make([]float32, len(widths))
 	x := float32(0)
@@ -212,25 +204,13 @@ func (s *State) revealTab(c *ui.Context, widths []float32, view float32) {
 	}
 	active := s.tabIndex(s.sel)
 	if active < 0 {
-		return
+		return true
 	}
-	// The strip comes to rest where a tab begins, never in the middle of one: a
-	// tab cut down to its close button reads as a stray ✕ in blank space.
-	if starts[active] < s.tabScroll.X {
-		s.tabScroll.X = starts[active]
-		return
-	}
-	if widths[active] >= view {
-		s.tabScroll.X = starts[active]
-		return
-	}
-	// Its end has to come into view, and the place the strip comes to rest has
-	// to be a tab's start: the first start at or after that place, which also
-	// keeps the tab shown inside.
+	// Where the tab shown has to begin for its end to come into view, and the
+	// first tab start at or after it: the strip comes to rest where a tab
+	// begins, never in the middle of one, where a tab cut down to its close
+	// button reads as a stray ✕ in blank space.
 	target := starts[active] + widths[active] - view
-	if target <= s.tabScroll.X {
-		return
-	}
 	desired := starts[active]
 	for i := 0; i <= active; i++ {
 		if starts[i] >= target {
@@ -238,14 +218,22 @@ func (s *State) revealTab(c *ui.Context, widths []float32, view float32) {
 			break
 		}
 	}
-	// The place a tab begins is not always reachable — a strip of wide tabs
-	// cannot align its last one to its left edge without leaving a hole — so
-	// the end takes over there. The tab shown is inside either way: the place
-	// it needs is never past the end.
-	if s.tabScroll.MaxX > 0 {
+	// A tab can sit too near the end for its start to be within reach: then the
+	// end of the strip shows it, which is as far as the tabs go.
+	end := max(0, s.tabsWidth(c, widths)-view)
+	desired = min(desired, end)
+	switch {
+	case s.tabScroll.MaxX <= 0 && end > 0, s.tabScroll.MaxX+1 < end:
+		// The strip has not laid the tabs out yet, or has not grown to hold one
+		// opened this frame: keep asking, so that the place is set again once it
+		// has, and the tab shown is not left cut.
+		settled = false
+	default:
 		desired = min(desired, s.tabScroll.MaxX)
+		settled = true
 	}
 	s.tabScroll.X = desired
+	return settled
 }
 
 // tabFade fades the ends of the strip that have more tabs beyond them.
@@ -299,8 +287,12 @@ func (s *State) tabBarAt(c *ui.Context, pull float32) {
 	}
 	// The strip is scrolled before it is built: a ScrollState set after its
 	// container built this frame is a place it never takes.
-	if known {
-		s.revealTab(c, widths, strip)
+	// The place is asked for again when the tabs, their room or the tab shown
+	// change: closing a tab before the one shown moves it, too.
+	total := s.tabsWidth(c, widths)
+	if known && (s.tabPending || s.tabShown != s.sel || s.tabView != strip || s.tabTotal != total) {
+		s.tabPending = !s.revealTab(c, widths, strip)
+		s.tabShown, s.tabView, s.tabTotal = s.sel, strip, total
 	}
 	row.Children(func() {
 		// The strip is pulled to the inset the app asks for, and the list
@@ -324,6 +316,9 @@ func (s *State) tabBarAt(c *ui.Context, pull float32) {
 						return false
 					}
 					// A notch down moves the strip on, as it scrolls a column down.
+					// The user takes the strip from here: a place still asked for
+					// by a tab chosen a frame ago gives way to their scrolling.
+					s.tabPending = false
 					s.tabScroll.X -= ev.DY
 					return true
 				}).Children(func() {
@@ -387,7 +382,10 @@ func (s *State) tabsMenu(c *ui.Context) {
 	t := c.Theme()
 	ui.Column(c).Width(260).Padding(t.Space(1)).Children(func() {
 		ui.Scroll(c).MaxHeight(400).Children(func() {
-			ui.Column(c).Gap(t.Space(0.25)).Children(func() {
+			// The rows keep clear of the bar the list scrolls by, which lies
+			// over its right edge: a close button under it takes presses meant
+			// for neither.
+			ui.Column(c).Gap(t.Space(0.25)).Padding(0, t.Space(3), 0, 0).Children(func() {
 				for _, tab := range s.tabs {
 					s.tabRow(c, tab)
 				}
@@ -404,14 +402,18 @@ func (s *State) tabRow(c *ui.Context, tab docSel) {
 	if tab == s.sel {
 		row.Background(selectedRowTint(t))
 	}
+	// The name's room: the menu, less its padding, the bar the list scrolls by,
+	// the close button, and the room inside the button.
+	room := tabsMenuWidth - 2*t.Space(1) - t.Space(3) - tabClose(c) - 2*tabPad(c) - tabIcon - t.Space(0.5)
 	row.Children(func() {
-		name := components.Button(c, "", components.ButtonGhost).Label("打开：" + tab.path)
+		name := components.Button(c, "", components.ButtonGhost).Label("打开："+tab.path).
+			Padding(t.Space(0.75), tabPad(c))
 		name.Grow(1).Children(func() {
 			// As a tab of the bar: a row of its own, grown to the button's
 			// width, so that a short name still starts at the left.
 			ui.Row(c).Grow(1).Gap(t.Space(0.5)).AlignItems(ui.Center).Children(func() {
 				components.Icon(c, lucide.FileText()).Size(tabIcon, tabIcon).TextColor(t.TextMuted)
-				components.Text(c, fitText(c, path.Base(tab.path), tabListTextWidth)).
+				components.Text(c, fitText(c, path.Base(tab.path), room)).
 					FontSize(12).SingleLine()
 			})
 		})

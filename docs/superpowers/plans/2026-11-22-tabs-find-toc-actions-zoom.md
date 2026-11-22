@@ -1842,3 +1842,10 @@ git commit -m "docs: 记录标签页、目录动作与悬浮搜索的用法与�
    会吃掉点击）；`titleInsetWanted` 由 8 调到 12（8 看起来贴边），并且只把**标签条**往左拉，⌄ 按钮留在标题槽的
    右侧内边距上（之前整行平移，右边多出 16 的空档）。
    回归测试：`TestTabStripShowsTheWholeTabShown`、`TestTabStripFollowsTheRoomItHas`、`TestTabsTuckUnderTheSidebarHeader`。
+
+10. **「选中的标签完整可见」的两个真 bug**（用户 2026-11-22 再次反馈）：滚动容器的 `MaxX` 慢一帧，
+    刚打开的标签还没撑开它，原来把位置 clamp 到旧 `MaxX` 会**差整整一个标签**，而且记成"已滚到"后再不重试。
+    现在 `revealTab` 返回是否 settled，未 settled 时置 `tabPending` 下一帧重试；`tabTotal` 参与记忆
+    （关掉前面的标签会挪动当前标签）；滚轮一动清掉 `tabPending`。
+    另外「全部已打开文件」列表右侧留 `Space(3)` 给竖向滚动条，避免它盖住 ✕。
+    回归测试：`TestTabsOpenedOneByOneStayWhole`、`TestTabsListKeepsClearOfItsBar`。

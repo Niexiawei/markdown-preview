@@ -64,6 +64,13 @@ type State struct {
 	tabScroll ui.ScrollState
 	tabShown  docSel
 	tabView   float32
+	// tabTotal is how wide all the tabs are, as the strip was last scrolled to
+	// show one: a tab opened or closed changes it, and the place is asked for
+	// again.
+	tabTotal float32
+	// tabPending says the strip has yet to take the place asked for, because it
+	// had not laid the tabs out: the ask is repeated until it does.
+	tabPending bool
 	// zoom is how much larger or smaller the body's text shows than the
 	// theme's: one while it was never changed.
 	zoom float32
