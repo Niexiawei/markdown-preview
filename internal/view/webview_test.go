@@ -195,3 +195,34 @@ func TestDocHTMLCarriesTheZoom(t *testing.T) {
 		t.Errorf("page = %q, want the body to scale with it", html)
 	}
 }
+
+// TestHeadingScrollJS pins the page's scroll to a heading: the browser's own
+// smooth scroll that lines the heading up with the page's top, and stops at the
+// page's end, as the native body does with a block.
+func TestHeadingScrollJS(t *testing.T) {
+	js := headingScrollJS("二-install-3")
+	for _, want := range []string{
+		`document.getElementById("二-install-3")`,
+		"scrollIntoView",
+		"behavior:'smooth'",
+		"block:'start'",
+	} {
+		if !strings.Contains(js, want) {
+			t.Errorf("js = %s, want %q", js, want)
+		}
+	}
+}
+
+// TestDocURLHasNoHeading pins that the heading an outline click names never
+// reaches the page's address: a hash there reloads the page, which both loses
+// where the body was and skips the glide.
+func TestDocURLHasNoHeading(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", "# 一\n\n## 二\n")
+	s.Refresh()
+	s.selectDoc("a.md")
+	s.anchor = "二"
+	if got := s.docURL(); strings.Contains(got, "二") || strings.Contains(got, "#") {
+		t.Errorf("address = %q, want no heading in it", got)
+	}
+}

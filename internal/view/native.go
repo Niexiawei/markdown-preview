@@ -67,8 +67,9 @@ func (s *State) gotoHeading(slug string) {
 		return
 	}
 	s.anchor = slug
-	if s.mode() == config.RenderWebView {
+	if s.mode() == config.RenderWebView && s.wv != nil {
 		// The page has no block to jump to: webview.go scrolls it by id.
+		s.scrollWebTo(slug)
 		return
 	}
 	s.jumpToBlock(blockOfHeading(s.doc, slug))

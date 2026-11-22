@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/ui"
+
+	"mdpreview/internal/config"
 )
 
 func TestTOCListsHeadings(t *testing.T) {
@@ -253,5 +255,24 @@ func TestDocChangeReloadsHeadingOutline(t *testing.T) {
 	s.selectDoc("b.md")
 	if len(s.headings) != 2 || s.headings[1].Text != "Child" {
 		t.Errorf("headings = %v, want Old gone and Child shown", s.headings)
+	}
+}
+
+// TestTOCJumpWithoutAWebViewFallsBackToTheBody pins the degraded path: in
+// webview mode without a page (headless tests, a machine without one) the body
+// shown is the native one, so an outline click still brings the chapter to the
+// top there.
+func TestTOCJumpWithoutAWebViewFallsBackToTheBody(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", sections(8))
+	s.Refresh()
+	s.selectDoc("a.md")
+	s.setMode(config.RenderWebView)
+	if s.wv != nil {
+		t.Fatal("a web view was made without a window")
+	}
+	s.gotoHeading("第-6-节")
+	if want := blockOfHeading(s.doc, "第-6-节"); want == 0 || s.jump != want {
+		t.Errorf("jump = %d, want the heading's block %d", s.jump, want)
 	}
 }
