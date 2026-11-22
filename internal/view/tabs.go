@@ -193,7 +193,7 @@ func (s *State) tabsWidth(c *ui.Context, widths []float32) float32 {
 // tree, a link or a shortcut brings the tab into view, while the user's own
 // scrolling of the strip is left alone as long as the tab stays the same.
 func (s *State) revealTab(c *ui.Context, widths []float32, view float32) {
-	if s.tabShown == s.sel || view <= 0 {
+	if view <= 0 || (s.tabShown == s.sel && s.tabView == view) {
 		return
 	}
 	// The strip knows how far it scrolls from the frame before: until it does,
@@ -202,7 +202,7 @@ func (s *State) revealTab(c *ui.Context, widths []float32, view float32) {
 	if s.tabScroll.MaxX <= 0 && s.tabsWidth(c, widths) > view {
 		return
 	}
-	s.tabShown = s.sel
+	s.tabShown, s.tabView = s.sel, view
 	gap := c.Theme().Space(0.5)
 	starts := make([]float32, len(widths))
 	x := float32(0)
@@ -224,25 +224,55 @@ func (s *State) revealTab(c *ui.Context, widths []float32, view float32) {
 		s.tabScroll.X = starts[active]
 		return
 	}
+	// Its end has to come into view, and the place the strip comes to rest has
+	// to be a tab's start: the first start at or after that place, which also
+	// keeps the tab shown inside.
 	target := starts[active] + widths[active] - view
 	if target <= s.tabScroll.X {
 		return
 	}
-	for i := len(starts) - 1; i >= 0; i-- {
-		if starts[i] <= target {
-			s.tabScroll.X = starts[i]
-			return
+	desired := starts[active]
+	for i := 0; i <= active; i++ {
+		if starts[i] >= target {
+			desired = starts[i]
+			break
 		}
 	}
-	s.tabScroll.X = 0
+	// The place a tab begins is not always reachable — a strip of wide tabs
+	// cannot align its last one to its left edge without leaving a hole — so
+	// the end takes over there. The tab shown is inside either way: the place
+	// it needs is never past the end.
+	if s.tabScroll.MaxX > 0 {
+		desired = min(desired, s.tabScroll.MaxX)
+	}
+	s.tabScroll.X = desired
+}
+
+// tabFade fades the ends of the strip that have more tabs beyond them.
+func (s *State) tabFade(p *ui.Painter, r ui.Rect, bg ui.Color) {
+	const fade float32 = 20
+	if s.tabScroll.X > 0 {
+		p.FillGradient(ui.Rect{X: r.X, Y: r.Y, W: fade, H: r.H},
+			ui.LinearGradient{From: bg, To: bg.Alpha(0), Angle: 90}, 0)
+	}
+	if s.tabScroll.MaxX > 0 && s.tabScroll.X < s.tabScroll.MaxX {
+		p.FillGradient(ui.Rect{X: r.X + r.W - fade, Y: r.Y, W: fade, H: r.H},
+			ui.LinearGradient{From: bg.Alpha(0), To: bg, Angle: 90}, 0)
+	}
 }
 
 // tabBar builds the header's row: the tabs of the open documents, scrolling
 // sideways when they do not all fit, and the button listing all of them beside
 // the strip. A click on a tab shows it, and its close button closes it.
-func (s *State) tabBar(c *ui.Context) {
+func (s *State) tabBar(c *ui.Context) { s.tabBarAt(c, 0) }
+
+// tabBarAt is tabBar with the strip pulled left by pull DIPs, as the shell's
+// title slot pads its content by a gap onevra hardcodes and exposes no option
+// for.
+func (s *State) tabBarAt(c *ui.Context, pull float32) {
 	t := c.Theme()
-	row := ui.Row(c).Key("tab-bar").FillWidth().Height(tabBarHeight).AlignItems(ui.Center)
+	row := ui.Row(c).Key("tab-bar").FillWidth().Height(tabBarHeight).
+		AlignItems(ui.Center).Gap(t.Space(0.5))
 	if len(s.tabs) == 0 {
 		return
 	}
@@ -250,7 +280,7 @@ func (s *State) tabBar(c *ui.Context) {
 	// the window's caption buttons, so the content's width is not the room the
 	// bar has, and a strip laid out for more room than it has runs under them.
 	// The room is the bar's whole box: the padding around the tabs is the
-	// shell's (TitleInset), not this row's.
+	// shell's, not this row's.
 	known := row.Bounds().W > 0
 	avail := row.Bounds().W
 	if !known {
@@ -273,24 +303,36 @@ func (s *State) tabBar(c *ui.Context) {
 		s.revealTab(c, widths, strip)
 	}
 	row.Children(func() {
-		// The strip scrolls sideways rather than dropping tabs: the list beside
-		// it is a shortcut to a tab, not the only way to reach one.
-		ui.ScrollHorizontal(c).Grow(1).MinWidth(0).TrackScroll(&s.tabScroll).
-			// A plain wheel scrolls the strip: it only goes sideways, where the
-			// wheel's own axis would scroll the page under it instead.
-			HandleInput(func(ev ui.InputEvent) bool {
-				if ev.Kind != ui.InputScroll || ev.Mods&ui.Shift != 0 || ev.DY == 0 {
-					return false
-				}
-				// A notch down moves the strip on, as it scrolls a column down.
-				s.tabScroll.X -= ev.DY
-				return true
-			}).Children(func() {
-			ui.Row(c).Height(tabBarHeight - 2*t.Space(1)).Gap(t.Space(0.5)).
-				AlignItems(ui.Center).Children(func() {
-				for i, tab := range s.tabs {
-					s.tab(c, tab, widths[i])
-				}
+		// The strip is pulled to the inset the app asks for, and the list
+		// button keeps the shell's trailing one: pulling the whole row would
+		// leave that room doubled at the far end.
+		ui.Row(c).Grow(1).MinWidth(0).Translate(pull, 0).Children(func() {
+			// The strip scrolls sideways rather than dropping tabs: the list
+			// beside it is a shortcut to a tab, not the only way to reach one.
+			ui.ScrollHorizontal(c).Grow(1).MinWidth(0).TrackScroll(&s.tabScroll).
+				// A hairline, and as narrow a place to press: a bar as wide as
+				// the theme's would take clicks meant for the tabs' bottoms.
+				ScrollbarStyle(ui.ScrollbarStyle{ThumbWidth: 2, TrackWidth: 2, Flush: true}).
+				// Where more tabs lie beyond an edge, it fades: a tab cut there
+				// reads as one to scroll to, rather than as a stray close button
+				// in blank space.
+				DrawOver(func(p *ui.Painter, r ui.Rect) { s.tabFade(p, r, t.Background) }).
+				// A plain wheel scrolls the strip: it only goes sideways, where
+				// the wheel's own axis would scroll the page under it instead.
+				HandleInput(func(ev ui.InputEvent) bool {
+					if ev.Kind != ui.InputScroll || ev.Mods&ui.Shift != 0 || ev.DY == 0 {
+						return false
+					}
+					// A notch down moves the strip on, as it scrolls a column down.
+					s.tabScroll.X -= ev.DY
+					return true
+				}).Children(func() {
+				ui.Row(c).Height(tabBarHeight - 2*t.Space(1)).Gap(t.Space(0.5)).
+					AlignItems(ui.Center).Children(func() {
+					for i, tab := range s.tabs {
+						s.tab(c, tab, widths[i])
+					}
+				})
 			})
 		})
 		if !overflow {

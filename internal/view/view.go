@@ -55,20 +55,17 @@ func (s *State) LeftToolbar(c *ui.Context) { s.leftToolbar(c) }
 // titleInsetGap is the room onevra's sidebar leaves between its sidebar header
 // and this slot, and titleInsetWanted the room this app wants there: the number
 // is hardcoded in shells/sidebar (`titleInset = 24`) and no option exposes it,
-// so the row is pulled back by the difference. The tabs read as part of the
-// page's left edge rather than a finger's width in from it.
+// so the strip is pulled back by the difference. 8 read as flush against the
+// sidebar; 12 leaves the first tab's corner visible.
 const (
 	titleInsetGap    float32 = 24
-	titleInsetWanted float32 = 8
+	titleInsetWanted float32 = 12
 )
 
 // ContentTitle is the shell's titlebar area: the tabs of the documents the
 // window has open. The title row under them is the page's own.
 func (s *State) ContentTitle(c *ui.Context) {
-	ui.Row(c).FillWidth().FillHeight().
-		Translate(titleInsetWanted-titleInsetGap, 0).Children(func() {
-		s.tabBar(c)
-	})
+	s.tabBarAt(c, titleInsetWanted-titleInsetGap)
 }
 
 // Content is the shell's page: the outline and the body, with the status bar

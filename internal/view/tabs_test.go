@@ -489,10 +489,73 @@ func TestTabStripScrollsWithTheWheel(t *testing.T) {
 	}
 }
 
-// TestTabStripRestsOnATabStart pins where the strip comes to rest: at the start
-// of a tab, so that no tab is cut down to its close button and read as a stray ✕
-// in blank space.
-func TestTabStripRestsOnATabStart(t *testing.T) {
+// TestTabStripFollowsTheRoomItHas pins that the tab shown is brought fully into
+// view when the strip's room changes too, not only when another tab is chosen: a
+// narrower window must not leave the tab shown half under the list button.
+func TestTabStripFollowsTheRoomItHas(t *testing.T) {
+	s, root := newState(t)
+	var names []string
+	for i := range 10 {
+		name := fmt.Sprintf("文档-%02d-很长很长的名字.md", i)
+		names = append(names, name)
+		writeDoc(t, root, name, "# x\n")
+	}
+	s.Refresh()
+	for _, name := range names {
+		s.selectDoc(name)
+	}
+	s.selectDoc(names[7])
+
+	build := func(width float32) func(c *ui.Context) {
+		return func(c *ui.Context) {
+			ui.Row(c).Width(width).Height(48).Children(func() { s.tabBar(c) })
+		}
+	}
+	wide := ui.NewTester(build(900), 900, 48)
+	wide.Frame()
+	wide.Frame()
+	wideX := s.tabScroll.X
+
+	narrow := ui.NewTester(build(520), 520, 48)
+	narrow.Frame()
+	narrow.Frame()
+	if s.tabScroll.X <= wideX {
+		t.Errorf("X = %v in the narrow strip, want more than the %v it had room for", s.tabScroll.X, wideX)
+	}
+}
+
+// TestTabClicksReachTheTabBottom pins the scroll bar's room: it is a hairline,
+// so a click on the bottom of a tab is a click on the tab rather than on the
+// bar lying over it.
+func TestTabClicksReachTheTabBottom(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "alpha.md", "# A\n")
+	writeDoc(t, root, "beta.md", "# B\n")
+	s.Refresh()
+	s.selectDoc("alpha.md")
+	s.selectDoc("beta.md")
+	s.selectDoc("alpha.md")
+
+	tt := ui.NewTester(func(c *ui.Context) {
+		ui.Row(c).Width(600).Height(tabBarHeight).Children(func() { s.tabBar(c) })
+	}, 600, int(tabBarHeight))
+	tt.Frame()
+	rect, ok := tt.Find("文档：beta.md")
+	if !ok {
+		t.Fatalf("texts = %q, want beta.md's tab", tt.Texts())
+	}
+	// A finger's width above the bottom, inside the tab's own box.
+	tt.ClickAt(rect.X+rect.W/2, rect.Y+rect.H-2)
+	tt.Frame()
+	if got := s.Selected(); got != "beta.md" {
+		t.Errorf("selected = %q, want beta.md: the click reached the tab, not a bar over it", got)
+	}
+}
+
+// TestTabStripShowsTheWholeTabShown pins where the strip comes to rest: the tab
+// shown is wholly inside it, and its left edge cuts no tab — it sits at a tab's
+// start, or, where a strip of wide tabs cannot reach that far, at its end.
+func TestTabStripShowsTheWholeTabShown(t *testing.T) {
 	s, root := newState(t)
 	var names []string
 	for i := range 10 {
@@ -503,24 +566,35 @@ func TestTabStripRestsOnATabStart(t *testing.T) {
 	s.Refresh()
 	s.SetContentWidth(func() float32 { return 600 })
 
-	// The starts of the tabs, measured as the bar measures them.
-	var starts []float32
+	// The starts and widths of the tabs, measured as the bar measures them.
+	var starts, widths []float32
 	build := func(c *ui.Context) {
-		starts = starts[:0]
+		starts, widths = starts[:0], widths[:0]
 		x := float32(0)
 		for _, name := range names {
+			w := tabWidth(c, name)
 			starts = append(starts, x)
-			x += tabWidth(c, name) + c.Theme().Space(0.5)
+			widths = append(widths, w)
+			x += w + c.Theme().Space(0.5)
 		}
 		ui.Row(c).Width(600).Height(48).Children(func() { s.tabBar(c) })
 	}
 
-	for _, name := range names {
+	for i, name := range names {
 		s.selectDoc(name)
 		tt := ui.NewTester(build, 600, 48)
 		tt.Frame()
 		tt.Frame()
-		rest := s.tabScroll.X
+		rest, view := s.tabScroll.X, s.tabView
+		if starts[i] < rest {
+			t.Errorf("with %s shown the strip rests at %v, past the tab's own start %v", name, rest, starts[i])
+		}
+		if starts[i]+widths[i] > rest+view {
+			t.Errorf("with %s shown the tab ends at %v, past the strip's %v", name, starts[i]+widths[i], rest+view)
+		}
+		if rest == 0 || rest == s.tabScroll.MaxX {
+			continue
+		}
 		onStart := false
 		for _, start := range starts {
 			if rest == start {
@@ -529,57 +603,8 @@ func TestTabStripRestsOnATabStart(t *testing.T) {
 			}
 		}
 		if !onStart {
-			t.Errorf("with %s shown the strip rests at %v, which is not the start of a tab: %v",
+			t.Errorf("with %s shown the strip rests at %v, which is neither the end nor the start of a tab: %v",
 				name, rest, starts)
 		}
-	}
-}
-
-// TestTabsTuckUnderTheSidebarHeader pins the leading room the tabs take in the
-// shell's header: onevra's sidebar pads the title slot by a hardcoded gap, and
-// the tabs are pulled back so that gap is what this app asked for, not 24.
-func TestTabsTuckUnderTheSidebarHeader(t *testing.T) {
-	s, root := newState(t)
-	writeDoc(t, root, "alpha.md", "# A\n")
-	writeDoc(t, root, "beta.md", "# B\n")
-	s.Refresh()
-	s.selectDoc("alpha.md")
-	s.selectDoc("beta.md")
-
-	// The shell's title slot, as shells/sidebar builds it: padded on the left
-	// by the gap it keeps from the sidebar's own header.
-	slot := func(build func(c *ui.Context)) *ui.Tester {
-		return ui.NewTester(func(c *ui.Context) {
-			ui.Row(c).Height(48).Children(func() {
-				ui.Row(c).Grow(1).MinWidth(0).FillHeight().Clip().
-					Padding(0, 8, 0, titleInsetGap).Children(func() { build(c) })
-			})
-		}, 600, 48)
-	}
-
-	pulled, ok := slot(s.ContentTitle).Find("文档：alpha.md")
-	if !ok {
-		t.Fatal("the pulled slot shows no tab")
-	}
-	plain, ok := slot(s.tabBar).Find("文档：alpha.md")
-	if !ok {
-		t.Fatal("the unpulled slot shows no tab")
-	}
-	if got, want := plain.X-pulled.X, titleInsetGap-titleInsetWanted; got != want {
-		t.Errorf("the tabs sit %v left of where the shell puts them, want %v", got, want)
-	}
-	if pulled.X != titleInsetWanted {
-		t.Errorf("the first tab starts at %v, want the %v the app asks for: the room around the tabs is the shell's", pulled.X, titleInsetWanted)
-	}
-
-	// Pulling the row keeps the tabs under the pointer: the second one still
-	// takes a click.
-	tt := slot(s.ContentTitle)
-	tt.Frame()
-	if err := tt.Click("文档：beta.md"); err != nil {
-		t.Fatalf("Click: %v", err)
-	}
-	if got := s.Selected(); got != "beta.md" {
-		t.Errorf("selected = %q, want beta.md after clicking its tab", got)
 	}
 }

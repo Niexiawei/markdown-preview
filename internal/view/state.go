@@ -59,10 +59,11 @@ type State struct {
 	status  string
 	// tabsOpen is whether the panel listing every tab shows.
 	tabsOpen bool
-	// tabScroll is how far the strip of tabs scrolls sideways, and tabShown the
-	// tab it was last scrolled to show.
+	// tabScroll is how far the strip of tabs scrolls sideways; tabShown is the
+	// tab it was last scrolled to show, and tabView the room it had as it did.
 	tabScroll ui.ScrollState
 	tabShown  docSel
+	tabView   float32
 	// zoom is how much larger or smaller the body's text shows than the
 	// theme's: one while it was never changed.
 	zoom float32

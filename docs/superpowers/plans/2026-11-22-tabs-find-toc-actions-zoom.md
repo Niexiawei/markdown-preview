@@ -1835,3 +1835,10 @@ git commit -m "docs: 记录标签页、目录动作与悬浮搜索的用法与�
 8. **去掉标签条自身的左右内边距**（用户 2026-11-22）：留白由 shell 的标题槽 padding 提供，
    `tabBar` 不再 `Padding(0, t.Space(1))`，可用宽度就是这一行的整宽（`Bounds().W`，不再减 8）。
    `TestTabsTuckUnderTheSidebarHeader` 收紧成「第一个标签正好起于 `titleInsetWanted`」。
+
+9. **标签条的停留位置、细滚动条、标题槽间距**（用户 2026-11-22 实机反馈）：
+   `revealTab` 改成「当前标签完整可见 + 左边缘落在标签起点（够不着时退到 `MaxX`）」，两端加 `tabFade` 渐隐；
+   滚动条用 `ScrollbarStyle{ThumbWidth: 2, TrackWidth: 2, Flush: true}`（默认 `拇指+6` 的命中区压在标签底部，
+   会吃掉点击）；`titleInsetWanted` 由 8 调到 12（8 看起来贴边），并且只把**标签条**往左拉，⌄ 按钮留在标题槽的
+   右侧内边距上（之前整行平移，右边多出 16 的空档）。
+   回归测试：`TestTabStripShowsTheWholeTabShown`、`TestTabStripFollowsTheRoomItHas`、`TestTabsTuckUnderTheSidebarHeader`。

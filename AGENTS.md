@@ -111,9 +111,12 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
   （`titleRow`，高 `titleRowHeight`）。别再把这些塞回彼此的槽位：用户要求 tab 在文件名字那一行之上；
   `View` 与 `Content` 的拼装要保持一致（`TestTabsSitAboveTheTitle`）。
 - **标签条是横向滚动容器**（`ui.ScrollHorizontal` + `State.tabScroll`），不丢标签：`visibleTabs` 那套"挑几个显示"
-  已经删掉，`tabsWidth` 只用来判断要不要出 ⌄ 按钮。切标签后由 `revealTab` 把活动标签滚进视野，且**停在某个标签的起点**
-  （否则左边缘会出现「空白 + 孤零零的 ✕」，用户报过）——它必须**在构建滚动容器之前**
+  已经删掉，`tabsWidth` 只用来判断要不要出 ⌄ 按钮。切标签后由 `revealTab` 把活动标签滚进视野：目标是**当前标签完整可见**
+  （滚到需要的位置）且**左边缘落在某个标签起点**（否则会出现「空白 + 孤零零的 ✕」），够不着时退到 `MaxX`，两端用
+  `tabFade` 渐隐——它必须**在构建滚动容器之前**
   设 `tabScroll.X`（容器构建后再设会被忽略），并且首帧（`Bounds` 为 0 / `MaxX` 为 0）不要记 `tabShown`，否则永远不滚。
+- **标签条的滚动条只有 2 DIP**：`ScrollbarStyle{ThumbWidth: 2, TrackWidth: 2}`。默认是 `拇指 + 6` 的命中区，
+  压在标签底部会吃掉点击（用户报过误触）。改这里要同时想清楚命中区。
 - **鼠标滚轮滚动标签条**要自己接：mygo 的滚动容器只把 **Shift**+滚轮转成横向，普通滚轮会漏到外层去滚页面。
   所以滚动容器上挂了 `HandleInput`：`InputScroll` 且没按 Shift 时 `tabScroll.X -= ev.DY` 并返回 true
   （`DY` 为负是向下滚，与 mygo 内部 `scrollY -= dy` 一致）。
