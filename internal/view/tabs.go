@@ -171,50 +171,53 @@ func fitText(c *ui.Context, text string, width float32) string {
 	return "…"
 }
 
-// visibleTabs returns the tabs the bar shows, and whether any are left out: as
-// many as fit, counting the gap between them, the one shown first, so that it is
-// never the one cut.
-func (s *State) visibleTabs(c *ui.Context, avail float32) ([]docSel, bool) {
-	gap := c.Theme().Space(0.5)
-	widths := make([]float32, len(s.tabs))
+// tabsWidth is how wide all the tabs are together, gaps included: more than the
+// room the bar has means the strip scrolls, and that the list of all of them is
+// worth showing.
+func (s *State) tabsWidth(c *ui.Context, widths []float32) float32 {
 	total := float32(0)
-	for i, tab := range s.tabs {
-		widths[i] = tabWidth(c, trimEllipsis(path.Base(tab.path), 40))
-		total += widths[i] + gap
+	for _, w := range widths {
+		total += w
 	}
-	if total <= avail {
-		return s.tabs, false
+	if len(widths) > 1 {
+		total += float32(len(widths)-1) * c.Theme().Space(0.5)
 	}
-	active := s.tabIndex(s.sel)
-	if active < 0 {
-		active = 0
-	}
-	// The tab shown first, then as many on either side as fit, right before
-	// left: the next tab is likelier to be the one wanted. Each one costs its
-	// width and the gap before it.
-	room, from, to := avail-widths[active], active, active
-	for {
-		grew := false
-		if to+1 < len(widths) && widths[to+1]+gap <= room {
-			to++
-			room -= widths[to] + gap
-			grew = true
-		}
-		if from-1 >= 0 && widths[from-1]+gap <= room {
-			from--
-			room -= widths[from] + gap
-			grew = true
-		}
-		if !grew {
-			break
-		}
-	}
-	return s.tabs[from : to+1], true
+	return total
 }
 
-// tabBar builds the header's row: a tab per open document, which a click shows
-// and its close button closes, and, when they do not fit, the button listing all
-// of them.
+// revealTab scrolls the strip so that the tab shown shows: switching by the
+// tree, a link or a shortcut brings the tab into view, while the user's own
+// scrolling of the strip is left alone as long as the tab stays the same.
+func (s *State) revealTab(c *ui.Context, widths []float32, view float32) {
+	if s.tabShown == s.sel || view <= 0 {
+		return
+	}
+	// The strip knows how far it scrolls from the frame before: until it does,
+	// a place set here would be clamped back to the start, and the tab shown
+	// would never come into view.
+	if s.tabScroll.MaxX <= 0 && s.tabsWidth(c, widths) > view {
+		return
+	}
+	s.tabShown = s.sel
+	gap := c.Theme().Space(0.5)
+	x := float32(0)
+	for i, tab := range s.tabs {
+		if tab == s.sel {
+			if x < s.tabScroll.X {
+				s.tabScroll.X = x
+			}
+			if right := x + widths[i]; right > s.tabScroll.X+view {
+				s.tabScroll.X = right - view
+			}
+			return
+		}
+		x += widths[i] + gap
+	}
+}
+
+// tabBar builds the header's row: the tabs of the open documents, scrolling
+// sideways when they do not all fit, and the button listing all of them beside
+// the strip. A click on a tab shows it, and its close button closes it.
 func (s *State) tabBar(c *ui.Context) {
 	t := c.Theme()
 	row := ui.Row(c).Key("tab-bar").FillWidth().Height(tabBarHeight).AlignItems(ui.Center)
@@ -223,24 +226,42 @@ func (s *State) tabBar(c *ui.Context) {
 	}
 	// The bar's own width, from the frame before: the shell pads its header for
 	// the window's caption buttons, so the content's width is not the room the
-	// bar has, and a tab laid out for more room than it has runs under them.
+	// bar has, and a strip laid out for more room than it has runs under them.
+	known := row.Bounds().W > 0
 	avail := row.Bounds().W - 2*t.Space(1)
-	if avail <= 0 {
+	if !known {
+		// The first frame has no box yet: the content's width is the closest
+		// guess, and the frame after measures the bar itself.
 		avail = s.windowWidth() - 2*t.Space(1)
 	}
-	shown, cut := s.visibleTabs(c, avail)
-	if cut {
-		// The overflow button takes its own room, so one fewer tab fits.
-		shown, _ = s.visibleTabs(c, avail-max(20, t.Rem(1.25))-t.Space(0.5))
+	widths := make([]float32, len(s.tabs))
+	for i, tab := range s.tabs {
+		widths[i] = tabWidth(c, path.Base(tab.path))
 	}
-	row.Padding(0, t.Space(1)).Gap(t.Space(0.5)).Children(func() {
-		for _, tab := range shown {
-			s.tab(c, tab, tabWidth(c, path.Base(tab.path)))
-		}
-		if !cut {
+	overflow := s.tabsWidth(c, widths) > avail
+	strip := avail
+	if overflow {
+		strip -= max(20, t.Rem(1.25)) + t.Space(0.5)
+	}
+	// The strip is scrolled before it is built: a ScrollState set after its
+	// container built this frame is a place it never takes.
+	if known {
+		s.revealTab(c, widths, strip)
+	}
+	row.Padding(0, t.Space(1)).Children(func() {
+		// The strip scrolls sideways rather than dropping tabs: the list beside
+		// it is a shortcut to a tab, not the only way to reach one.
+		ui.ScrollHorizontal(c).Grow(1).MinWidth(0).TrackScroll(&s.tabScroll).Children(func() {
+			ui.Row(c).Height(tabBarHeight - 2*t.Space(1)).Gap(t.Space(0.5)).
+				AlignItems(ui.Center).Children(func() {
+				for i, tab := range s.tabs {
+					s.tab(c, tab, widths[i])
+				}
+			})
+		})
+		if !overflow {
 			return
 		}
-		ui.Spacer(c)
 		button := components.IconButton(c, lucide.ChevronDown(), "全部已打开文件", components.IconButtonCompact)
 		if button.Clicked() {
 			s.tabsOpen = !s.tabsOpen

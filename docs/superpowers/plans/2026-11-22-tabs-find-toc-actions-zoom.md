@@ -1817,3 +1817,8 @@ git commit -m "docs: 记录标签页、目录动作与悬浮搜索的用法与�
    图标与文件名从左边缘排（按钮默认居中）。
 4. **目录工具条放大**：`目录` 13px，四个动作从 `IconButtonCompact` 换成 `IconButtonPlain`（32 DIP 方块、
    20 DIP 图形），比例文字 11px。
+
+5. **标签条改为横向滚动**（用户 2026-11-22 追加：「标签可横向滚，⌄ 只作为补充」）：标签不再按可视宽度挑选，
+   全部排进 `ui.ScrollHorizontal`（`State.tabScroll`），`tabsWidth` 只决定 ⌄ 按钮出不出现；
+   `revealTab` 在构建前把活动标签滚进视野，首帧（`Bounds`/`MaxX` 未知）不记 `tabShown`。
+   回归测试：`TestTabBarScrollsAndKeepsTheListInsideItsSlot`、`TestTabScrollFollowsTheTabShown`。

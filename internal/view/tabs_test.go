@@ -378,11 +378,11 @@ func TestCmdWClosesTheTab(t *testing.T) {
 	}
 }
 
-// TestTabBarFitsTheRoomItIsGiven pins the bar to the slot it builds in rather
-// than to the window's content width: the shell reserves room in its header for
-// the window's caption buttons, so a bar laid out for the content's width runs
-// its last tabs and its overflow button under them.
-func TestTabBarFitsTheRoomItIsGiven(t *testing.T) {
+// TestTabBarScrollsAndKeepsTheListInsideItsSlot pins the two halves of an
+// overflowing bar: the strip scrolls sideways rather than dropping tabs, while
+// the button listing them all stays inside the room the bar is given — the shell
+// reserves part of its header for the window's caption buttons.
+func TestTabBarScrollsAndKeepsTheListInsideItsSlot(t *testing.T) {
 	s, root := newState(t)
 	var names []string
 	for i := range 8 {
@@ -404,6 +404,12 @@ func TestTabBarFitsTheRoomItIsGiven(t *testing.T) {
 	tt.Frame()
 	tt.Frame()
 
+	if s.tabScroll.MaxX <= 0 {
+		t.Errorf("MaxX = %v, want a strip that scrolls sideways", s.tabScroll.MaxX)
+	}
+	if got := s.tabScroll.X; got <= 0 {
+		t.Errorf("X = %v, want the strip scrolled to the tab shown", got)
+	}
 	over, ok := tt.Find("全部已打开文件")
 	if !ok {
 		t.Fatalf("tab texts = %q, want the overflow button", tt.Texts())
@@ -411,13 +417,40 @@ func TestTabBarFitsTheRoomItIsGiven(t *testing.T) {
 	if over.X+over.W > slot {
 		t.Errorf("the overflow button ends at %v, past the slot's %v", over.X+over.W, slot)
 	}
+}
+
+// TestTabScrollFollowsTheTabShown pins the strip's two directions: choosing a
+// tab at the far end scrolls it into view, and choosing the first brings the
+// strip back to its start.
+func TestTabScrollFollowsTheTabShown(t *testing.T) {
+	s, root := newState(t)
+	var names []string
+	for i := range 10 {
+		name := fmt.Sprintf("文档-%02d-很长很长的名字.md", i)
+		names = append(names, name)
+		writeDoc(t, root, name, "# x\n")
+	}
+	s.Refresh()
+	s.SetContentWidth(func() float32 { return 600 })
+	build := func(c *ui.Context) {
+		ui.Row(c).Width(600).Height(48).Children(func() { s.tabBar(c) })
+	}
 	for _, name := range names {
-		rect, ok := tt.Find("文档：" + name)
-		if !ok {
-			continue
-		}
-		if rect.X+rect.W > slot {
-			t.Errorf("the tab of %s ends at %v, past the slot's %v", name, rect.X+rect.W, slot)
-		}
+		s.selectDoc(name)
+	}
+
+	s.selectDoc(names[9])
+	tt := ui.NewTester(build, 600, 48)
+	tt.Frame()
+	tt.Frame()
+	if s.tabScroll.X <= 0 {
+		t.Errorf("X = %v, want the strip scrolled to the tenth tab", s.tabScroll.X)
+	}
+
+	s.selectDoc(names[0])
+	tt.Frame()
+	tt.Frame()
+	if got := s.tabScroll.X; got != 0 {
+		t.Errorf("X = %v, want the strip back at its start for the first tab", got)
 	}
 }
