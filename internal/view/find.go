@@ -15,11 +15,6 @@ import (
 	"mdpreview/internal/workspace"
 )
 
-// findAnchorPrefix marks an anchor that names a search hit's block rather than
-// a heading's slug: the markdown view scrolls to the block Options.AnchorBlock
-// returns for it.
-const findAnchorPrefix = "find:"
-
 // The floating panel's size, in DIPs, and how many lines of context its preview
 // shows on either side of a match.
 const (
@@ -101,15 +96,9 @@ func (s *State) gotoMatch(i int) {
 	if s.doc == nil {
 		return
 	}
-	// The anchor is the block, not the match: a scroll is all the native
-	// view does, and one block is as close as it gets.
-	block := blockAt(s.doc, s.find.matches[i].Offset)
-	if block <= 0 {
-		return
-	}
-	s.anchor = findAnchorPrefix + strconv.Itoa(block)
-	s.anchorVer++
-	s.md.Anchor, s.md.AnchorVersion = s.anchor, s.anchorVer
+	// The block, not the match: a scroll is all the native view does, and
+	// one block is as close as it gets.
+	s.jumpToBlock(blockAt(s.doc, s.find.matches[i].Offset))
 }
 
 // findInWeb highlights the phrase in the page and scrolls to the match chosen:
@@ -132,21 +121,6 @@ func (s *State) findInWeb() {
 			return
 		}
 	}
-}
-
-// anchorBlock is the markdown view's block lookup: a find anchor names the block
-// to scroll to, and anything else is a heading's slug, which the view finds
-// itself, so -1 hands it back.
-func (s *State) anchorBlock(d *parser.Document, name string) int {
-	rest, ok := strings.CutPrefix(name, findAnchorPrefix)
-	if !ok {
-		return -1
-	}
-	i, err := strconv.Atoi(rest)
-	if err != nil || i <= 0 || i >= d.Len() {
-		return -1
-	}
-	return i
 }
 
 // blockAt returns the deepest block of d whose source holds the byte offset at.

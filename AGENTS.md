@@ -133,8 +133,19 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
   `windowWidth()`），`tabWidth` / `tabTextWidth` / `fitText` 三者共用同一套尺寸，名字超长就省略，
   具体宽度写死在标签行上（`Width` + `Clip`）——否则文字会画出自己的框、和邻居叠在一起。
 - **标签与滚动位置都以 `docSel` 为键**（`State.tabs` / `State.scrolls`）：只改路径不改项目会串到另一个项目里的同名文件。
-- **原生搜索只能滚到块**：`markdown.Options.AnchorBlock` + `Anchor` 是唯一的块级滚动入口，`find:<块号>` 前缀是搜索在用，
-  其他名字必须返回 `-1` 让 mygo 回落到标题 slug，否则目录点击会失效。
+- **正文跳转只有一条路**：`State.jump`（块号）+ `nativePreview` 按需挂的 `markdown.Options.Block` 钩子
+  （`jumpMarker`）。钩子在目标块自己的 Column 里插一个 `0×0` 的 `ui.Box`，对它调
+  `ScrollIntoView({Block: ui.ScrollStart, Animation: &ui.Smooth})`——mygo 的 reveal 于是把该块顶边对到
+  滚动容器的顶边、平滑过渡、并钳制在 `MaxY`。**不要再给 `md.Anchor` / `AnchorVersion` 赋值**：那是
+  `ScrollNearest` + 无动画（一帧跳过去，且只保证"露一点"）。`find:` 锚点前缀已删。
+- **"近末尾落到底部"是 reveal 钳制出来的**，不是算出来的：`ScrollStart` 会要一个超过 `MaxY` 的位置，
+  容器把它夹到 `MaxY`。不要自己读 `MaxY` 再 `ScrollTo`，那会与钳制、与用户滚动抢。
+- **`Options.Block` 不能常挂**：mygo 的 `viewState.block` 一旦看到它非 nil，会给**每个块**多包一层
+  `ui.Column` 再调钩子，几千块就是几千个多余节点。只在 `s.jump > 0` 的帧挂（`nativePreview`）。
+- **一次点击会建两遍视图**：mygo 处理完构建期的事件（点目录）后会重建这一帧，`c.reveal` 在重建前被清空，
+  所以「建标记 + `ScrollIntoView`」如果只在第一遍发生，这次滚动会被丢掉。`jump` 因此不在钩子里清，
+  而是记 `jumpSeen = c.Now()`，等到**下一帧**（`jumpSeen != c.Now()`）才清——同一帧的两遍构建都会挂上钩子，
+  第二遍的请求才活到布局。别把这个改成"钩子里立刻清 `jump`"，那会让跳转在点击时静默失效。
 - **标签栏宽度是算出来的**（`tabWidth` + `visibleTabs`）：可见集合以活动标签为锚点、先右后左装满；不溢出时不预留
   溢出按钮的宽度。改布局要同步 `Content` 与 `View` 两处。
 - **`Cmd+F` 的 Escape 有先后**：有查询先清空、空查询才关面板（`SearchField` 自己也会清空，所以顺序不能交给它）。
