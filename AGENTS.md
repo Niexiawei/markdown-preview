@@ -29,7 +29,7 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
 | `internal/workspace` | 扫描 / 读取 / 解析缓存 / 标题缓存 / TOC 与 slug / 搜索 / 正文内查找（`find.go` 的 `FindIn`）；`Index` 接口 |
 | `internal/watch` | `mygo.WatchFiles` → `ChangeSet`（新增 / 删除 / 重命名 / 写入） |
 | `internal/mcp` | `POST /mcp` JSON-RPC 2.0，四个只读工具 |
-| `internal/view` | Onevra 主题（`theme.go`）与外壳各区域：侧栏顶栏（项目面板 + 右键菜单）、树、侧栏工具栏、内容标题、标签栏（`tabs.go`）、预览、状态栏、MCP 设置面板；`find.go` 是悬浮搜索与跳转，`zoom.go` 是正文缩放；`system.go` 是桌面动作接口 |
+| `internal/view` | Onevra 主题（`theme.go`）与外壳各区域：侧栏顶栏（项目面板 + 右键菜单）、树、侧栏工具栏、标签栏（`tabs.go`，占 shell 的标题槽位）、页面第一行的路径与渲染开关（`titleRow`）、预览、状态栏、MCP 设置面板；`find.go` 是悬浮搜索与跳转，`zoom.go` 是正文缩放；`system.go` 是桌面动作接口 |
 
 依赖方向：`view → workspace`、`mcp → workspace`、`workspace → config`。
 
@@ -64,8 +64,10 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
 - **改忽略规则**：只改 `workspace.Ignored`（扫描与监听共用它），并补 `TestIgnoredRules`。
 - **改 TOC 缩进/交互**：`view/native.go` 的 `buildTOC` + `tocItems`。
 - **改渲染样式**：原生在 `markdown.Options`（`loadDoc` 里装配）；webview 在 `webview.go` 的 `docCSS`。
-- **改标题栏/侧栏**：`view.go` 里 `contentTitle`（路径 + `modeToggle`）、`leftHeader`（项目面板：点一行开/关、右键打开/复制/移除）、
-  `leftToolbar`（动作图标）、`statusBar`；shell 侧分别对应 `ContentTitle`/`LeftHeader`/`LeftToolbar` 槽位。
+- **改标签栏/标题行/侧栏**：`tabs.go` 的 `tabBarAt`（标签、⌄ 列表）挂在 shell 的 `ContentTitle` 槽位；
+  `view.go` 的 `titleRow` → `contentTitle`（路径 + 复制 + `modeToggle`）是 `Content` 的第一行；
+  `leftHeader`（项目面板：点一行开/关、右键打开/复制/移除）、`leftToolbar`（动作图标）、`statusBar` 各就各位。
+  改布局时 `View` 与 `Content` 两条拼装路径要一起改（`TestShellSlotsBuild`、`TestTabsSitAboveTheTitle`）。
 - **改正文内查找**：匹配规则只改 `workspace.FindIn`（字面子串、忽略大小写、上限 500），补 `TestFindIn*`；
   面板与跳转在 `view/find.go`（匹配列表 / 上下文预览 / `Cmd+F` 与 `Cmd+G`）。
 - **改标签栏**：`view/tabs.go` 的 `openTab` / `closeTab` / `visibleTabs` / `tabBar`，补 `TestTabBar*` 与 `TestClosingTabs`。
@@ -101,12 +103,13 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
 - **文档身份是 `docSel{project, path}`**：树、正文、渲染模式表、监听都以它为准；只有一个 `path` 时两个项目里的
   `docs/a.md` 会互相串。目录折叠键是 `项目ID + ":" + 路径`，项目节点的键是 `"project:" + 项目ID`。
 - **树只在打开项目数 ≥ 2 时多一层项目名**：`fileTree` 里按 `len(s.trees)` 分叉，改布局时别让单项目也长出这层。
-- **状态栏只放提示文字**（`statusBar`，高 24）：渲染开关、路径都不在这里，它们在标题栏。
+- **状态栏只放提示文字**（`statusBar`，高 24）：渲染开关、路径都不在这里，它们在标签栏下面那一行（`titleRow`）。
 - **标题槽的 24 DIP 首部间距是 onevra 写死的**（`shells/sidebar/shell.go` 里 `titleInset = 24`，`ShellOptions`
-  没有对应字段）。本项目要 8，所以在 `ContentTitle` 里把整行 `Translate(-16, 0)` 拉回来；**标签条自己不再加左右内边距**
-  （那层留给 shell 的 padding，否则会出现 8+4 的双层留白，用户报过）
-  （`titleInsetGap` / `titleInsetWanted` 两个常量）；`Margin(0,0,0,-16)` 也能挪，但会改布局宽度、
-  把标签条量宽量错，`Translate` 只动绘制与命中。onevra 升级后若新增了间距选项，改成用那个选项并删掉常量。
+  没有对应字段）。本项目要 12，所以 `ContentTitle` 调 `tabBarAt(c, -12)`，只把**标签条**（不含 ⌄ 按钮）往左拉，
+  ⌄ 留在标题槽自带的右侧内边距上——整行平移会让右边多出 16 的空档（用户报过「移动太过头」）。
+  **标签条自己不加左右内边距**（留白交给标题槽，否则是双层留白）。两个常量 `titleInsetGap`（24，onevra 的）
+  与 `titleInsetWanted`（本项目的 12）在 `view.go`；用 `Translate` 而不是负 `Margin`，因为后者会改布局宽度、
+  把标签条量宽量错。onevra 升级后若新增了间距选项，改用那个选项并删掉常量。
 - **标签栏在 shell 的 `ContentTitle` 槽位**（标题栏那 48 DIP），文档路径 + 复制 + 渲染开关是 `Content` 的第一行
   （`titleRow`，高 `titleRowHeight`）。别再把这些塞回彼此的槽位：用户要求 tab 在文件名字那一行之上；
   `View` 与 `Content` 的拼装要保持一致（`TestTabsSitAboveTheTitle`）。
@@ -138,6 +141,13 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
 - **测试看不到 shell**：`sidebar.NewShell` 会真的建窗口，测试里不能用。`View` 是给测试用的并排近似布局，
   shell 的各槽位各自导出（`Left`/`LeftHeader`/`LeftToolbar`/`ContentTitle`/`Content`），
   `TestShellSlotsBuild` 逐个构建它们——改布局时保持这两条路径同步。
+
+## 文档
+
+- 用户可见的行为变了，就在 `changelog.md` 的「未发布」小节里加一条（新增 / 变更 / 修复 / 已知限制四类），
+  并把 `README.md` 对应的用法、快捷键、已知限制同步改掉；实现细节与踩过的坑写进本文件，不要写进 README。
+- `docs/superpowers/plans/` 下的计划是**历史记录**：执行中偏离计划的地方，追加到该计划末尾的「执行后的修订」小节，
+  不改写原来的任务步骤。
 
 ## 提交
 
