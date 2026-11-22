@@ -101,6 +101,8 @@ func (s *State) handleShortcuts(c *ui.Context) {
 	switch {
 	case c.Shortcut(ui.Cmd, ui.KeyC):
 		s.copyDocPath()
+	case c.Shortcut(ui.Cmd, ui.KeyW):
+		s.closeTab(s.sel)
 	case c.Shortcut(ui.Cmd, ui.KeyEqual):
 		s.zoomBy(zoomStep)
 	case c.Shortcut(ui.Cmd, ui.KeyMinus):

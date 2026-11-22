@@ -103,7 +103,11 @@ func (s *State) gotoMatch(i int) {
 	}
 	// The anchor is the block, not the match: a scroll is all the native
 	// view does, and one block is as close as it gets.
-	s.anchor = findAnchorPrefix + strconv.Itoa(blockAt(s.doc, s.find.matches[i].Offset))
+	block := blockAt(s.doc, s.find.matches[i].Offset)
+	if block <= 0 {
+		return
+	}
+	s.anchor = findAnchorPrefix + strconv.Itoa(block)
 	s.anchorVer++
 	s.md.Anchor, s.md.AnchorVersion = s.anchor, s.anchorVer
 }
@@ -147,6 +151,9 @@ func (s *State) anchorBlock(d *parser.Document, name string) int {
 
 // blockAt returns the deepest block of d whose source holds the byte offset at.
 func blockAt(d *parser.Document, at int) int {
+	if d.Len() <= 1 {
+		return 0
+	}
 	best := 1
 	for i := 1; i < d.Len(); i++ {
 		b := d.Block(i)
@@ -290,7 +297,7 @@ func (s *State) findPreview(c *ui.Context) {
 		return
 	}
 	m := s.find.matches[s.find.current]
-	lines := strings.Split(s.src, "\n")
+	lines := s.find.lines
 	from := max(1, m.Line-findContext)
 	to := min(len(lines), m.Line+findContext)
 	// The context sits in a recessed card: without it the last list row and

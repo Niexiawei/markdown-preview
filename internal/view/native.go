@@ -50,6 +50,11 @@ func (s *State) loadDoc() {
 	}
 	s.md.Extensions = parser.Default
 	s.md.OnLink = s.followLink
+	// A search hit's block belongs to the document it was found in: another
+	// document must open at its own top, not at block 12 of something else.
+	if strings.HasPrefix(s.anchor, findAnchorPrefix) {
+		s.anchor = ""
+	}
 	s.md.Anchor = s.anchor
 	s.md.AnchorVersion = s.anchorVer
 	s.md.AnchorBlock = s.anchorBlock

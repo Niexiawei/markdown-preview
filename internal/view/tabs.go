@@ -181,10 +181,13 @@ func (s *State) tabBar(c *ui.Context) {
 		ui.Row(c).Height(tabBarHeight)
 		return
 	}
-	// The overflow button is one compact square and the gap before it: it
-	// only takes room when something is left out.
-	overflowW := max(20, t.Rem(1.25)) + t.Space(1)
-	shown, cut := s.visibleTabs(c, s.windowWidth()-overflowW-2*t.Space(1))
+	// The overflow button is one compact square and the gap before it, and it
+	// only appears, and takes room, when the tabs do not all fit.
+	avail := s.windowWidth() - 2*t.Space(1)
+	shown, cut := s.visibleTabs(c, avail)
+	if cut {
+		shown, _ = s.visibleTabs(c, avail-max(20, t.Rem(1.25))-t.Space(1))
+	}
 	ui.Row(c).FillWidth().Height(tabBarHeight).AlignItems(ui.Center).
 		Padding(0, t.Space(1)).Gap(t.Space(0.5)).Children(func() {
 		for _, tab := range shown {

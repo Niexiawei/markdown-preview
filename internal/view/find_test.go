@@ -322,3 +322,27 @@ func TestFindCountSaysWhenItCapped(t *testing.T) {
 		t.Errorf("count = %q, want both the position and the cap", got)
 	}
 }
+
+// TestFindAnchorDoesNotCarryToAnotherDocument pins that a search hit's block is
+// the document's own: opening another document shows it from its top, not at
+// block 12 of the one searched.
+func TestFindAnchorDoesNotCarryToAnotherDocument(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "alpha.md", "甲\n\n乙\n\n丙 目标\n")
+	writeDoc(t, root, "beta.md", "丁\n\n戊\n")
+	s.Refresh()
+	s.selectDoc("alpha.md")
+	openFindOn(s, "目标")
+	s.gotoMatch(0)
+	if !strings.HasPrefix(s.anchor, findAnchorPrefix) {
+		t.Fatalf("anchor = %q, want the search hit's block", s.anchor)
+	}
+
+	s.selectDoc("beta.md")
+	if strings.HasPrefix(s.anchor, findAnchorPrefix) || strings.HasPrefix(s.md.Anchor, findAnchorPrefix) {
+		t.Errorf("anchor = %q / md %q, want the search anchor left with its document", s.anchor, s.md.Anchor)
+	}
+	if got := s.docURL(); strings.Contains(got, findAnchorPrefix) {
+		t.Errorf("page address = %q, want no search anchor in it", got)
+	}
+}

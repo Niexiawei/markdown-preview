@@ -345,3 +345,24 @@ func TestRefreshDropsTabsOfGoneFiles(t *testing.T) {
 		t.Errorf("selected = %q, want the document shown to stay", got)
 	}
 }
+
+// TestCmdWClosesTheTab pins the keyboard's close: Cmd/Ctrl+W closes the tab
+// shown and shows its neighbour.
+func TestCmdWClosesTheTab(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "alpha.md", "# A\n")
+	writeDoc(t, root, "beta.md", "# B\n")
+	s.Refresh()
+	s.selectDoc("alpha.md")
+	s.selectDoc("beta.md")
+
+	tt := ui.NewTester(func(c *ui.Context) { s.Content(c) }, 900, 700)
+	tt.Key(ui.Cmd, ui.KeyW)
+	tt.Frame()
+	if s.hasTab(docSel{project: s.sel.project, path: "beta.md"}) {
+		t.Errorf("tabs = %v, want beta.md closed", s.tabs)
+	}
+	if got := s.Selected(); got != "alpha.md" {
+		t.Errorf("selected = %q, want the neighbour", got)
+	}
+}

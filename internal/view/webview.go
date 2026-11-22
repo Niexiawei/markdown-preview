@@ -297,7 +297,9 @@ func (s *State) loadWebDoc() {
 		return
 	}
 	url := s.docURL()
-	if s.anchor != "" {
+	// A find anchor names a block of the native view: the page has no such
+	// id, and an address ending in one would only confuse it.
+	if s.anchor != "" && !strings.HasPrefix(s.anchor, findAnchorPrefix) {
 		url += "#" + s.anchor
 	}
 	if url == s.wvURL {
