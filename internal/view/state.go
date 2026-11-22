@@ -59,6 +59,9 @@ type State struct {
 	status  string
 	// tabsOpen is whether the panel listing every tab shows.
 	tabsOpen bool
+	// zoom is how much larger or smaller the body's text shows than the
+	// theme's: one while it was never changed.
+	zoom float32
 
 	// The document shown: its source, its parse, the outline built from it,
 	// and what the native markdown view shows it with.

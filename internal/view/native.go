@@ -186,6 +186,14 @@ func (s *State) tocActions(c *ui.Context) {
 		Disabled(!hasHeads).Clicked() {
 		s.setTOC(false)
 	}
+	t := c.Theme()
+	if components.IconButton(c, lucide.ZoomOut(), "缩小正文", components.IconButtonCompact).Clicked() {
+		s.zoomBy(-zoomStep)
+	}
+	components.Text(c, itoa(s.zoomPercent())+"%").FontSize(10).TextColor(t.TextMuted)
+	if components.IconButton(c, lucide.ZoomIn(), "放大正文", components.IconButtonCompact).Clicked() {
+		s.zoomBy(zoomStep)
+	}
 }
 
 func (s *State) tocItems(c *ui.Context, nodes []*tocNode) {
@@ -224,6 +232,9 @@ func (s *State) nativePreview(c *ui.Context) {
 	// Both ways: a table, a code block or an image wider than the pane scrolls
 	// here instead of being cut at its edge. The column takes the pane's own
 	// width, so paragraphs wrap, and they re-wrap as the window resizes.
+	// The body's text scales with the zoom: every length the theme gives in
+	// ems — spacing, code, tables — follows its font size.
+	s.md.Theme = &markdown.Theme{FontSize: max(9, t.FontSize*s.zoomOrOne())}
 	ui.ScrollBoth(c).TrackScroll(s.docScroll()).Fill().Padding(bodyPadding).Children(func() {
 		ui.Column(c).Width(max(200, s.bodyPaneWidth()-2*bodyPadding-2)).Gap(12).Children(func() {
 			ui.Text(c, s.sel.path).FontSize(11).TextColor(t.TextMuted)

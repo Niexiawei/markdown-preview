@@ -13,7 +13,7 @@ import (
 )
 
 func TestDocHTMLEscapesAndAnchors(t *testing.T) {
-	html := docHTML(t.TempDir(), "# A\n\n`<b>` and <span>x</span>\n", "1")
+	html := docHTML(t.TempDir(), "# A\n\n`<b>` and <span>x</span>\n", "1", 1)
 	if !strings.Contains(html, `<h1 id="a">`) {
 		t.Errorf("html = %s, want a heading with an id", html)
 	}
@@ -26,14 +26,14 @@ func TestDocHTMLEscapesAndAnchors(t *testing.T) {
 }
 
 func TestDocHTMLAnchorsFollowLevels(t *testing.T) {
-	html := docHTML(t.TempDir(), "# 一\n\n## 二 Install 3\n", "1")
+	html := docHTML(t.TempDir(), "# 一\n\n## 二 Install 3\n", "1", 1)
 	if !strings.Contains(html, `<h2 id="二-install-3">`) {
 		t.Errorf("html = %s, want the CJK heading's id", html)
 	}
 }
 
 func TestDocHTMLTables(t *testing.T) {
-	html := docHTML(t.TempDir(), "| a | b |\n| --- | --- |\n| 1 | 2 |\n", "1")
+	html := docHTML(t.TempDir(), "| a | b |\n| --- | --- |\n| 1 | 2 |\n", "1", 1)
 	if !strings.Contains(html, "<table>") || !strings.Contains(html, "<td>1</td>") {
 		t.Errorf("html = %s, want a table", html)
 	}
@@ -41,7 +41,7 @@ func TestDocHTMLTables(t *testing.T) {
 
 func TestDocHTMLRewritesImages(t *testing.T) {
 	dir := t.TempDir()
-	html := docHTML(dir, "![pic](pic.png)\n", "1")
+	html := docHTML(dir, "![pic](pic.png)\n", "1", 1)
 	want := "/img?p=" + url.QueryEscape(filepath.Join(dir, "pic.png"))
 	if !strings.Contains(html, want) {
 		t.Errorf("html = %s, want %s", html, want)
@@ -49,7 +49,7 @@ func TestDocHTMLRewritesImages(t *testing.T) {
 }
 
 func TestDocHTMLKeepsRemoteImages(t *testing.T) {
-	html := docHTML(t.TempDir(), "![pic](https://example.com/p.png)\n", "1")
+	html := docHTML(t.TempDir(), "![pic](https://example.com/p.png)\n", "1", 1)
 	if !strings.Contains(html, `src="https://example.com/p.png"`) {
 		t.Errorf("html = %s, want the remote image kept", html)
 	}
@@ -181,5 +181,17 @@ func TestRootsAreTheOpenProjects(t *testing.T) {
 	roots := s.Roots()
 	if len(roots) != 1 || roots[0] != alphaRoot {
 		t.Errorf("Roots = %v, want only %q: the web view serves open projects", roots, alphaRoot)
+	}
+}
+
+// TestDocHTMLCarriesTheZoom pins that the page is built at the zoom the app
+// shows the body with, so that the first load needs no second pass.
+func TestDocHTMLCarriesTheZoom(t *testing.T) {
+	html := docHTML(t.TempDir(), "# A\n", "1", 1.25)
+	if !strings.Contains(html, "--md-scale: 1.25") {
+		t.Errorf("page = %q, want the zoom in it", html)
+	}
+	if !strings.Contains(html, "calc(15px * var(--md-scale))") {
+		t.Errorf("page = %q, want the body to scale with it", html)
 	}
 }

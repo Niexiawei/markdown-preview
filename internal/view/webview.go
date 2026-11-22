@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/egoist/mygo"
@@ -56,7 +57,7 @@ func (h *mdViewHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/img":
 		h.image(w, r, abs)
 	case "/doc":
-		h.document(w, abs, r.URL.Query().Get("rev"))
+		h.document(w, r, abs, r.URL.Query().Get("rev"))
 	default:
 		http.NotFound(w, r)
 	}
@@ -74,13 +75,14 @@ func (h *mdViewHandler) image(w http.ResponseWriter, r *http.Request, abs string
 	http.ServeFile(w, r, abs)
 }
 
-func (h *mdViewHandler) document(w http.ResponseWriter, abs, rev string) {
+func (h *mdViewHandler) document(w http.ResponseWriter, r *http.Request, abs, rev string) {
 	data, err := os.ReadFile(abs)
 	if err != nil {
 		http.Error(w, "cannot read the document", http.StatusNotFound)
 		return
 	}
-	html := docHTML(filepath.Dir(abs), string(data), rev)
+	zoom, _ := strconv.ParseFloat(r.URL.Query().Get("z"), 32)
+	html := docHTML(filepath.Dir(abs), string(data), rev, float32(zoom))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write([]byte(html))
@@ -128,7 +130,7 @@ var (
 // docHTML renders src as the page the web view shows: the markdown as HTML,
 // with an id on every heading so that its outline scrolls there, images
 // pointed at the handler, and a style of its own.
-func docHTML(baseDir, src, rev string) string {
+func docHTML(baseDir, src, rev string, zoom float32) string {
 	body := parser.Parse(src).HTML()
 	body = addHeadingIDs(body)
 	body = rewriteImages(body, baseDir)
@@ -137,7 +139,7 @@ func docHTML(baseDir, src, rev string) string {
 	b.WriteString("<!doctype html>\n<html><head><meta charset=\"utf-8\">")
 	b.WriteString("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">")
 	b.WriteString("<meta name=\"rev\" content=\"" + escapeAttr(rev) + "\">")
-	b.WriteString("<style>" + docCSS + "</style></head><body><article>")
+	b.WriteString("<style>:root { --md-scale: " + formatScale(zoom) + "; }" + docCSS + "</style></head><body><article>")
 	b.WriteString(body)
 	b.WriteString("</article></body></html>\n")
 	return b.String()
@@ -274,7 +276,18 @@ func (s *State) docURL() string {
 			abs = path
 		}
 	}
-	return viewScheme + "://localhost/doc?p=" + url.QueryEscape(abs) + "&rev=" + itoa(int(s.rev))
+	return viewScheme + "://localhost/doc?p=" + url.QueryEscape(abs) + "&rev=" + itoa(int(s.rev)) +
+		"&z=" + formatScale(s.zoomOrOne())
+}
+
+// applyWebZoom rescales the page the web view shows without loading it again: a
+// load would lose the scroll position, which the app's own zoom buttons must
+// not do.
+func (s *State) applyWebZoom() {
+	if s.wv == nil {
+		return
+	}
+	_, _ = s.wv.Page().Eval("document.documentElement.style.setProperty('--md-scale', '" + formatScale(s.zoomOrOne()) + "')")
 }
 
 // loadWebDoc reloads the web view when the document, its source or its
@@ -317,6 +330,15 @@ func itoa(n int) string {
 	return string(digits[i:])
 }
 
+// formatScale writes a zoom as the page's CSS wants it: two decimals, one for
+// what was never changed.
+func formatScale(zoom float32) string {
+	if zoom <= 0 {
+		zoom = zoomDefault
+	}
+	return strconv.FormatFloat(float64(zoom), 'f', 2, 64)
+}
+
 // docCSS is the page's look: a readable measure, the system's fonts, and the
 // dark appearance the desktop asks for.
 const docCSS = `
@@ -326,6 +348,7 @@ body {
   margin: 0;
   padding: 28px 32px 64px;
   font: 15px/1.65 -apple-system, "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  font-size: calc(15px * var(--md-scale));
   color: #1f2328;
   background: #ffffff;
   -webkit-font-smoothing: antialiased;

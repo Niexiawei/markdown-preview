@@ -339,3 +339,83 @@ func TestTOCBulkActionsAreDisabledWithoutHeadings(t *testing.T) {
 		t.Errorf("open = %v, want nothing written without headings", s.open)
 	}
 }
+
+// TestZoomClampsAndResets pins the body's zoom: it steps both ways inside its
+// range, and Cmd+0 brings it back.
+func TestZoomClampsAndResets(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", "# A\n\n正文\n")
+	s.Refresh()
+	s.selectDoc("a.md")
+
+	if got := s.zoomPercent(); got != 100 {
+		t.Errorf("zoom = %d%%, want 100%%", got)
+	}
+	for range 30 {
+		s.zoomBy(zoomStep)
+	}
+	if got := s.zoom; got != zoomMax {
+		t.Errorf("zoom = %v, want the %v ceiling", got, zoomMax)
+	}
+	for range 30 {
+		s.zoomBy(-zoomStep)
+	}
+	if got := s.zoom; got != zoomMin {
+		t.Errorf("zoom = %v, want the %v floor", got, zoomMin)
+	}
+
+	tt := ui.NewTester(func(c *ui.Context) { s.Content(c) }, 900, 700)
+	tt.Key(ui.Cmd, ui.KeyEqual)
+	tt.Frame()
+	if s.zoom <= zoomMin {
+		t.Errorf("zoom = %v, want the shortcut to step up", s.zoom)
+	}
+	tt.Key(ui.Cmd, ui.Key0)
+	tt.Frame()
+	if got := s.zoomPercent(); got != 100 {
+		t.Errorf("zoom = %d%%, want 100%% after reset", got)
+	}
+}
+
+// TestZoomReachesTheNativeBody pins that the zoom changes the body text size
+// the native view is given, not just a number in the state.
+func TestZoomReachesTheNativeBody(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", "# A\n\n正文标记\n")
+	s.Refresh()
+	s.selectDoc("a.md")
+
+	_ = ui.NewTester(func(c *ui.Context) { s.nativePreview(c) }, 800, 600)
+	base := s.md.Theme.FontSize
+	s.zoomBy(zoomStep)
+	tt := ui.NewTester(func(c *ui.Context) { s.nativePreview(c) }, 800, 600)
+	tt.Frame()
+	if got := s.md.Theme.FontSize; got <= base {
+		t.Errorf("body font = %v, want more than %v after zooming in", got, base)
+	}
+	if !tt.HasText("正文标记") {
+		t.Errorf("texts = %q, want the paragraph", tt.Texts())
+	}
+}
+
+// TestZoomButtonsSitWithTheOutline pins the two zoom buttons and the percentage
+// in the outline's header, and that a click changes the zoom.
+func TestZoomButtonsSitWithTheOutline(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", "# A\n\n正文\n")
+	s.Refresh()
+	s.selectDoc("a.md")
+
+	tt := ui.NewTester(func(c *ui.Context) { s.toc(c) }, 240, 400)
+	for _, want := range []string{"缩小正文", "放大正文", "100%"} {
+		if !tt.HasText(want) {
+			t.Errorf("outline texts = %q, want %q", tt.Texts(), want)
+		}
+	}
+	if err := tt.Click("放大正文"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if got := s.zoomPercent(); got != 110 {
+		t.Errorf("zoom = %d%%, want 110%%", got)
+	}
+}
