@@ -22,6 +22,11 @@ const (
 	findListHeight  float32 = 132
 	findPreviewSize float32 = 148
 	findContext     int     = 2
+	// findIslandPad is the room inside each pane of the panel, in DIPs.
+	findIslandPad float32 = 6
+	// findPaneInner is how wide what sits in a pane is: the panel less a
+	// pane's room on either side and its border.
+	findPaneInner = findPaneWidth - 2*findIslandPad - 2
 )
 
 // findState is the window's search over the document shown: whether the panel
@@ -163,6 +168,10 @@ func (s *State) findShortcuts(c *ui.Context) {
 // findPanel floats the search over the body's top right, as an editor's find bar
 // does: the field, how many matches there are, the lines they sit on with the
 // one chosen mixed in, and the lines around it to see it in context.
+//
+// Each of the three is a pane of its own (findIsland), apart from the others and
+// from the page: in one card, the last row of the matches and the match's own
+// line read as one run of rows.
 func (s *State) findPanel(c *ui.Context) {
 	if !s.find.open || s.sel.empty() {
 		return
@@ -173,12 +182,9 @@ func (s *State) findPanel(c *ui.Context) {
 			Right(t.Space(2)).
 			// Under the header, which holds the tabs, and under the title
 			// row the page shows first.
-			Top(sidebar.HeaderHeight(c)+titleRowHeight+t.Space(2)).
+			Top(sidebar.HeaderHeight(c) + titleRowHeight + t.Space(2)).
 			Width(findPaneWidth).
-			Radius(t.Radius*1.5).Background(t.Surface).
-			Border(1, t.Border).
-			Shadow(0, 8, 24, 0, t.Text.Alpha(0.12)).
-			Padding(t.Space(1)).Gap(t.Space(1)).Children(func() {
+			Gap(t.Space(1.5)).Children(func() {
 			s.findField(c)
 			s.findList(c)
 			s.findPreview(c)
@@ -186,35 +192,52 @@ func (s *State) findPanel(c *ui.Context) {
 	})
 }
 
+// findIsland fills one pane of the search panel: a face of its own, rounded,
+// bordered and lifted off the page, with findIslandPad of room inside.
+func findIsland(c *ui.Context) ui.Element {
+	t := c.Theme()
+	return ui.Column(c).FillWidth().Radius(t.Radius*1.5).
+		Background(t.Surface).Border(1, t.Border).
+		Shadow(0, t.Space(0.5), t.Space(1.5), 0, t.Text.Alpha(0.10)).
+		Padding(findIslandPad)
+}
+
+// findCaption names what a pane of the panel holds.
+func findCaption(c *ui.Context, text string) {
+	components.Text(c, text).FontSize(10).TextColor(c.Theme().TextMuted)
+}
+
 // findField builds the panel's first row: the field, the count, and the buttons
 // walking the matches or closing the panel.
 func (s *State) findField(c *ui.Context) {
 	t := c.Theme()
-	ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(t.Space(0.5)).Children(func() {
-		field := ui.SearchField(c, &s.find.query).Label("在文档中查找")
-		field.Grow(1).FontSize(12)
-		if s.find.needFocus {
-			// AutoFocus gives the focus once, where Focus would take it back
-			// every frame, from the list or the buttons beside the field.
-			field.AutoFocus()
-			s.find.needFocus = false
-		}
-		switch {
-		case field.Changed():
-			s.refreshMatches()
-		case field.Submitted():
-			s.findNext(1)
-		}
-		components.Text(c, s.findCount()).FontSize(11).TextColor(t.TextMuted)
-		if components.IconButton(c, lucide.ArrowUp(), "上一个匹配", components.IconButtonCompact).Clicked() {
-			s.findNext(-1)
-		}
-		if components.IconButton(c, lucide.ArrowDown(), "下一个匹配", components.IconButtonCompact).Clicked() {
-			s.findNext(1)
-		}
-		if components.IconButton(c, lucide.X(), "关闭搜索", components.IconButtonCompact).Clicked() {
-			s.closeFind()
-		}
+	findIsland(c).Children(func() {
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(t.Space(0.5)).Children(func() {
+			field := ui.SearchField(c, &s.find.query).Label("在文档中查找")
+			field.Grow(1).FontSize(12)
+			if s.find.needFocus {
+				// AutoFocus gives the focus once, where Focus would take it back
+				// every frame, from the list or the buttons beside the field.
+				field.AutoFocus()
+				s.find.needFocus = false
+			}
+			switch {
+			case field.Changed():
+				s.refreshMatches()
+			case field.Submitted():
+				s.findNext(1)
+			}
+			components.Text(c, s.findCount()).FontSize(11).TextColor(t.TextMuted)
+			if components.IconButton(c, lucide.ArrowUp(), "上一个匹配", components.IconButtonCompact).Clicked() {
+				s.findNext(-1)
+			}
+			if components.IconButton(c, lucide.ArrowDown(), "下一个匹配", components.IconButtonCompact).Clicked() {
+				s.findNext(1)
+			}
+			if components.IconButton(c, lucide.X(), "关闭搜索", components.IconButtonCompact).Clicked() {
+				s.closeFind()
+			}
+		})
 	})
 }
 
@@ -242,31 +265,34 @@ func (s *State) findList(c *ui.Context) {
 	if len(s.find.matches) == 0 {
 		return
 	}
-	width := findPaneWidth - 2*t.Space(1)
-	ui.ScrollBoth(c).MaxHeight(findListHeight).Children(func() {
-		ui.Column(c).MinWidth(width).Gap(t.Space(0.25)).Children(func() {
-			for i, m := range s.find.matches {
-				i, m := i, m
-				row := ui.Row(c).Radius(t.Radius).AlignItems(ui.Center).
-					Padding(t.Space(0.25), t.Space(0.5)).Gap(t.Space(0.75))
-				if i == s.find.current {
-					row.Background(selectedRowTint(t))
+	findIsland(c).Label("匹配行").Children(func() {
+		ui.ScrollBoth(c).MaxHeight(findListHeight).Children(func() {
+			ui.Column(c).MinWidth(findPaneInner).Gap(t.Space(0.25)).Children(func() {
+				for i, m := range s.find.matches {
+					i, m := i, m
+					row := ui.Row(c).Radius(t.Radius).AlignItems(ui.Center).
+						Padding(t.Space(0.25), t.Space(0.5)).Gap(t.Space(0.75))
+					if i == s.find.current {
+						row.Background(selectedRowTint(t))
+					}
+					row.Children(func() {
+						components.Text(c, strconv.Itoa(m.Line)).FontSize(10).
+							TextColor(t.TextMuted).Width(t.Rem(2.5))
+						components.Text(c, trimEllipsis(m.Text, 120)).FontSize(11).SingleLine()
+					})
+					if row.Clicked() {
+						s.gotoMatch(i)
+					}
 				}
-				row.Children(func() {
-					components.Text(c, strconv.Itoa(m.Line)).FontSize(10).
-						TextColor(t.TextMuted).Width(t.Rem(2.5))
-					components.Text(c, trimEllipsis(m.Text, 120)).FontSize(11).SingleLine()
-				})
-				if row.Clicked() {
-					s.gotoMatch(i)
-				}
-			}
+			})
 		})
 	})
 }
 
 // findPreview builds the lines around the match the body shows, the match itself
-// picked out, so that a hit is recognized before the body is read.
+// picked out, so that a hit is recognized before the body is read. Its pane
+// names the line it shows: told apart from the matches by the name alone, not by
+// the colour of a wash.
 func (s *State) findPreview(c *ui.Context) {
 	t := c.Theme()
 	if len(s.find.matches) == 0 {
@@ -276,15 +302,12 @@ func (s *State) findPreview(c *ui.Context) {
 	lines := s.find.lines
 	from := max(1, m.Line-findContext)
 	to := min(len(lines), m.Line+findContext)
-	// The context sits in a recessed card: without it the last list row and
-	// the match's own line read as one run of rows.
-	width := findPaneWidth - 2*t.Space(1)
-	ui.Column(c).Padding(t.Space(0.5)).Radius(t.Radius).
-		Background(t.Background).Children(func() {
+	findIsland(c).Label("命中上下文").Children(func() {
+		findCaption(c, "第 "+strconv.Itoa(m.Line)+" 行上下文")
 		ui.ScrollBoth(c).MaxHeight(findPreviewSize).Children(func() {
-			ui.Column(c).MinWidth(width).Gap(t.Space(0.25)).Children(func() {
+			ui.Column(c).MinWidth(findPaneInner).Gap(t.Space(0.25)).Children(func() {
 				for n := from; n <= to; n++ {
-					text := strings.TrimSuffix(lines[n-1], "\r")
+					text := strings.TrimSuffix(lines[n-1], "")
 					row := ui.Row(c).AlignItems(ui.Center).Gap(t.Space(0.75))
 					if n == m.Line {
 						row.Background(t.Accent.Alpha(0.08))

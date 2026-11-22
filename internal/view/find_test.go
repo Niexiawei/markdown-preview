@@ -367,3 +367,61 @@ func TestFindCountSaysWhenItCapped(t *testing.T) {
 		t.Errorf("count = %q, want both the position and the cap", got)
 	}
 }
+
+// TestFindPanelShowsIslandsApart pins the panel's shape: the matches and the
+// context are panes of their own, apart from one another and from the field, so
+// that one does not read as a run of the other's rows.
+func TestFindPanelShowsIslandsApart(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", "甲 目标\n乙\n丙\n")
+	s.Refresh()
+	s.selectDoc("a.md")
+	openFindOn(s, "目标")
+
+	tt := ui.NewTester(func(c *ui.Context) { s.findPanel(c) }, 900, 700)
+	field, ok := tt.Find("在文档中查找")
+	if !ok {
+		t.Fatalf("texts = %q, want the search field", tt.Texts())
+	}
+	list, ok := tt.Find("匹配行")
+	if !ok {
+		t.Fatalf("texts = %q, want the matches' pane named", tt.Texts())
+	}
+	prev, ok := tt.Find("命中上下文")
+	if !ok {
+		t.Fatalf("texts = %q, want the context's pane named", tt.Texts())
+	}
+	if list.Y < field.Y+field.H {
+		t.Errorf("matches at %v, want them under the field at %v", list, field)
+	}
+	gap := prev.Y - (list.Y + list.H)
+	if gap < 5 {
+		t.Errorf("gap = %v, want the panes apart (6 DIP)", gap)
+	}
+	if list.X != prev.X || list.W != prev.W {
+		t.Errorf("panes = %v / %v, want them the same size", list, prev)
+	}
+	if !tt.HasText("第 1 行上下文") {
+		t.Errorf("texts = %q, want the context's line named", tt.Texts())
+	}
+}
+
+// TestFindPanelWithoutMatchesKeepsOneIsland pins the empty half: no matches
+// shows the field alone, not two empty panes.
+func TestFindPanelWithoutMatchesKeepsOneIsland(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", "甲\n乙\n")
+	s.Refresh()
+	s.selectDoc("a.md")
+	openFindOn(s, "找不到的词")
+
+	tt := ui.NewTester(func(c *ui.Context) { s.findPanel(c) }, 900, 700)
+	if !tt.HasText("在文档中查找") {
+		t.Errorf("texts = %q, want the field", tt.Texts())
+	}
+	for _, name := range []string{"匹配行", "命中上下文"} {
+		if _, ok := tt.Find(name); ok {
+			t.Errorf("pane %q shown without a match", name)
+		}
+	}
+}
