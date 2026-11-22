@@ -125,6 +125,6 @@ internal/view/              Onevra 主题（theme.go）+ 外壳各区域：侧�
 
 ## 变更记录
 
-见 [changelog.md](changelog.md)。
+见 [CHANGELOG.md](CHANGELOG.md)。
 
 设计与实现计划在 `docs/superpowers/` 下。

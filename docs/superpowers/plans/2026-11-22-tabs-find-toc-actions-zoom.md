@@ -1849,3 +1849,8 @@ git commit -m "docs: 记录标签页、目录动作与悬浮搜索的用法与�
     （关掉前面的标签会挪动当前标签）；滚轮一动清掉 `tabPending`。
     另外「全部已打开文件」列表右侧留 `Space(3)` 给竖向滚动条，避免它盖住 ✕。
     回归测试：`TestTabsOpenedOneByOneStayWhole`、`TestTabsListKeepsClearOfItsBar`。
+
+11. **切换标签时标签条滑动到位**（用户 2026-11-22 追加）：原来直接写 `tabScroll.X`，视觉上是瞬间跳位；
+    改成 `ScrollState.ScrollTo(x, y, ui.Smooth)`，并用 `tabAsk` 记住已请求的位置去重；范围还没算好
+    （`MaxX` 慢一帧）时不发起动画，下一帧再滑；系统「减少动态效果」时 mygo 直接到位。
+    回归测试：`TestTabsSlideToTheTabShown`。
