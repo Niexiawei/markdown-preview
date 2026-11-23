@@ -10,11 +10,23 @@ import (
 
 	"mdpreview/internal/config"
 	"mdpreview/internal/mcp"
+	"mdpreview/internal/tray"
 	"mdpreview/internal/view"
 	"mdpreview/internal/workspace"
 )
 
+// mainWindow is the shell's window, for the second-instance handler: both it
+// and WhenReady run on the main thread.
+var mainWindow *mygo.Window
+
 func main() {
+	// Closing the window only hides it, so a second launch must not start a
+	// second copy with its own tray icon: it hands its command line to this one
+	// and exits, and this one shows the window instead.
+	if !mygo.App.RequestSingleInstanceLock() {
+		return
+	}
+	mygo.App.OnSecondInstance(func([]string, string) { tray.Show(mainWindow) })
 	mygo.App.WhenReady(func() {
 		dir, err := mygo.App.Path(mygo.PathUserData)
 		if err != nil {
@@ -46,7 +58,20 @@ func main() {
 			Theme:        view.AppTheme,
 		})
 		win := shell.Window()
+		mainWindow = win
 		state.SetWindow(win)
+		// The binary's own mark, set at run time: `go build -o mp.exe .` writes
+		// no icon resource, so the window's and taskbar's icon comes from here.
+		// The exe's file icon is mygo.json's resources/icon.png, done by
+		// `mygo build`.
+		if err := win.SetIcon(tray.WindowIcon()); err != nil {
+			log.Printf("window icon: %v", err)
+		}
+		// Without a tray the window must keep closing the app: hiding it would
+		// leave no way to bring it back.
+		if err := tray.Install(win, "Markdown Preview"); err != nil {
+			log.Printf("tray: %v", err)
+		}
 		// The window opens projects in the file manager, copies their paths,
 		// and asks the system before removing one.
 		state.SetSystem(view.Desktop{})
