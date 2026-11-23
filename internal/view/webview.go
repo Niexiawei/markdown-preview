@@ -290,23 +290,40 @@ func (s *State) applyWebZoom() {
 	_, _ = s.wv.Page().Eval("document.documentElement.style.setProperty('--md-scale', '" + formatScale(s.zoomOrOne()) + "')")
 }
 
-// loadWebDoc reloads the web view when the document, its source or its
-// anchor changed.
+// loadWebDoc reloads the web view when the document or its source changed.
 func (s *State) loadWebDoc() {
 	if s.wv == nil {
 		return
 	}
+	// The address names the document, not where in it the body shows: the
+	// outline scrolls the page in place (scrollWebTo), since a hash would
+	// load the page again and lose where it was.
 	url := s.docURL()
-	// A find anchor names a block of the native view: the page has no such
-	// id, and an address ending in one would only confuse it.
-	if s.anchor != "" && !strings.HasPrefix(s.anchor, findAnchorPrefix) {
-		url += "#" + s.anchor
-	}
 	if url == s.wvURL {
 		return
 	}
 	s.wvURL = url
 	_ = s.wv.Page().LoadURL(url)
+}
+
+// scrollWebTo glides the page to the heading of slug, as the native body glides
+// to the block: the page's own scrollIntoView lines the heading up with its top
+// and stops at the page's end.
+func (s *State) scrollWebTo(slug string) {
+	if s.wv == nil {
+		return
+	}
+	if _, err := s.wv.Page().Eval(headingScrollJS(slug)); err != nil {
+		s.status = "无法在页面中滚动：" + err.Error()
+	}
+}
+
+// headingScrollJS is the page's scroll to the heading of slug: the browser's
+// smooth scroll, which lines the heading up with the page's top and stops at
+// its end, as the native body stops at its own.
+func headingScrollJS(slug string) string {
+	return "(function(){var e=document.getElementById(" + strconv.Quote(slug) +
+		");if(e)e.scrollIntoView({behavior:'smooth',block:'start'});})()"
 }
 
 // itoa is strconv.Itoa, kept small for the one place the view needs it.
@@ -356,7 +373,12 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 article { max-width: 820px; }
-h1, h2, h3, h4, h5, h6 { line-height: 1.3; margin: 1.4em 0 0.55em; font-weight: 600; }
+h1, h2, h3, h4, h5, h6 {
+  line-height: 1.3; margin: 1.4em 0 0.55em; font-weight: 600;
+  /* The room a jump leaves above the heading, as the native body's top border
+     leaves it (native.go's bodyJumpGap): scrollIntoView counts it. */
+  scroll-margin-top: calc(16px * var(--md-scale));
+}
 h1 { font-size: 1.9em; margin-top: 0.2em; }
 h2 { font-size: 1.45em; border-bottom: 1px solid rgba(0,0,0,0.08); padding-bottom: 0.25em; }
 h3 { font-size: 1.2em; }

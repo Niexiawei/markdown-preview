@@ -4,6 +4,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/markdown"
@@ -11,6 +12,7 @@ import (
 	"github.com/oneo-me/onevra/source/components"
 	"github.com/oneo-me/onevra/source/icons/lucide"
 
+	"mdpreview/internal/config"
 	"mdpreview/internal/workspace"
 )
 
@@ -50,28 +52,91 @@ func (s *State) loadDoc() {
 	}
 	s.md.Extensions = parser.Default
 	s.md.OnLink = s.followLink
-	// A search hit's block belongs to the document it was found in: another
-	// document must open at its own top, not at block 12 of something else.
-	if strings.HasPrefix(s.anchor, findAnchorPrefix) {
-		s.anchor = ""
-	}
-	s.md.Anchor = s.anchor
-	s.md.AnchorVersion = s.anchorVer
-	s.md.AnchorBlock = s.anchorBlock
+	// A jump names a block of the document it was asked in: another document
+	// opens where its own tab was left.
+	s.jump = 0
 	s.rev++
 	s.loadWebDoc()
 }
 
-// gotoHeading scrolls the document to the heading of slug.
+// gotoHeading brings the heading of slug to the top of the body, and marks the
+// outline's entry for it as the current one.
 func (s *State) gotoHeading(slug string) {
 	slug = strings.TrimPrefix(strings.TrimSpace(slug), "#")
-	if slug == "" {
+	if slug == "" || s.doc == nil {
 		return
 	}
 	s.anchor = slug
-	s.anchorVer++
-	s.md.Anchor = slug
-	s.md.AnchorVersion = s.anchorVer
+	if s.mode() == config.RenderWebView && s.wv != nil {
+		// The page has no block to jump to: webview.go scrolls it by id.
+		s.scrollWebTo(slug)
+		return
+	}
+	s.jumpToBlock(blockOfHeading(s.doc, slug))
+}
+
+// jumpToBlock brings block b of the document shown to the top of the body's
+// pane, gliding there. Where the document ends before the block reaches the
+// top, the body stops at its end: the pane keeps the place within what it has.
+func (s *State) jumpToBlock(b int) {
+	d := s.doc
+	if d == nil || b <= 0 || b >= d.Len() {
+		return
+	}
+	// A table shows its rows and cells itself: the table is what scrolls.
+	for b > 0 && b < d.Len() {
+		k := d.Block(b).Kind
+		if k != parser.TableRow && k != parser.TableCell {
+			break
+		}
+		p := d.Block(b).Parent
+		if p <= 0 || p >= b {
+			return
+		}
+		b = p
+	}
+	// A new ask starts without the stamp of the last one's frame, which
+	// would otherwise read as "the frame is over" and drop it.
+	s.jump, s.jumpSeen = b, time.Time{}
+}
+
+// blockOfHeading returns the block of d that holds the heading of slug, 0 when
+// the document has none. It is how a heading, which the outline names by its
+// slug, becomes the block the body scrolls to.
+func blockOfHeading(d *parser.Document, slug string) int {
+	if d == nil {
+		return 0
+	}
+	slug = strings.ToLower(strings.TrimPrefix(slug, "#"))
+	for i := 1; i < d.Len(); i++ {
+		if d.Block(i).Kind != parser.Heading {
+			continue
+		}
+		if markdown.Slug(parser.PlainText(d.Inlines(i))) == slug {
+			return i
+		}
+	}
+	return 0
+}
+
+// jumpMarker is the markdown view's Block hook: for the block the body is to
+// bring to the top it builds a marker of no size at that block's own start,
+// which asks the pane to line its top up with the block's, gliding. The block
+// itself is the view's to build, so it reports false.
+//
+// The marker is how a jump lines a block up with the pane's top rather than
+// merely showing it: Options.Anchor, which the view follows itself, scrolls as
+// little as shows the block, at once.
+func (s *State) jumpMarker(c *ui.Context, d *parser.Document, i int) bool {
+	if s.jump <= 0 || i != s.jump {
+		return false
+	}
+	s.jumpSeen = c.Now()
+	ui.Box(c).Width(0).Height(0).ScrollIntoView(ui.ScrollIntoViewOptions{
+		Block:     ui.ScrollStart,
+		Animation: &ui.Smooth,
+	})
+	return false
 }
 
 // followLink opens what a link in the document points at: a heading of it, a
@@ -233,6 +298,13 @@ func (s *State) tocItems(c *ui.Context, nodes []*tocNode) {
 // bodyPadding is the room around a document's body, in DIPs.
 const bodyPadding float32 = 28
 
+// bodyJumpGap is the room a jump leaves between the pane's top edge and the
+// block it brings there, in DIPs. It is the body's top border, because
+// ScrollIntoView lines a block up with the container's border and counts none of
+// its padding: a border is the only room it leaves. The padding above is less by
+// as much, so that the body at rest looks as it did.
+const bodyJumpGap float32 = 16
+
 // nativePreview builds the document's body with the native markdown view.
 func (s *State) nativePreview(c *ui.Context) {
 	t := c.Theme()
@@ -250,10 +322,26 @@ func (s *State) nativePreview(c *ui.Context) {
 	// The body's text scales with the zoom: every length the theme gives in
 	// ems — spacing, code, tables — follows its font size.
 	s.md.Theme = &markdown.Theme{FontSize: max(9, t.FontSize*s.zoomOrOne())}
-	ui.ScrollBoth(c).TrackScroll(s.docScroll()).Fill().Padding(bodyPadding).Children(func() {
-		ui.Column(c).Width(max(200, s.bodyPaneWidth()-2*bodyPadding-2)).Gap(12).Children(func() {
-			ui.Text(c, s.sel.path).FontSize(11).TextColor(t.TextMuted)
-			markdown.View(c, s.src, &s.md)
+	if s.jump > 0 && !s.jumpSeen.IsZero() && !s.jumpSeen.Equal(c.Now()) {
+		// The frame that built the marker is over: what it asked for is on
+		// its way, or done.
+		s.jump, s.jumpSeen = 0, time.Time{}
+	}
+	// The hook is hung always, not only on the frames a jump is on its way:
+	// the markdown view wraps every block in a box of its own while it is
+	// set, and a box keeps a block's margins from meeting the room the view
+	// leaves between blocks, so a document lays out a little looser with it.
+	// Hung for the frame that measures a jump alone, that room would go away
+	// with the hook, and the block would slide up out of the pane as the jump
+	// landed: the room is measured and spent in the same layout.
+	s.md.Block = s.jumpMarker
+	ui.ScrollBoth(c).TrackScroll(s.docScroll()).Fill().
+		Padding(bodyPadding-bodyJumpGap, bodyPadding, bodyPadding, bodyPadding).
+		BorderWidth(bodyJumpGap, 0, 0, 0).BorderColor(ui.Transparent).
+		Children(func() {
+			ui.Column(c).Width(max(200, s.bodyPaneWidth()-2*bodyPadding-2)).Gap(12).Children(func() {
+				ui.Text(c, s.sel.path).FontSize(11).TextColor(t.TextMuted)
+				markdown.View(c, s.src, &s.md)
+			})
 		})
-	})
 }

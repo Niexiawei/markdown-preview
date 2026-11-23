@@ -29,7 +29,7 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
 | `internal/workspace` | 扫描 / 读取 / 解析缓存 / 标题缓存 / TOC 与 slug / 搜索 / 正文内查找（`find.go` 的 `FindIn`）；`Index` 接口 |
 | `internal/watch` | `mygo.WatchFiles` → `ChangeSet`（新增 / 删除 / 重命名 / 写入） |
 | `internal/mcp` | `POST /mcp` JSON-RPC 2.0，四个只读工具 |
-| `internal/view` | Onevra 主题（`theme.go`）与外壳各区域：侧栏顶栏（项目面板 + 右键菜单）、树、侧栏工具栏、标签栏（`tabs.go`，占 shell 的标题槽位）、页面第一行的路径与渲染开关（`titleRow`）、预览、状态栏、MCP 设置面板；`find.go` 是悬浮搜索与跳转，`zoom.go` 是正文缩放；`system.go` 是桌面动作接口 |
+| `internal/view` | Onevra 主题（`theme.go`）与外壳各区域：侧栏顶栏（项目面板 + 右键菜单）、树、侧栏工具栏、标签栏（`tabs.go`，占 shell 的标题槽位）、页面第一行的路径与渲染开关（`titleRow`）、预览、状态栏、MCP 设置面板；`find.go` 是悬浮搜索（三块浮岛）与跳转，`native.go` 是原生正文与跳转（`jumpToBlock` / `jumpMarker`），`zoom.go` 是正文缩放；`system.go` 是桌面动作接口 |
 
 依赖方向：`view → workspace`、`mcp → workspace`、`workspace → config`。
 
@@ -63,13 +63,16 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
   同时更新 README 的表格。
 - **改忽略规则**：只改 `workspace.Ignored`（扫描与监听共用它），并补 `TestIgnoredRules`。
 - **改 TOC 缩进/交互**：`view/native.go` 的 `buildTOC` + `tocItems`。
+- **改跳转落点（顶部/居中/是否平滑）**：只改 `view/native.go` 的 `jumpMarker`（`ScrollIntoViewOptions`）与
+  `view/webview.go` 的 `headingScrollJS`，两边要一致；不要在调用处各写一套滚动。
 - **改渲染样式**：原生在 `markdown.Options`（`loadDoc` 里装配）；webview 在 `webview.go` 的 `docCSS`。
 - **改标签栏/标题行/侧栏**：`tabs.go` 的 `tabBarAt`（标签、⌄ 列表）挂在 shell 的 `ContentTitle` 槽位；
   `view.go` 的 `titleRow` → `contentTitle`（路径 + 复制 + `modeToggle`）是 `Content` 的第一行；
   `leftHeader`（项目面板：点一行开/关、右键打开/复制/移除）、`leftToolbar`（动作图标）、`statusBar` 各就各位。
   改布局时 `View` 与 `Content` 两条拼装路径要一起改（`TestShellSlotsBuild`、`TestTabsSitAboveTheTitle`）。
 - **改正文内查找**：匹配规则只改 `workspace.FindIn`（字面子串、忽略大小写、上限 500），补 `TestFindIn*`；
-  面板与跳转在 `view/find.go`（匹配列表 / 上下文预览 / `Cmd+F` 与 `Cmd+G`）。
+  面板与跳转在 `view/find.go`（三块浮岛 `findIsland` / 匹配列表 / 上下文预览 / `Cmd+F` 与 `Cmd+G`）；
+  命中跳转只调 `jumpToBlock`，与目录、链接共用同一条路（见「已知的坑」里的 `State.jump`）。
 - **改标签栏**：`view/tabs.go` 的 `openTab` / `closeTab` / `visibleTabs` / `tabBar`，补 `TestTabBar*` 与 `TestClosingTabs`。
 - **加桌面动作（打开目录、复制、确认）**：扩 `view.System`（`system.go`）并在测试里扩 `fakeSystem`，
   不要在 view 里直接调 `mygo.Dialog` / `mygo.Shell` / `mygo.Clipboard`：`LeftHeader` 在侧栏收起时不构建，
@@ -121,6 +124,10 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
   （否则会差一个标签、选中的那个永远切着边）；用户滚轮一动就清掉 `tabPending`，让位给用户。
   它必须**在构建滚动容器之前**
   设 `tabScroll.X`（容器构建后再设会被忽略），并且首帧（`Bounds` 为 0 / `MaxX` 为 0）不要记 `tabShown`，否则永远不滚。
+- **搜索面板是三块浮岛**（`findIsland`：输入框 / 匹配行 / 上下文），外层只给位置和 `Gap`，**没有背景**。
+  别再把它塞回一个带 Surface 的整块卡片里：那样列表最后一行和上下文第一行会读成一列。
+  两块数据的岛给 `Label("匹配行")` / `Label("命中上下文")`（读屏名，也是测试里 `tt.Find` 取岛矩形的唯一办法），
+  上下文岛顶上那行 `第 N 行上下文` 是给人分清的。岛内宽度用 `findPaneInner`，别再用 `findPaneWidth - 2*Space(1)`。
 - **「全部已打开文件」列表给滚动条留了右边距**（`Padding(0, Space(3), 0, 0)`）：列表的竖向滚动条压在最右边，
   不给留出来时关标签的 ✕ 会被它盖住（用户报过点不到）。
 - **标签条的滚动条只有 2 DIP**：`ScrollbarStyle{ThumbWidth: 2, TrackWidth: 2}`。默认是 `拇指 + 6` 的命中区，
@@ -133,8 +140,25 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
   `windowWidth()`），`tabWidth` / `tabTextWidth` / `fitText` 三者共用同一套尺寸，名字超长就省略，
   具体宽度写死在标签行上（`Width` + `Clip`）——否则文字会画出自己的框、和邻居叠在一起。
 - **标签与滚动位置都以 `docSel` 为键**（`State.tabs` / `State.scrolls`）：只改路径不改项目会串到另一个项目里的同名文件。
-- **原生搜索只能滚到块**：`markdown.Options.AnchorBlock` + `Anchor` 是唯一的块级滚动入口，`find:<块号>` 前缀是搜索在用，
-  其他名字必须返回 `-1` 让 mygo 回落到标题 slug，否则目录点击会失效。
+- **正文跳转只有一条路**：`State.jump`（块号）+ `nativePreview` 按需挂的 `markdown.Options.Block` 钩子
+  （`jumpMarker`）。钩子在目标块自己的 Column 里插一个 `0×0` 的 `ui.Box`，对它调
+  `ScrollIntoView({Block: ui.ScrollStart, Animation: &ui.Smooth})`——mygo 的 reveal 于是把该块顶边对到
+  滚动容器的顶边、平滑过渡、并钳制在 `MaxY`。**不要再给 `md.Anchor` / `AnchorVersion` 赋值**：那是
+  `ScrollNearest` + 无动画（一帧跳过去，且只保证"露一点"）。`find:` 锚点前缀已删。
+- **跳转在顶上留 16 DIP**（`bodyJumpGap`）：`ScrollIntoView` 对齐的是滚动容器的**边框**、不算内边距，
+  所以这 16 是正文滚动容器的**透明上边框**（内边距相应减去 16，静止时的样子不变）。要改这个数就改
+  `native.go` 的 `bodyJumpGap`，并把 webview 的 `scroll-margin-top`（`docCSS`）一起改，两个后端才一致。
+- **"近末尾落到底部"是 reveal 钳制出来的**，不是算出来的：`ScrollStart` 会要一个超过 `MaxY` 的位置，
+  容器把它夹到 `MaxY`。不要自己读 `MaxY` 再 `ScrollTo`，那会与钳制、与用户滚动抢。
+- **`Options.Block` 必须常挂**（`s.md.Block = s.jumpMarker` 每帧都设）：mygo 一旦看到它非 nil，会给**每个块**
+  多包一层 `ui.Column`，而这一层挡住了"块的边距"和"块之间的间距"的合并（`blocks()` 的 `Margin` 落在包裹层上），
+  于是**同一份文档在挂与不挂时的高低差几十 DIP**。只在跳转那一帧挂，就会出现"按挂着时的布局量位置、按不挂时的布局显示"，
+  目标被顶到画面外（用户报过的「新文档点目录，标题跑到可视区外」就是这个）。常挂的代价：每帧每块多一个节点
+  （实测 583 块的文档 +3.5% 帧时间）、文档间距比 mygo 默认略松（0.4% 量级），换来"量位置与显示是同一套布局"。
+- **一次点击会建两遍视图**：mygo 处理完构建期的事件（点目录）后会重建这一帧，`c.reveal` 在重建前被清空，
+  所以「建标记 + `ScrollIntoView`」如果只在第一遍发生，这次滚动会被丢掉。`jump` 因此不在钩子里清，
+  而是记 `jumpSeen = c.Now()`，等到**下一帧**（`jumpSeen != c.Now()`）才清——同一帧的两遍构建都会挂上钩子，
+  第二遍的请求才活到布局。别把这个改成"钩子里立刻清 `jump`"，那会让跳转在点击时静默失效。
 - **标签栏宽度是算出来的**（`tabWidth` + `visibleTabs`）：可见集合以活动标签为锚点、先右后左装满；不溢出时不预留
   溢出按钮的宽度。改布局要同步 `Content` 与 `View` 两处。
 - **`Cmd+F` 的 Escape 有先后**：有查询先清空、空查询才关面板（`SearchField` 自己也会清空，所以顺序不能交给它）。

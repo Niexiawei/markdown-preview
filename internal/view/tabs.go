@@ -31,8 +31,10 @@ func (s *State) activateTab(sel docSel) {
 	s.sel = sel
 	s.status = ""
 	// Another document's outline starts at its top, not where the last
-	// one's scroll was left. A reload of the same document keeps it.
+	// one's scroll was left, and no heading of it is the one last jumped
+	// to. A reload of the same document keeps both.
 	s.tocScroll.X, s.tocScroll.Y = 0, 0
+	s.anchor = ""
 	s.onDocChanged()
 }
 

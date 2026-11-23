@@ -237,3 +237,20 @@ type Index interface {
 - 测试补充：`TestAppThemeUsesPalette`（四个色值）、`TestShellSlotsBuild`（逐个构建 shell 槽位）、
   `TestBodyColumnFollowsPaneWidth`（600/1200 下都不溢出）、`TestModeToggleSitsWithTheDocumentName`、
   `TestStatusBarDropsTheModeSwitch`。
+
+### 跳转与搜索面板（取代原第 5 条与第 6 条后半，2026-11-22）
+
+- **原生 TOC / 正文内 `#标题` / 搜索命中的跳转**不再用 `markdown.Options.Anchor` + `AnchorVersion`（mygo 里那
+  是 `ScrollNearest`、无动画：一帧跳过去，且只保证目标露出来一点）。改为 `State.jump`（待跳的块号）+
+  `markdown.Options.Block` 钩子：钩子在目标块自己的 Column 里建一个零高标记，对它调
+  `ScrollIntoView({Block: ScrollStart, Animation: ui.Smooth})`。于是「目标顶到顶部、近末尾落到底部（滚动容器把
+  位置钳制在 `MaxY`）、平滑、尊重系统的减少动态效果」都由 mygo 的 reveal 一次给全。跳转在顶上留 16 DIP
+  （`bodyJumpGap`）：reveal 对齐的是滚动容器的边框而不是内边距，所以这 16 是正文滚动容器的透明上边框；
+  webview 用 `scroll-margin-top: calc(16px * var(--md-scale))` 对齐同一数值；`find:` 锚点前缀与
+  `anchorBlock` 退役，`anchor` 只剩「目录高亮的那一项 / WebView 要滚到的标题」这一个含义。
+- **webview 的 TOC 跳转**不再 `LoadURL(url + "#slug")`（那是整页重载：既不平滑，又丢滚动位置）。改为
+  `Page().Eval` 的 `scrollIntoView({behavior:'smooth', block:'start'})`，页内滚动，地址里不带 `#`；
+  页面的钳制与原生一致（到页尾落到底部）。
+- **搜索面板从"一整块卡片里叠三段"改成三块独立的浮岛**（`findIsland`：输入框 / 匹配行 / 上下文），
+  外层只给位置与 `Gap`、没有背景：块与块之间露出正文，列表与上下文不再读成一列；上下文岛顶上写明
+  `第 N 行上下文`，两块数据的岛各有无障碍名（`匹配行` / `命中上下文`）。

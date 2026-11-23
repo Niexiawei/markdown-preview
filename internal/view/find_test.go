@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/markdown/parser"
@@ -77,10 +78,9 @@ func TestFindPanelStepsThroughMatches(t *testing.T) {
 	}
 }
 
-// TestFindJumpScrollsTheNativeBody pins the native jump: the block holding the
-// match becomes the markdown view's anchor, which is what scrolls it, and the
-// same match asked for twice scrolls again.
-func TestFindJumpScrollsTheNativeBody(t *testing.T) {
+// TestFindJumpSetsTheBlockToJumpTo pins what a click on a match hands the body:
+// the block holding it, which the body brings to its top.
+func TestFindJumpSetsTheBlockToJumpTo(t *testing.T) {
 	s, root := newState(t)
 	writeDoc(t, root, "a.md", "# 一\n\n甲段\n\n乙段 目标\n\n丙段\n")
 	s.Refresh()
@@ -88,39 +88,84 @@ func TestFindJumpScrollsTheNativeBody(t *testing.T) {
 	openFindOn(s, "目标")
 	s.gotoMatch(0)
 
-	if !strings.HasPrefix(s.anchor, findAnchorPrefix) {
-		t.Fatalf("anchor = %q, want the find prefix", s.anchor)
+	want := blockAt(s.doc, s.find.matches[0].Offset)
+	if want <= 0 || s.jump != want {
+		t.Fatalf("jump = %d, want the match's block %d", s.jump, want)
 	}
-	block := s.anchorBlock(s.doc, s.anchor)
-	if block <= 0 {
-		t.Fatalf("anchorBlock(%q) = %d, want the paragraph's block", s.anchor, block)
-	}
-	if got := s.doc.Block(block); got.Kind != parser.Paragraph {
+	if got := s.doc.Block(want); got.Kind != parser.Paragraph {
 		t.Errorf("block kind = %v, want the paragraph holding the match", got.Kind)
-	}
-
-	before := s.anchorVer
-	s.gotoMatch(0)
-	if s.anchorVer <= before {
-		t.Errorf("anchorVer = %d, want more than %d", s.anchorVer, before)
 	}
 }
 
-// TestAnchorBlockLeavesHeadingsAlone pins the fallback: a name that is not a
-// find anchor is not a block, so the view finds the heading's slug itself.
-func TestAnchorBlockLeavesHeadingsAlone(t *testing.T) {
+// TestFindJumpPutsTheMatchAtTheTop pins that a hit scrolls the body the way the
+// outline does: the matched block at the pane's top, gliding there.
+func TestFindJumpPutsTheMatchAtTheTop(t *testing.T) {
 	s, root := newState(t)
-	writeDoc(t, root, "a.md", "# 一\n")
+	writeDoc(t, root, "a.md", sections(8))
 	s.Refresh()
 	s.selectDoc("a.md")
-	if got := s.anchorBlock(s.doc, "一"); got != -1 {
-		t.Errorf("anchorBlock = %d, want -1 for a heading's slug", got)
+	openFindOn(s, "P5 正文，第 1 行")
+
+	tt := newTester(s)
+	s.gotoMatch(0)
+	tt.Frame()
+	tt.Advance(time.Second)
+	tt.Frame()
+	if s.jump != 0 {
+		t.Errorf("jump = %d, want it taken by the block's build", s.jump)
 	}
-	if got := s.anchorBlock(s.doc, findAnchorPrefix+"99"); got != -1 {
-		t.Errorf("anchorBlock = %d, want -1 for a block out of range", got)
+	if s.docScroll().Y <= 0 {
+		t.Fatalf("Y = %v, want the body scrolled to the hit", s.docScroll().Y)
 	}
-	if got := s.anchorBlock(s.doc, findAnchorPrefix+"x"); got != -1 {
-		t.Errorf("anchorBlock = %d, want -1 for an anchor that is not a number", got)
+	rect, ok := tt.Find("P5 正文，第 1 行")
+	if !ok {
+		t.Fatalf("texts = %q, want the matched line", tt.Texts())
+	}
+	if rect.Y > 200 {
+		t.Errorf("match at Y=%v, want it near the pane's top", rect.Y)
+	}
+}
+
+// TestSecondJumpTurnsTowardTheNewTarget pins that walking the matches replaces
+// the place asked for, rather than adding to it: the last one asked for wins.
+func TestSecondJumpTurnsTowardTheNewTarget(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", sections(8))
+	s.Refresh()
+	s.selectDoc("a.md")
+	openFindOn(s, "第 1 行")
+	if len(s.find.matches) < 6 {
+		t.Fatalf("matches = %v, want one a section", s.find.matches)
+	}
+	s.gotoMatch(0)
+	first := s.jump
+	s.gotoMatch(5)
+	want := blockAt(s.doc, s.find.matches[5].Offset)
+	if s.jump != want || s.jump == first {
+		t.Errorf("jump = %d, want %d (the last match asked for), not %d", s.jump, want, first)
+	}
+}
+
+// TestJumpDoesNotCarryToAnotherDocument pins that the block asked for is the
+// document's own: another document shows from its top, not at block 12 of the
+// one searched.
+func TestJumpDoesNotCarryToAnotherDocument(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "alpha.md", sections(8))
+	writeDoc(t, root, "beta.md", "丁\n\n戊\n")
+	s.Refresh()
+	s.selectDoc("alpha.md")
+	openFindOn(s, "P6 正文")
+	s.gotoMatch(0)
+	if s.jump == 0 {
+		t.Fatal("no block was asked for")
+	}
+	s.selectDoc("beta.md")
+	if s.jump != 0 {
+		t.Errorf("jump = %d, want it left with its document", s.jump)
+	}
+	if s.anchor != "" {
+		t.Errorf("anchor = %q, want none on another document", s.anchor)
 	}
 }
 
@@ -323,26 +368,60 @@ func TestFindCountSaysWhenItCapped(t *testing.T) {
 	}
 }
 
-// TestFindAnchorDoesNotCarryToAnotherDocument pins that a search hit's block is
-// the document's own: opening another document shows it from its top, not at
-// block 12 of the one searched.
-func TestFindAnchorDoesNotCarryToAnotherDocument(t *testing.T) {
+// TestFindPanelShowsIslandsApart pins the panel's shape: the matches and the
+// context are panes of their own, apart from one another and from the field, so
+// that one does not read as a run of the other's rows.
+func TestFindPanelShowsIslandsApart(t *testing.T) {
 	s, root := newState(t)
-	writeDoc(t, root, "alpha.md", "甲\n\n乙\n\n丙 目标\n")
-	writeDoc(t, root, "beta.md", "丁\n\n戊\n")
+	writeDoc(t, root, "a.md", "甲 目标\n乙\n丙\n")
 	s.Refresh()
-	s.selectDoc("alpha.md")
+	s.selectDoc("a.md")
 	openFindOn(s, "目标")
-	s.gotoMatch(0)
-	if !strings.HasPrefix(s.anchor, findAnchorPrefix) {
-		t.Fatalf("anchor = %q, want the search hit's block", s.anchor)
-	}
 
-	s.selectDoc("beta.md")
-	if strings.HasPrefix(s.anchor, findAnchorPrefix) || strings.HasPrefix(s.md.Anchor, findAnchorPrefix) {
-		t.Errorf("anchor = %q / md %q, want the search anchor left with its document", s.anchor, s.md.Anchor)
+	tt := ui.NewTester(func(c *ui.Context) { s.findPanel(c) }, 900, 700)
+	field, ok := tt.Find("在文档中查找")
+	if !ok {
+		t.Fatalf("texts = %q, want the search field", tt.Texts())
 	}
-	if got := s.docURL(); strings.Contains(got, findAnchorPrefix) {
-		t.Errorf("page address = %q, want no search anchor in it", got)
+	list, ok := tt.Find("匹配行")
+	if !ok {
+		t.Fatalf("texts = %q, want the matches' pane named", tt.Texts())
+	}
+	prev, ok := tt.Find("命中上下文")
+	if !ok {
+		t.Fatalf("texts = %q, want the context's pane named", tt.Texts())
+	}
+	if list.Y < field.Y+field.H {
+		t.Errorf("matches at %v, want them under the field at %v", list, field)
+	}
+	gap := prev.Y - (list.Y + list.H)
+	if gap < 5 {
+		t.Errorf("gap = %v, want the panes apart (6 DIP)", gap)
+	}
+	if list.X != prev.X || list.W != prev.W {
+		t.Errorf("panes = %v / %v, want them the same size", list, prev)
+	}
+	if !tt.HasText("第 1 行上下文") {
+		t.Errorf("texts = %q, want the context's line named", tt.Texts())
+	}
+}
+
+// TestFindPanelWithoutMatchesKeepsOneIsland pins the empty half: no matches
+// shows the field alone, not two empty panes.
+func TestFindPanelWithoutMatchesKeepsOneIsland(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", "甲\n乙\n")
+	s.Refresh()
+	s.selectDoc("a.md")
+	openFindOn(s, "找不到的词")
+
+	tt := ui.NewTester(func(c *ui.Context) { s.findPanel(c) }, 900, 700)
+	if !tt.HasText("在文档中查找") {
+		t.Errorf("texts = %q, want the field", tt.Texts())
+	}
+	for _, name := range []string{"匹配行", "命中上下文"} {
+		if _, ok := tt.Find(name); ok {
+			t.Errorf("pane %q shown without a match", name)
+		}
 	}
 }

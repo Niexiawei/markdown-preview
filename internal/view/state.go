@@ -8,6 +8,7 @@ import (
 	"context"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -82,14 +83,25 @@ type State struct {
 
 	// The document shown: its source, its parse, the outline built from it,
 	// and what the native markdown view shows it with.
-	src       string
-	doc       *parser.Document
-	headings  []workspace.Heading
-	docErr    error
-	md        markdown.Options
-	anchor    string
-	anchorVer uint64
-	openURL   func(string)
+	src      string
+	doc      *parser.Document
+	headings []workspace.Heading
+	docErr   error
+	md       markdown.Options
+	openURL  func(string)
+	// anchor is the heading the outline marks as current: the one last
+	// jumped to. The native body keeps its place by jump, not by this.
+	anchor string
+	// jump is the block of the document shown that the native body brings to
+	// the top of its pane, 0 for none. The outline, a link to a heading and a
+	// search hit ask for one; the markdown view builds that block with a
+	// marker that scrolls the body there (native.go's jumpMarker).
+	jump int
+	// jumpSeen is when the frame that built the marker built it. The jump is
+	// kept for the rest of that frame — a click builds the view twice, and
+	// only the last build's ask to scroll survives it — and dropped on the
+	// next one.
+	jumpSeen time.Time
 
 	// renderMode is the rendering backend the user chose for a document, by
 	// its identity; documents without one use the configuration's.
