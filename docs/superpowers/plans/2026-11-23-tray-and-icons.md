@@ -284,3 +284,23 @@ go vet ./... && gofmt -l . && go test ./...
    且要写平台分支。
 2. 要不要「最小化也收进托盘」（本计划只改关闭按钮，最小化仍是最小化）？
 3. 要不要记住「上次是被关闭到托盘而不是退出」，以便开机自启时静默启动（本期不做，无开机自启）。
+
+## 执行后的修订（2026-11-23）
+
+1. **任务 0 与任务 1 合成一个提交**（`feat: 应用与托盘图标资产，并嵌入二进制`）：资产拷进来就必须有 embed 才能编译，
+   分开提交会留下一个「assets 在、但没人用」的中间提交。任务 2 / 3 / 4 各一个提交，共四个功能提交。
+2. **实现与计划一致**，没有接口层面的偏离：`internal/tray` 导出 `Install(win, toolTip)`、`Show(win)`、
+   `WindowIcon()`、`Icon()`；`keep` / `menuItems` 保持包内私有。
+   `TestIconSizes`（256 / 32）、`TestClosingTheWindowHidesIt`、`TestQuittingLetsTheWindowClose`、
+   `TestTrayMenuOpensTheWindowOrQuits` 全部先跑出红再转绿。
+3. **确认了 D8 的判断**：读 mygo v0.9.1 的 `internal/{windows,linux,darwin}`，`IconIsTemplate` 在三个平台都由
+   后端自己处理明暗（Windows/Linux 在任务栏/面板变暗时把不透明像素涂白、macOS 交给 AppKit 着色），
+   所以只打包 `tray-on-light-32.png`，没有 `OnAppearanceChange` 回调、也没有 `tray-on-dark`。
+4. **`Show` 里保留 `Restore()`**：对没最小化的窗口它是空操作；保留是为了「隐藏 + 最小化过」这一种状态也能回来，
+   与 D5 一致。
+5. **自动化跑过的一部分验收（Windows）**：构建 `mp.exe` 后启动，日志没有 `tray:`（托盘建成功）；
+   用 `CloseMainWindow()` 发 `WM_CLOSE` 后进程仍在（`HasExited=False`，窗口句柄变 0）→ 关闭即隐藏成立；
+   接着再启动一份 `mp.exe`，第二份立即以 0 退出、第一份的窗口句柄又回来 → 单实例与第二次启动召回窗口成立。
+   **仍需人手确认的**：托盘菜单两项的实际点击（打开主页面 / 退出）、三平台的图标外观（含深色任务栏反白）。
+6. **工作方式**：在 `feat/tray-and-icons` 分支上原地执行（没有另开 git worktree），与该仓库既有的
+   `feat/*` → 合并的流程一致。
