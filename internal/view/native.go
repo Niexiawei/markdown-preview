@@ -322,17 +322,19 @@ func (s *State) nativePreview(c *ui.Context) {
 	// The body's text scales with the zoom: every length the theme gives in
 	// ems — spacing, code, tables — follows its font size.
 	s.md.Theme = &markdown.Theme{FontSize: max(9, t.FontSize*s.zoomOrOne())}
-	// The hook wraps every block in a box of its own, so it is hung only on
-	// the frames a jump is on its way.
 	if s.jump > 0 && !s.jumpSeen.IsZero() && !s.jumpSeen.Equal(c.Now()) {
 		// The frame that built the marker is over: what it asked for is on
 		// its way, or done.
 		s.jump, s.jumpSeen = 0, time.Time{}
 	}
-	s.md.Block = nil
-	if s.jump > 0 {
-		s.md.Block = s.jumpMarker
-	}
+	// The hook is hung always, not only on the frames a jump is on its way:
+	// the markdown view wraps every block in a box of its own while it is
+	// set, and a box keeps a block's margins from meeting the room the view
+	// leaves between blocks, so a document lays out a little looser with it.
+	// Hung for the frame that measures a jump alone, that room would go away
+	// with the hook, and the block would slide up out of the pane as the jump
+	// landed: the room is measured and spent in the same layout.
+	s.md.Block = s.jumpMarker
 	ui.ScrollBoth(c).TrackScroll(s.docScroll()).Fill().
 		Padding(bodyPadding-bodyJumpGap, bodyPadding, bodyPadding, bodyPadding).
 		BorderWidth(bodyJumpGap, 0, 0, 0).BorderColor(ui.Transparent).

@@ -557,3 +557,8 @@ git commit -m "docs: 回写跳转与搜索浮岛的结构、坑与规格"
    有一个 16 DIP 的**透明上边框**（`bodyJumpGap`），内边距相应减 16（静止时样子不变），reveal 对齐边框于是正好留出
    16；webview 侧加 `scroll-margin-top: calc(16px * var(--md-scale))`。回归测试
    `TestTOCJumpLeavesRoomAboveTheHeading`、`TestDocHTMLLeavesRoomAboveHeadings`。
+7. **`Options.Block` 从"只在跳转帧挂"改成"每帧都挂"**（推翻 D3 与 AGENTS 里那条坑）：mygo 在钩子非 nil 时会给每个块
+   包一层 `Column`，这层让块的边距不再与块间距合并，整篇文档因此比不挂时高几十 DIP。只在跳转帧挂 = 用「挂着时的布局」
+   量位置、用「不挂时的布局」显示，目标就被顶到画面外（新文档复现，`---` 分节的文档最容易撞上）。现在常挂，
+   量位置与显示同一套布局；代价是每帧每块多一个节点（583 块文档约 +3.5% 帧时间）与 0.4% 量级的间距差异。
+   回归测试 `TestTOCJumpLandsRightAfterRules`。

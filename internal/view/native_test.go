@@ -349,7 +349,53 @@ func TestTOCJumpLeavesRoomAboveTheHeading(t *testing.T) {
 	if !ok {
 		t.Fatalf("texts = %q, want the heading", tt.Texts())
 	}
+	if rect.W <= 0 || rect.H <= 0 {
+		t.Fatalf("heading at %v is clipped: the jump left it out of the pane", rect)
+	}
 	if rect.Y < 12 || rect.Y > 20 {
+		t.Errorf("heading at Y=%v, want the 16 DIP a jump leaves above it", rect.Y)
+	}
+}
+
+// hrs is a document whose sections are parted by rules: a rule's margins stack
+// with the room the markdown view leaves between blocks once it wraps them, so
+// this is the shape that a jump must still land right on.
+func hrs(n int) string {
+	var b strings.Builder
+	for i := 1; i <= n; i++ {
+		fmt.Fprintf(&b, "## 第 %d 节\n\n", i)
+		for line := 1; line <= 8; line++ {
+			fmt.Fprintf(&b, "P%d 正文，第 %d 行。\n\n", i, line)
+		}
+		b.WriteString("---\n\n")
+	}
+	return b.String()
+}
+
+// TestTOCJumpLandsRightAfterRules pins the landing where the document parts its
+// sections with rules: the room the view leaves between blocks with a wrapper is
+// not the room it leaves without one, so a jump measured in one and spent in the
+// other lands off — the heading hidden above the pane.
+func TestTOCJumpLandsRightAfterRules(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", hrs(12))
+	s.Refresh()
+	s.selectDoc("a.md")
+
+	tt := ui.NewTester(func(c *ui.Context) { s.nativePreview(c) }, 700, 600)
+	tt.Frame()
+	s.gotoHeading("第-8-节")
+	tt.Frame()
+	tt.Advance(time.Second)
+	tt.Frame()
+	rect, ok := tt.Find("第 8 节")
+	if !ok {
+		t.Fatalf("texts = %q, want the heading", tt.Texts())
+	}
+	if rect.W <= 0 || rect.H <= 0 {
+		t.Fatalf("heading at %v is clipped: the jump left it out of the pane", rect)
+	}
+	if rect.Y < 12 || rect.Y > 24 {
 		t.Errorf("heading at Y=%v, want the 16 DIP a jump leaves above it", rect.Y)
 	}
 }

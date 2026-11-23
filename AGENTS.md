@@ -150,8 +150,11 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
   `native.go` 的 `bodyJumpGap`，并把 webview 的 `scroll-margin-top`（`docCSS`）一起改，两个后端才一致。
 - **"近末尾落到底部"是 reveal 钳制出来的**，不是算出来的：`ScrollStart` 会要一个超过 `MaxY` 的位置，
   容器把它夹到 `MaxY`。不要自己读 `MaxY` 再 `ScrollTo`，那会与钳制、与用户滚动抢。
-- **`Options.Block` 不能常挂**：mygo 的 `viewState.block` 一旦看到它非 nil，会给**每个块**多包一层
-  `ui.Column` 再调钩子，几千块就是几千个多余节点。只在 `s.jump > 0` 的帧挂（`nativePreview`）。
+- **`Options.Block` 必须常挂**（`s.md.Block = s.jumpMarker` 每帧都设）：mygo 一旦看到它非 nil，会给**每个块**
+  多包一层 `ui.Column`，而这一层挡住了"块的边距"和"块之间的间距"的合并（`blocks()` 的 `Margin` 落在包裹层上），
+  于是**同一份文档在挂与不挂时的高低差几十 DIP**。只在跳转那一帧挂，就会出现"按挂着时的布局量位置、按不挂时的布局显示"，
+  目标被顶到画面外（用户报过的「新文档点目录，标题跑到可视区外」就是这个）。常挂的代价：每帧每块多一个节点
+  （实测 583 块的文档 +3.5% 帧时间）、文档间距比 mygo 默认略松（0.4% 量级），换来"量位置与显示是同一套布局"。
 - **一次点击会建两遍视图**：mygo 处理完构建期的事件（点目录）后会重建这一帧，`c.reveal` 在重建前被清空，
   所以「建标记 + `ScrollIntoView`」如果只在第一遍发生，这次滚动会被丢掉。`jump` 因此不在钩子里清，
   而是记 `jumpSeen = c.Now()`，等到**下一帧**（`jumpSeen != c.Now()`）才清——同一帧的两遍构建都会挂上钩子，
