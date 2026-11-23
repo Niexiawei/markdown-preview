@@ -21,6 +21,9 @@ go build -o mp.exe . && ./mp.exe
 WebView 模式额外需要系统的 web view：Windows 上是 WebView2 Runtime（Windows 11 自带），macOS/Linux 上随系统提供。
 缺它时原生模式照常可用。
 
+图标分两段，别混：**窗口/任务栏图标和托盘图标是运行时设的**（图在二进制里，`go build` 出的 exe 也有）；
+**可执行文件本身的图标只有 `mygo build` 会写**（读 `mygo.json` 的 `resources/icon.png`，生成 `.ico` / `.icns`）。
+
 ## 用法
 
 - 侧栏顶部是项目面板（显示当前项目名）→ 点开列出所有项目，有勾的是打开的项目（树里显示、监听中）：
@@ -51,6 +54,10 @@ WebView 模式额外需要系统的 web view：Windows 上是 WebView2 Runtime�
   路径太长时先省略路径，不会把控件挤出窗口。
 - 底部状态栏只显示一行提示（文件被删、链接目标不存在、MCP 状态等）。
 - 外部改动（新增 / 删除 / 重命名 / 写入）会自动反映；当前文档被改名时标签跟着改名，被删掉时标签消失并切到相邻标签。
+- **常驻托盘**：点窗口的 ✕ 只是**隐藏窗口**，进程继续跑（文件监听、MCP server 都不中断），标签、滚动位置、渲染模式都留着。
+  托盘菜单只有两项：**打开主页面**（窗口从隐藏或最小化回来，拿回焦点）、**退出**（真正结束进程）。
+  托盘图标是应用图标的剪影版，浅色任务栏/菜单栏显示墨色、深色时系统自动反白；Windows 上它出现在通知区域（可能收在 `^` 里）。
+  macOS 关窗后点 Dock 图标也能把窗口叫回来。再次启动不会开第二个进程，而是把已有窗口带到前面。
 
 ## 快捷键
 
@@ -111,11 +118,13 @@ curl -s http://127.0.0.1:8765/mcp \
 - 项目面板是自绘的浮层（按钮行 + 右键菜单），没有系统菜单的键盘导航。
 - 树的 md 项超过约 3000 个时会变慢（`ui.Tree` 会构建全部节点），届时可换成 `ui.Outline`。
 - 符号链接环的保护在需要管理员权限的平台上无法被测试覆盖（Windows 普通用户建不了符号链接）。
+- 托盘建不起来的环境（例如没有状态区/AppIndicator 的 Linux 桌面）会退回「关闭即退出」（日志里有一行 `tray:`），
+  因为那时窗口一关就再也找不回来。
 
 ## 目录结构
 
 ```
-main.go                     组装：配置 → workspace → sidebar shell → 文件监听 → MCP
+main.go                     组装：单实例锁 → 配置 → workspace → sidebar shell → 窗口图标 → 托盘 → 文件监听 → MCP
 internal/config/            配置的读写（项目列表、打开的项目、活动项目、渲染模式、MCP 设置）
 internal/workspace/         扫描、读取、解析缓存、TOC/slug、搜索（Index 接口，喂 UI 和 MCP）；find.go 是正文内查找
 internal/watch/             把 mygo 的文件事件折叠成 ChangeSet
@@ -125,6 +134,7 @@ internal/view/              Onevra 主题（theme.go）+ 外壳各区域：侧�
                             标签下面那行路径与渲染开关在 Content 的第一行（view.go 的 titleRow）；
                             find.go 是悬浮搜索与跳转，zoom.go 是正文缩放；
                             system.go 是桌面动作（文件管理器 / 剪贴板 / 确认）的接口
+internal/tray/              托盘图标与两条菜单、关闭窗口即隐藏（退出才放行）、窗口/任务栏图标；纯逻辑无窗口可测
 ```
 
 ## 变更记录

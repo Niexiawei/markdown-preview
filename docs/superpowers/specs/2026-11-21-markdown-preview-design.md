@@ -254,3 +254,21 @@ type Index interface {
 - **搜索面板从"一整块卡片里叠三段"改成三块独立的浮岛**（`findIsland`：输入框 / 匹配行 / 上下文），
   外层只给位置与 `Gap`、没有背景：块与块之间露出正文，列表与上下文不再读成一列；上下文岛顶上写明
   `第 N 行上下文`，两块数据的岛各有无障碍名（`匹配行` / `命中上下文`）。
+
+### 托盘与窗口生命周期（新增，2026-11-23）
+
+- **关闭窗口 = 隐藏窗口，不退出**：`internal/tray` 的 `keep` 在 `Window.OnClose` 里 `PreventDefault()` +
+  `Hide()`，只有 `App.OnBeforeQuit` 置过 `quitting` 时才放行。`App.Quit()`（托盘「退出」、macOS 的 `Cmd+Q`）
+  因此能真正结束时进程——`prepareQuit` 会逐个窗口 `close()`，没有这条放行路径会被自己的 `OnClose` 拦住。
+  隐藏期间文件监听与 MCP server 都不中断，标签、滚动位置、渲染模式留在内存里（同一份视图）。
+- **托盘只有两项**：`打开主页面`（`Restore` + `Show` + `Focus`，与第二次启动共用 `tray.Show`）、
+  `退出`（`App.Quit`）。菜单挂在 `TrayOptions.Menu` 上，三平台一致：Linux 的 AppIndicator 只支持菜单，
+  macOS 设了菜单左键点击即开菜单，不需要平台分支。macOS 另接 `OnActivate`：没有可见窗口时点 Dock 图标把窗口叫回来。
+- **单实例**：`App.RequestSingleInstanceLock` + `OnSecondInstance` → `tray.Show`。关闭即隐藏之后，
+  再次启动不能再开第二个进程/第二个托盘图标。
+- **托盘建不起来就退回「关闭即退出」**：`Install` 先 `NewTray`，成功后才接管 `OnClose`；反过来会让用户
+  既没有窗口也没有托盘可点。失败只记日志（`tray:`）。
+- **图标三层**：`mygo.json` 的 `resources/icon.png`（1024）由 `mygo build` 生成 exe/bundle 图标（`go build` 不带）；
+  窗口/任务栏图标运行时 `win.SetIcon`（`internal/tray/assets/window.png`，embed 的 256）；
+  托盘 `IconIsTemplate: true` + `assets/tray.png`（32，墨色剪影 + 透明），明暗由系统涂色，
+  因此**不打包**图标套件里的 `tray-on-dark`，也不按 `Dark()` 换图。

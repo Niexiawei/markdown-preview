@@ -24,12 +24,13 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
 
 | 路径 | 职责 |
 | --- | --- |
-| `main.go` | 组装：配置 → workspace → 窗口 → 文件监听 → MCP |
+| `main.go` | 组装：单实例锁 → 配置 → workspace → 窗口（shell） → 窗口图标 → 托盘 → 文件监听 → MCP |
 | `internal/config` | 配置读写（项目、活动项目、渲染模式、MCP），原子写 `config.json` |
 | `internal/workspace` | 扫描 / 读取 / 解析缓存 / 标题缓存 / TOC 与 slug / 搜索 / 正文内查找（`find.go` 的 `FindIn`）；`Index` 接口 |
 | `internal/watch` | `mygo.WatchFiles` → `ChangeSet`（新增 / 删除 / 重命名 / 写入） |
 | `internal/mcp` | `POST /mcp` JSON-RPC 2.0，四个只读工具 |
 | `internal/view` | Onevra 主题（`theme.go`）与外壳各区域：侧栏顶栏（项目面板 + 右键菜单）、树、侧栏工具栏、标签栏（`tabs.go`，占 shell 的标题槽位）、页面第一行的路径与渲染开关（`titleRow`）、预览、状态栏、MCP 设置面板；`find.go` 是悬浮搜索（三块浮岛）与跳转，`native.go` 是原生正文与跳转（`jumpToBlock` / `jumpMarker`），`zoom.go` 是正文缩放；`system.go` 是桌面动作接口 |
+| `internal/tray` | 托盘：图标与两条菜单（打开主页面 / 退出）、关闭窗口即隐藏、`Show`（托盘与第二次启动共用）、窗口/任务栏图标。图片在 `assets/`，用 `go:embed` 打包；纯逻辑（菜单项、关闭决策、图标尺寸）无窗口可测 |
 
 依赖方向：`view → workspace`、`mcp → workspace`、`workspace → config`。
 
@@ -45,6 +46,17 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
   帧首 `drain()` 应用，然后 `win.Invalidate()` 唤醒。不要在 view 热路径里读盘或解析。
 - **窗口只用 `sidebar.NewShell` 创建**（`main.go`），不要退回 `mygo.NewWindow`：折叠侧栏、浮动标题栏、
   主题安装都由 shell 负责。要加内容就填它的槽位：`Left` / `LeftHeader` / `LeftToolbar` / `ContentTitle` / `Content`。
+- **关闭窗口 = 隐藏，不是退出**：这条规则只在 `internal/tray` 里落地（`Install` 先建托盘，成功后才接管
+  `Window.OnClose`）。`keep.quitting` 必须由 `App.OnBeforeQuit` 置位：`App.Quit()` 是「逐个窗口 `close()`」，
+  没有这条放行路径，「退出」会被自己的 `OnClose` 拦住，应用永远退不掉。
+- **托盘建不起来就退回「关闭即退出」**：先 `NewTray`、成功后才装 `OnClose`；反过来会把用户锁死在没有窗口、
+  也没有托盘可点的状态（日志里打 `tray:`）。
+- **托盘与窗口图标只经 `internal/tray`**（`Install` / `WindowIcon` / `Show`），**不在 `internal/view` 里建**：
+  view 的函数每帧都会跑，在那里 `NewTray` 会每帧建一个图标；view 的测试也不该需要托盘或窗口。
+- **图标分三层，别混**：可执行文件/安装包的图标来自 `mygo.json` 的 `resources/icon.png`，**只有 `mygo build`**
+  会把它写进 exe/bundle（`go build` 不会）；窗口/任务栏图标是运行时 `win.SetIcon`（`internal/tray/assets/window.png`，256）；
+  托盘是 `TrayOptions.Icon` + `IconIsTemplate: true`（`assets/tray.png`，32，墨色剪影 + 透明），明暗由系统
+  自己涂色，**不要**再按 `Dark()` 换图、也不要打包 `tray-on-dark`。
 - **颜色从 `AppTheme` 取**（`internal/view/theme.go`）：不要在别处写死十六进制色值；需要主色就
   `c.Theme().Accent`，需要警示色就 `c.Theme().Warning`。
 - **图标只用 `icons/lucide`**，用 `components.Icon` / `components.IconButton`；图标按钮必须给 `label`
@@ -78,6 +90,10 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
   不要在 view 里直接调 `mygo.Dialog` / `mygo.Shell` / `mygo.Clipboard`：`LeftHeader` 在侧栏收起时不构建，
   应用内弹窗画不出来，测试也跑不了真实对话框。
   改完跑 `TestShellSlotsBuild`，并在 `View` 里保持同样的拼装。
+- **改托盘菜单**：只改 `internal/tray/tray.go` 的 `menuItems`（保持两项、无分隔线），并补
+  `TestTrayMenuOpensTheWindowOrQuits`；改关闭行为只改 `keep.go`，`TestQuittingLetsTheWindowClose` 必须仍然通过。
+- **换图标**：换 `internal/tray/assets/window.png`（256 方形）与 `assets/tray.png`（32 方形、墨色剪影 + 透明），
+  同时换 `resources/icon.png`（1024 方形，`mygo build` 用）；`TestIconSizes` 会抓住尺寸不符。
 - **换掉 `ui.Tree`**：md 项超过约 3000 时 `ui.Tree` 会构建全部节点，应换成 `ui.Outline`。
 
 ## 已知的坑
@@ -95,6 +111,13 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
 - **Windows 文件名限制**：测试里不要造含 `?` `*` 的文件名（`os.WriteFile` 会直接报错）；
   `os.Symlink` 需要管理员权限，相关用例会 `t.Skip`。
 - **webview 重载丢滚动位置**（原生模式保留），已写进 README「已知限制」。
+- **`App.SetName` 会改配置目录**：`Path(PathUserData)` 是 `UserConfigDir/<App.Name()>`，名字一变，
+  `config.json` / `mcp.json` 就跑到新目录，看起来像「配置丢了」。要改显示名就改 `mygo.json`（打包名）或
+  shell 的 `Title`，不要在 `main.go` 里 `SetName`。
+- **「退出」退不掉 / 托盘留幽灵图标**：前者是 `keep.quitting` 没接上（见硬规则）；后者是漏了
+  `App.OnWillQuit` 里的 `tray.Destroy()`，Windows 会把图标留到鼠标划过才消失。
+- **`IconIsTemplate` 只认不透明像素**：托盘图必须是「实心剪影 + 透明底」；带底色方块或半透明渐变，
+  在深色任务栏上会被涂成一团白方块。
 - **表格的横向滚动条在表格底部**，不在窗口底部：mygo 的 markdown 视图把表格包在它自己的
   `ScrollHorizontal` 里并 `AlignSelf(Stretch)`，所以表格铺满窗格、在内部滚。这是与用户确认过的
   决策 A；想做“窗口级 x 滚动条”就要 `markdown.Options.Block` 里自绘表格（两百行上下），别偷偷改。
