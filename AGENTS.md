@@ -12,11 +12,16 @@ UI 框架是 `github.com/egoist/mygo v0.9.1`（原生 UI 路径，**不用** web
 
 ```sh
 go run .                    # 开发运行（会打开窗口）
-go build -o mp.exe .        # 出单个二进制
+go build -o mp.exe .        # 出单个二进制（没有 exe 图标、没有安装包）
+go tool mygo build -platform darwin/universal,windows/amd64,linux/amd64
+                            # 出三平台安装包到 dist/<os>-<arch>/（dmg、setup.exe、tar.gz、deb、rpm）
 go test ./...               # 全部测试（视图测试用 ui.NewTester，无窗口）
 go test ./internal/view/ -run TestTOC -v
 go vet ./... && gofmt -l .   # 提交前必跑：vet 无输出、gofmt 无输出
 ```
+
+`mygo` 这个 CLI 由 `go.mod` 的 `tool` 指令钉在 mygo v0.9.1（`go tool mygo`），
+所以本地与 CI 用同一套打包器；`dist/` 与 `build/` 都在 `.gitignore` 里。
 
 Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本机旧版本时 `GOTOOLCHAIN=auto` 会自动取工具链。
 
@@ -31,6 +36,7 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
 | `internal/mcp` | `POST /mcp` JSON-RPC 2.0，四个只读工具 |
 | `internal/view` | Onevra 主题（`theme.go`）与外壳各区域：侧栏顶栏（项目面板 + 右键菜单）、树、侧栏工具栏、标签栏（`tabs.go`，占 shell 的标题槽位）、页面第一行的路径与渲染开关（`titleRow`）、预览、状态栏、MCP 设置面板；`find.go` 是悬浮搜索（三块浮岛）与跳转，`native.go` 是原生正文与跳转（`jumpToBlock` / `jumpMarker`），`zoom.go` 是正文缩放；`system.go` 是桌面动作接口 |
 | `internal/tray` | 托盘：图标与两条菜单（打开主页面 / 退出）、关闭窗口即隐藏、`Show`（托盘与第二次启动共用）、窗口/任务栏图标。图片在 `assets/`，用 `go:embed` 打包；纯逻辑（菜单项、关闭决策、图标尺寸）无窗口可测 |
+| `.github/workflows/build.yml` | CI：gofmt / vet / 测试（Ubuntu，带 Pango），再在 macOS / Ubuntu 上交叉编译三平台安装包；推 `v*` 标签时把产物挂到 Release |
 
 依赖方向：`view → workspace`、`mcp → workspace`、`workspace → config`。
 
@@ -94,6 +100,9 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
   `TestTrayMenuOpensTheWindowOrQuits`；改关闭行为只改 `keep.go`，`TestQuittingLetsTheWindowClose` 必须仍然通过。
 - **换图标**：换 `internal/tray/assets/window.png`（256 方形）与 `assets/tray.png`（32 方形、墨色剪影 + 透明），
   同时换 `resources/icon.png`（1024 方形，`mygo build` 用）；`TestIconSizes` 会抓住尺寸不符。
+- **改构建/发布**：只改 `.github/workflows/build.yml`；本地复现用 `go tool mygo build -platform <goos/goarch>`，
+  产物在 `dist/<os>-<arch>/`（`mygo.json` 没设 `out`，默认就是 `dist`）。版本以 `mygo.json` 的 `version` 为准：
+  发版先改它，再推 `v<同一版本>` 标签（workflow 会校验，不匹配就不构建）。
 - **换掉 `ui.Tree`**：md 项超过约 3000 时 `ui.Tree` 会构建全部节点，应换成 `ui.Outline`。
 
 ## 已知的坑
@@ -118,6 +127,12 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
   `App.OnWillQuit` 里的 `tray.Destroy()`，Windows 会把图标留到鼠标划过才消失。
 - **`IconIsTemplate` 只认不透明像素**：托盘图必须是「实心剪影 + 透明底」；带底色方块或半透明渐变，
   在深色任务栏上会被涂成一团白方块。
+- **CI 的测试任务需要 Pango**：原生 UI 在 Linux 上用 Pango 排版（mygo 用 purego 动态加载），
+  缺了它 `ui.NewTester` 里的文字量宽会退化成 stub，标签/标题相关的断言会挂——所以 workflow 里那段
+  `apt-get install libpango-*` 不能删。
+- **产物没有代码签名**：macOS 是 ad-hoc 签名（Gatekeeper 拦）、Windows 没有签名（SmartScreen 警告）。
+  要签名按 mygo 的 `docs/github-actions.md` 加证书与 `macos.signingIdentity` / `macos.notarize`；
+  用 signtool 签名时 Windows 那一行要改成 `windows-latest`。
 - **表格的横向滚动条在表格底部**，不在窗口底部：mygo 的 markdown 视图把表格包在它自己的
   `ScrollHorizontal` 里并 `AlignSelf(Stretch)`，所以表格铺满窗格、在内部滚。这是与用户确认过的
   决策 A；想做“窗口级 x 滚动条”就要 `markdown.Options.Block` 里自绘表格（两百行上下），别偷偷改。

@@ -36,6 +36,10 @@
 - **应用与托盘图标**：窗口/任务栏图标在运行时设置（`go build` 出的 exe 也有），`mygo build` 另把 `resources/icon.png`
   写进可执行文件；托盘用同一套图标的墨色剪影版。
 - **单实例**：再次启动不会开第二个进程/第二个托盘图标，而是把已有窗口带到前面。
+- **三平台构建流水线**（`.github/workflows/build.yml`）：每次 push / PR 跑 gofmt、`go vet`、测试，并编译三个平台的安装包留成
+  Actions artifact——macOS（`darwin/universal` 的 `.app` + `.dmg`）、Windows（exe + NSIS 安装包）、Linux（可执行文件 + `.tar.gz` + `.deb` + `.rpm`）。
+  推 `v*` 标签（须与 `mygo.json` 的 `version` 一致）时自动建 Release 并把这些包挂上去。
+- **`go tool mygo build`**：`go.mod` 用 `tool` 指令钉住 mygo 打包器，本地一条命令就能出三平台安装包（在 `dist/<os>-<arch>/`）。
 
 ### 变更
 
@@ -81,6 +85,7 @@
 - 文档内查找只支持字面子串（无正则、无全词、无跨文件）；项目内跨文件搜索仍只作为 MCP 工具存在。
 - 托盘建不起来的环境（没有状态区 / AppIndicator）会退回「关闭即退出」，日志里有一行 `tray:`；
   这是故意的：没有托盘时隐藏窗口就再也找不回来。
+- 安装包**没有代码签名**：macOS 上 Gatekeeper 会拦（要右键打开或者在系统设置里放行），Windows 上 SmartScreen 会警告。
 
 ## [0.1.0] — 2026-11-21
 

@@ -1,0 +1,123 @@
+# 三平台构建：可执行文件 + 安装包
+#
+# 用 mygo 自己的打包器（go.mod 里 tool 指令钉住的 CLI）编译并打包：
+#   macOS   .app + .dmg（darwin/universal：Intel 与 Apple 芯片同一个包）
+#   Windows Markdown Preview.exe + <slug>-setup-<version>-<amd64>.exe（NSIS）
+#   Linux   可执行文件 + .tar.gz（带 install.sh）+ .deb + .rpm + PKGBUILD
+#
+# 产物在 dist/<os>-<arch>/ 下（mygo.json 未设 out 时就是 dist），每次运行都作为
+# Actions artifact 留下；推 v* 标签时再自动建 Release 并把安装包挂上去。
+# 版本以 mygo.json 的 version 为准，标签必须是 v + 那个版本，否则构建直接失败。
+#
+# 没做签名（macOS 的 Developer ID / Windows 的代码签名证书）：装到别的机器上
+# Gatekeeper 与 SmartScreen 会提示。要签名就按 mygo 的 docs/github-actions.md
+# 加证书与 notarize 步骤，再给 mygo.json 加 macos.signingIdentity / macos.notarize。
+
+name: Build
+
+on:
+  push:
+    branches: [master]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+# 只读；发布那段自己再要 contents: write。
+permissions:
+  contents: read
+
+# 同一个分支上后一次提交取消前一次；标签构建不互相取消。
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      # 原生 UI 在 Linux 上用 Pango 排版（mygo 用 purego 动态加载）；缺了它
+      # 测试里的文字量宽会退化成 stub，标签/标题相关的断言会挂。
+      - name: Install Pango, fonts and a fallback for text measurement
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libpango-1.0-0 libpangocairo-1.0-0 libpangoft2-1.0-0 \
+            libcairo2 libharfbuzz0b libfontconfig1 fonts-dejavu-core
+      # 与 AGENTS.md 的提交前门槛一致：gofmt 无输出、vet 无输出、测试全绿。
+      - name: Format
+        run: |
+          out="$(gofmt -l .)"
+          if [ -n "$out" ]; then echo "$out" && exit 1; fi
+      - run: go mod tidy && git diff --exit-code -- go.mod go.sum
+      - run: go vet ./...
+      - run: go test ./...
+
+  build:
+    name: ${{ matrix.name }}
+    needs: test
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: macOS, os: macos-latest, platform: "darwin/universal" }
+          # Windows 在 Ubuntu 上交叉编译，安装包由 apt 装来的 NSIS 生成，
+          # 比 windows-latest 快也便宜；签名要用 signtool 时才需要换平台。
+          - { name: Windows, os: ubuntu-latest, platform: "windows/amd64" }
+          - { name: Linux, os: ubuntu-latest, platform: "linux/amd64,linux/arm64" }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Check that the tag matches mygo.json
+        if: startsWith(github.ref, 'refs/tags/')
+        run: test "$GITHUB_REF_NAME" = "v$(jq -r .version mygo.json)"
+      - name: Install NSIS, for the Windows installers
+        if: matrix.name == 'Windows'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends nsis
+      # go.mod 的 tool 指令把 CLI 的版本钉在 mygo v0.9.1，本地与 CI 同一套。
+      - name: Build
+        run: go tool mygo build -platform "${{ matrix.platform }}"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.name }}
+          if-no-files-found: error
+          path: |
+            dist/*/*.dmg
+            dist/*/*.exe
+            dist/*/*.tar.gz
+            dist/*/*.deb
+            dist/*/*.rpm
+
+  release:
+    name: Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Create the release and attach the installers
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+              --title "$GITHUB_REF_NAME" --generate-notes
+          gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" artifacts/* --clobber

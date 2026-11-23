@@ -24,6 +24,21 @@ WebView 模式额外需要系统的 web view：Windows 上是 WebView2 Runtime�
 图标分两段，别混：**窗口/任务栏图标和托盘图标是运行时设的**（图在二进制里，`go build` 出的 exe 也有）；
 **可执行文件本身的图标只有 `mygo build` 会写**（读 `mygo.json` 的 `resources/icon.png`，生成 `.ico` / `.icns`）。
 
+## 构建安装包
+
+```sh
+# 一次性出三平台的安装包（macOS 要 macOS 才能出 dmg）
+go tool mygo build -platform darwin/universal,windows/amd64,linux/amd64
+```
+
+产物在 `dist/<os>-<arch>/`：macOS 是 `.app` + `.dmg`；Windows 是 `Markdown Preview.exe` + `markdown-preview-setup-<版本>-amd64.exe`；
+Linux 是可执行文件 + 带 `install.sh` 的 `.tar.gz`，以及 `.deb` / `.rpm` / `PKGBUILD`。
+`mygo` 由 `go.mod` 的 `tool` 指令钉在 v0.9.1，本地与 CI 是同一套打包器。
+
+`.github/workflows/build.yml` 会在每次 push / PR 上跑 gofmt、`go vet`、测试，并编译三平台安装包作为 Actions artifact；
+推 `v*` 标签（须与 `mygo.json` 的 `version` 一致）时再自动建 Release 并挂上这些包，
+所以发版顺序是：改 `mygo.json` 的 `version` → 提交 → `git tag v<该版本> && git push --tags`。
+
 ## 用法
 
 - 侧栏顶部是项目面板（显示当前项目名）→ 点开列出所有项目，有勾的是打开的项目（树里显示、监听中）：
@@ -120,6 +135,8 @@ curl -s http://127.0.0.1:8765/mcp \
 - 符号链接环的保护在需要管理员权限的平台上无法被测试覆盖（Windows 普通用户建不了符号链接）。
 - 托盘建不起来的环境（例如没有状态区/AppIndicator 的 Linux 桌面）会退回「关闭即退出」（日志里有一行 `tray:`），
   因为那时窗口一关就再也找不回来。
+- 发布的安装包**没有代码签名**：macOS 上 Gatekeeper 会拦（需要右键打开，或在系统设置里放行），
+  Windows 上 SmartScreen 会警告。要正式分发得自己加证书（见 mygo 的 `docs/github-actions.md`）。
 
 ## 目录结构
 
@@ -135,6 +152,7 @@ internal/view/              Onevra 主题（theme.go）+ 外壳各区域：侧�
                             find.go 是悬浮搜索与跳转，zoom.go 是正文缩放；
                             system.go 是桌面动作（文件管理器 / 剪贴板 / 确认）的接口
 internal/tray/              托盘图标与两条菜单、关闭窗口即隐藏（退出才放行）、窗口/任务栏图标；纯逻辑无窗口可测
+.github/workflows/build.yml CI：gofmt / vet / 测试（Ubuntu + Pango）→ 三平台安装包 → 打标签时建 Release
 ```
 
 ## 变更记录
