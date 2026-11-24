@@ -85,6 +85,11 @@ func main() {
 			}
 			return float32(width) - sidebarWidth
 		})
+		// The search panel keeps itself inside the window's height.
+		state.SetContentHeight(func() float32 {
+			_, height := win.ContentSize()
+			return float32(height)
+		})
 		state.StartWatching()
 		startMCP(state, ws, cfg, dir)
 	})
