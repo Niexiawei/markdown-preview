@@ -158,6 +158,8 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
 - **没有底部状态栏**：提示一律走 `notify*` → `internal/notices` 的账本 → 构建期 `updateToasts` 弹右下角 Toast /
   铃铛浮层看历史。不要在 view 里直接 `c.AddToast`（会绕过账本、去重与历史）；改 Toast 落位只改
   `view.ToastOptions()`。
+- **浮层开着 = 已读**：`bellButton` 在开头就把未读标掉（`MarkSeen` 没有变化时不写盘），所以新消息到达时
+  不会在正显示着的列表上冒出角标。
 - **Toast 按 `noticeShown` 水位线去重**：一次点击会建两遍视图（同下面那条坑），不去重会弹两个、读屏还会念两遍。
   `New` 里把水位线对到账本最新一条，否则重启会把上次的旧消息全部重播一遍（历史要留，Toast 不要）。
 - **`Content` 必须 `drain()`**：shell 只有它这一条构建路径，漏了它，`Post` 投递的 watcher 变更在真实窗口里

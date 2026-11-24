@@ -91,6 +91,12 @@ const (
 // read, and the panel of the history behind it.
 func (s *State) bellButton(c *ui.Context) {
 	t := c.Theme()
+	// A history that is on screen is a history read: a message that lands
+	// while the panel shows is seen as it arrives, and never raises the badge
+	// over a list already showing it.
+	if s.noticeOpen && s.notes.Unseen() > 0 {
+		_ = s.notes.MarkSeen()
+	}
 	unread := s.notes.Unseen()
 	label := "消息"
 	if unread > 0 {

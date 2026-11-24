@@ -227,7 +227,7 @@ func TestTheBadgeCountsTheUnreadOnes(t *testing.T) {
 	s.notify("一")
 	s.notify("二")
 	tt := newToolbar(s)
-	if !tt.HasText("2") {
+	if textIndex(tt.Texts(), "2") < 0 {
 		t.Errorf("texts = %q, want the badge to count two", tt.Texts())
 	}
 	if !tt.HasText("消息（2 条未读）") {
@@ -238,7 +238,7 @@ func TestTheBadgeCountsTheUnreadOnes(t *testing.T) {
 func TestNoBadgeWithoutUnread(t *testing.T) {
 	s, _ := newState(t)
 	tt := newToolbar(s)
-	if tt.HasText("0") {
+	if textIndex(tt.Texts(), "0") >= 0 {
 		t.Errorf("texts = %q, want no badge", tt.Texts())
 	}
 	if !tt.HasText("消息") {
@@ -268,7 +268,7 @@ func TestTheBadgeIsCappedAt99(t *testing.T) {
 	for range 120 {
 		s.notify("消息")
 	}
-	if tt := newToolbar(s); !tt.HasText("99+") {
+	if tt := newToolbar(s); textIndex(tt.Texts(), "99+") < 0 {
 		t.Errorf("texts = %q, want the badge capped", tt.Texts())
 	}
 }
@@ -416,5 +416,21 @@ func TestMessageTimesReadAcrossDays(t *testing.T) {
 func TestToastsSitAtTheBottomEnd(t *testing.T) {
 	if got := ToastOptions().Placement; got != components.ToastBottomEnd {
 		t.Errorf("placement = %v, want the bottom right", got)
+	}
+}
+
+// TestAMessageArrivingInTheOpenHistoryIsRead pins that the panel showing the
+// history is the history read: a message that lands while it is open never
+// raises the badge, which the user would see over a list already showing it.
+func TestAMessageArrivingInTheOpenHistoryIsRead(t *testing.T) {
+	s, _ := newState(t)
+	s.noticeOpen = true
+	s.notify("一")
+	tt := newToolbar(s)
+	if got := s.notes.Unseen(); got != 0 {
+		t.Errorf("Unseen = %d, want it read as it lands", got)
+	}
+	if textIndex(tt.Texts(), "1") >= 0 || tt.HasText("消息（1 条未读）") {
+		t.Errorf("texts = %q, want no badge over the open history", tt.Texts())
 	}
 }
