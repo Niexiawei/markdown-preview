@@ -349,6 +349,7 @@ func (s *State) nativePreview(c *ui.Context) {
 	// inside its padding, where a reader pressing near the edge would drag a
 	// bar while aiming at the text, or miss the bar while aiming at it.
 	ui.ScrollBoth(c).TrackScroll(s.docScroll()).Fill().
+		HandleInput(s.bodyPress).
 		BorderWidth(bodyJumpGap, 0, 0, 0).BorderColor(ui.Transparent).
 		Children(func() {
 			ui.Column(c).Width(max(200, s.bodyPaneWidth()-2)).Gap(12).

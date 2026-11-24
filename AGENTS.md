@@ -31,7 +31,7 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
 | --- | --- |
 | `main.go` | 组装：单实例锁 → 配置 → workspace → 窗口（shell） → 窗口图标 → 托盘 → 文件监听 → MCP |
 | `internal/config` | 配置读写（项目、活动项目、渲染模式、MCP），原子写 `config.json` |
-| `internal/workspace` | 扫描 / 读取 / 解析缓存 / 标题缓存 / TOC 与 slug / 搜索 / 正文内查找（`find.go` 的 `FindIn`）；`Index` 接口 |
+| `internal/workspace` | 扫描 / 读取 / 解析缓存 / 标题缓存 / TOC 与 slug / 搜索 / 正文内查找（`find.go` 的 `FindIn`）/ 文件名模糊匹配（`fuzzy.go` 的 `FuzzyMatch`）；`Index` 接口 |
 | `internal/watch` | `mygo.WatchFiles` → `ChangeSet`（新增 / 删除 / 重命名 / 写入） |
 | `internal/mcp` | `POST /mcp` JSON-RPC 2.0，四个只读工具 |
 | `internal/notices` | 消息账本与 `notices.json`（最新在前、无上限、未读标记）；原子写，**不 import ui**，可无窗口测试 |
@@ -94,6 +94,11 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
   `view.go` 的 `titleRow` → `contentTitle`（路径 + 复制 + `modeToggle`）是 `Content` 的第一行；
   `leftHeader`（项目面板：点一行开/关、右键打开/复制/移除）、`leftToolbar`（动作图标 + 铃铛）各就各位。
   改布局时 `View` 与 `Content` 两条拼装路径要一起改（`TestShellSlotsBuild`、`TestTabsSitAboveTheTitle`）。
+- **改树的展开 / 折叠**：批量只改 `state.go` 的 `setTreeOpen`（写 `s.open`，已有指针就地改值，别换指针；
+  **折叠只收目录、项目节点不动，展开会把项目节点一起展开**——否则项目下只有根目录文件时折叠看起来没反应）；
+  三个入口是 `view.go` 的 `treeBulkActions`（`leftHeader`，项目选择按钮左边）、项目节点的 `projectActions`
+  （项目名后面那两个行内小按钮，label 带项目名以便区分）与 `projectMenu` + 项目面板每行的右键菜单。
+  label 不得与目录工具条重名（树是 `展开全部目录树`，目录是 `展开全部目录`），重名会让 `tt.Find`、读屏与快捷键提示都分不清。
 - **改提示消息**：写入只调 `internal/view/notices.go` 的 `notify` / `notifyDone` / `notifyWarn` / `notifyErr`，
   不要直接在 view 里 `c.AddToast`（绕过了账本、去重与历史）；浮层与铃铛也在这个文件（`bellButton` /
   `noticePanel` / `noticeRow` / `noticeBadgeText` / `noticeTime`）。账本自己的行为（落盘、上限、未读）改
@@ -108,6 +113,11 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
 - **改正文内查找**：匹配规则只改 `workspace.FindIn`（字面子串、忽略大小写、上限 500），补 `TestFindIn*`；
   面板与跳转在 `view/find.go`（三块浮岛 `findIsland` / 匹配列表 / 上下文预览 / `Cmd+F` 与 `Cmd+G`）；
   命中跳转只调 `jumpToBlock`，与目录、链接共用同一条路（见「已知的坑」里的 `State.jump`）。
+- **改文件名搜索**：匹配规则只改 `workspace.FuzzyMatch`（子序列、大小写不敏感、空白查询=不匹配、**不编译正则**），
+  补 `TestFuzzyMatch*`；候选集合只改 `treesearch.go` 的 `refreshCandidates`（树序、不扫盘、在 `reloadTree` 后重算），
+  补 `TestCandidates*`；过滤视图、两种底色、定位在 `treeMatched` / `treeRowFill` / `matchedFile`，
+  颜色常量在 `theme.go` 的 `candidateRowTint` / `currentCandidateTint`；快捷键路由与 `Esc` / `↑` / `↓`
+  在 `searchShortcuts`，补 `TestCmdF*`、`TestShiftCmdF*`、`TestArrows*`、`TestEscape*`。
 - **改搜索面板的尺寸**：高度常量全在 `find.go` 顶部（列表默认 132 / 最小 72 / 最大 320，上下文默认 148 /
   最小 96 / 最大 420，拖拽带 `findGrip` 10），可拖拽的是 `findGripBand(c, which)`；读取一律经
   `findHeightOf(which)`（自己的上下限只在那里钳制一次），窗口给的余量由 `findRoom` / `findHeightMaxOf` 管，
@@ -207,6 +217,26 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
   搜索面板写 `findPaneInner+2*findIslandPad`）；滚动容器要带读屏名（`目录列表` / `匹配行列表` /
   `命中上下文列表`）才能在测试里量到它的位置。正文那处改不了 Tester 里可断言的量（滚动条不是带名字的节点，
   文本几何也没变），靠 `TestBodyColumnFollowsPaneWidth` 保证不退化。
+- **`Cmd+F` 按焦点分派，而焦点是上一帧的**：`State.treeFocused` 由侧栏树与正文滚动容器的 `HandleInput`
+  （`InputPointerDown`）记，读它的是 `handleShortcuts`（构建之前）；点完窗格要等一帧再按快捷键。
+  两个滚动容器都返回 false，不吞事件；`openTreeSearch` / `openFind` 会直接置位，因为那时没有指针事件。
+- **WebView 里的点击拿不到**：`platform.WebViewPress` 只把焦点给 webview 节点、不调用它的 `HandleInput`，
+  所以「最后一次按在哪个窗格」在 WebView 模式下永远是侧栏（用户从树里点开的文档）。因此 `searchShortcuts`
+  在 WebView 模式下让 `Cmd+F` 一律搜正文（搜文件用 `Shift+Cmd+F`），这是写进 README 的约定，不要改成猜。
+- **mygo 的快捷键要求修饰键完全相等**：`c.Shortcut(ui.Cmd, ui.KeyF)` 在按住 Shift 时**不会**匹配
+  （`routeKey` 比的是 `mods == k.mods`），带 Shift 的组合必须单独注册一次（`ui.Cmd|ui.Shift`）。
+  `Shift+Cmd+G`（上一个匹配，`find.go`）曾经因为写成 `Shortcut(ui.Cmd, ui.KeyG)` + 看 `Modifiers()` 而不生效，
+  已改成 `Cmd|Shift` / `Cmd` 两次注册；以后加带 Shift 的组合照这个写。
+- **占位文字（Placeholder）不能用 `tt.Texts()` 断言**：它是画出来的，不是文本节点；要断言就读无障碍信息：
+  `tt.Access("<字段的无障碍名>").Placeholder`（两个搜索框的中文占位就是这么钉的）。
+- **搜索框拿键盘要一直要到它真的拿到**：`ui.Tree` 本身是个焦点组，树搜索打开的那一帧会把键盘抢走（那时没有别的东西持焦点），
+  单次 `AutoFocus` 会输掉这场竞争，字段就收不到敲字。用 `s.treeSearch.needFocus` 每帧 `Focus()`，`= !field.Focused()` 才停。
+- **搜索框上的 `↑` / `↓` 用窗口级 `Shortcut` 接**：`Element.HandleInput` 挂在 `SearchField` 外层拿不到按键——焦点在它里面
+  那个输入框节点上，`focusHandler` 只看焦点节点自己。所以在 `searchShortcuts` 里用 `c.Shortcut(0, ui.KeyUp/KeyDown)`；
+  树行自己有 `Shortcut`，行上有焦点时它先拿到（那是树自己的焦点移动），这是有意的。
+- **`View` 的侧栏列要 `FillHeight()`**：`View` 是测试用的并排近似布局，侧栏列不给高度时 `Grow(1)` 不生效，
+  树的滚动容器被内容撑高，`s.treeScroll.MaxY` 恒为 0（定位与滚动类断言全假）。真实 shell 的 `Left` 槽位是有界的，
+  这个漏洞只出现在测试路径上。
 - **搜索面板是三块浮岛**（`findIsland`：输入框 / 匹配行 / 上下文），外层只给位置，**没有背景**，
   也**没有 `Gap`**：间距由「匹配列表岛的 6 DIP 上外边距」+「两条 `findGrip`（10 DIP）高的拖拽带
   （列表下、上下文下各一条）」构成，改间距要三处一起改，否则会出现「带子占位 + 间距」的双份留白。

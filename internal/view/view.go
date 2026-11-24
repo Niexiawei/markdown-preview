@@ -1,6 +1,8 @@
 package view
 
 import (
+	"time"
+
 	"github.com/egoist/mygo/ui"
 	"github.com/oneo-me/onevra/source/components"
 	"github.com/oneo-me/onevra/source/icons/lucide"
@@ -20,9 +22,13 @@ func (s *State) View(c *ui.Context) {
 	s.openURL = func(url string) { c.Services().OpenURL(url) }
 	t := c.Theme()
 	ui.Row(c).Fill().Background(t.Background).Children(func() {
-		ui.Column(c).Width(300).Background(t.Surface).Children(func() {
+		ui.Column(c).Width(300).FillHeight().Background(t.Surface).Children(func() {
 			s.leftHeader(c)
-			ui.Scroll(c).Grow(1).Children(func() { s.fileTree(c) })
+			if s.treeSearch.open {
+				s.treeSearchRow(c)
+			}
+			ui.Scroll(c).Grow(1).Label("项目树").TrackScroll(&s.treeScroll).
+				HandleInput(s.treePress).Children(func() { s.fileTree(c) })
 			s.leftToolbar(c)
 		})
 		ui.Column(c).Grow(1).MinWidth(0).FillHeight().Clip().Children(func() {
@@ -40,7 +46,11 @@ func (s *State) View(c *ui.Context) {
 func (s *State) Left(c *ui.Context) {
 	t := c.Theme()
 	ui.Column(c).Fill().Padding(sidebar.HeaderHeight(c), t.Space(1), 0, t.Space(1)).Children(func() {
-		ui.Scroll(c).Grow(1).Children(func() { s.fileTree(c) })
+		if s.treeSearch.open {
+			s.treeSearchRow(c)
+		}
+		ui.Scroll(c).Grow(1).Label("项目树").TrackScroll(&s.treeScroll).
+			HandleInput(s.treePress).Children(func() { s.fileTree(c) })
 	})
 }
 
@@ -92,17 +102,42 @@ func (s *State) titleRow(c *ui.Context) {
 	ui.Divider(c)
 }
 
-// leftHeader builds the project panel: the active project's name, and under it
-// every project the window knows, checked when open. A click opens or closes
-// one; the right click has the project's actions.
+// leftHeader builds the project panel: the tree's bulk actions, then the active
+// project's name, and under it every project the window knows, checked when
+// open. A click opens or closes one; the right click has the project's actions.
 func (s *State) leftHeader(c *ui.Context) {
+	t := c.Theme()
+	ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(t.Space(0.5)).Children(func() {
+		s.treeBulkActions(c)
+		s.projectSwitcher(c)
+	})
+}
+
+// treeBulkActions builds the tree's bulk actions: unfold or fold every directory
+// of every open project. They sit before the project panel's button; the
+// outline's own pair sits in its header.
+func (s *State) treeBulkActions(c *ui.Context) {
+	none := len(s.trees) == 0
+	if components.IconButton(c, lucide.UnfoldVertical(), "展开全部目录树", components.IconButtonPlain).
+		Disabled(none).Clicked() {
+		s.setTreeOpen("", true)
+	}
+	if components.IconButton(c, lucide.FoldVertical(), "折叠全部目录树", components.IconButtonPlain).
+		Disabled(none).Clicked() {
+		s.setTreeOpen("", false)
+	}
+}
+
+// projectSwitcher builds the project panel's button: the active project's name,
+// and the list of every project the window knows.
+func (s *State) projectSwitcher(c *ui.Context) {
 	t := c.Theme()
 	label := "项目"
 	if p, ok := s.ActiveProject(); ok {
 		label = trimEllipsis(p.Name, 18)
 	}
 	button := components.Button(c, "", components.ButtonGhost).Label("切换项目")
-	button.Gap(t.Space(0.75)).Children(func() {
+	button.Grow(1).Gap(t.Space(0.75)).Children(func() {
 		components.Icon(c, lucide.Folder()).Size(t.Rem(1), t.Rem(1)).TextColor(t.TextMuted)
 		components.Text(c, label).SingleLine().Grow(1)
 		components.Icon(c, lucide.ChevronsUpDown()).Size(t.Rem(0.875), t.Rem(0.875)).TextColor(t.TextMuted)
@@ -142,6 +177,13 @@ func (s *State) leftHeader(c *ui.Context) {
 					}
 					if m.Item("复制项目路径").Chosen() {
 						s.copyProjectPath(p)
+					}
+					m.Separator()
+					if m.Item("展开此项目的全部目录").Chosen() {
+						s.setTreeOpen(p.ID, true)
+					}
+					if m.Item("折叠此项目的全部目录").Chosen() {
+						s.setTreeOpen(p.ID, false)
 					}
 					m.Separator()
 					if m.Item("移除项目…").Chosen() {
@@ -218,9 +260,15 @@ func (s *State) modeToggle(c *ui.Context) {
 
 // fileTree builds the markdown tree, or what to do when there is nothing to
 // show. With one project open its entries are the top level; with more, each
-// project gets a node of its own name.
+// project gets a node of its own name. While the search is open it shows what
+// the phrase matches instead, and the tree is the list of candidates.
 func (s *State) fileTree(c *ui.Context) {
 	t := c.Theme()
+	if s.treeSearch.reveal && !s.treeSearch.revealSeen.IsZero() && !s.treeSearch.revealSeen.Equal(c.Now()) {
+		// The frame that asked the tree to slide is over: what it asked for is
+		// on its way, or done.
+		s.treeSearch.reveal, s.treeSearch.revealSeen = false, time.Time{}
+	}
 	ui.Column(c).Fill().Padding(t.Space(0.5)).Gap(t.Space(0.25)).Children(func() {
 		if len(s.trees) == 0 {
 			components.Text(c, "打开一个目录作为项目").FontSize(12).TextColor(t.TextMuted)
@@ -230,16 +278,26 @@ func (s *State) fileTree(c *ui.Context) {
 			components.Text(c, "这个目录下没有 markdown 文件").FontSize(12).TextColor(t.TextMuted)
 			return
 		}
+		if s.searching() && len(s.treeSearch.candidates) == 0 {
+			components.Text(c, "没有匹配的文件").FontSize(12).TextColor(t.TextMuted)
+			return
+		}
 		ui.Tree(c, func() {
+			if s.searching() {
+				s.treeMatched(c)
+				return
+			}
 			if len(s.trees) == 1 {
 				s.treeItems(c, s.trees[0])
 				return
 			}
 			for _, tr := range s.trees {
 				tr := tr
-				ui.TreeItem(c, tr.project.Name, s.openOf("project:"+tr.project.ID), func() {
+				item := ui.TreeItem(c, tr.project.Name, s.openOf("project:"+tr.project.ID), func() {
 					s.treeItems(c, tr)
 				})
+				s.projectActions(c, item, tr)
+				s.projectMenu(c, item, tr)
 			}
 		})
 	})
@@ -263,6 +321,38 @@ func (s *State) treeItems(c *ui.Context, tr projectTree) {
 		}
 		s.nodeMenu(c, item, tr, child)
 	}
+}
+
+// projectActions adds a project node's two bulk actions after its name: the
+// directories of that project alone, unfolded or folded, without the other
+// projects'. They are compact because the row is, and their names carry the
+// project so that a screen reader and a test can tell two of them apart.
+func (s *State) projectActions(c *ui.Context, item ui.Element, tr projectTree) {
+	item.Children(func() {
+		ui.Spacer(c)
+		if components.IconButton(c, lucide.UnfoldVertical(), "展开项目 "+tr.project.Name+" 的全部目录",
+			components.IconButtonCompact).Clicked() {
+			s.setTreeOpen(tr.project.ID, true)
+		}
+		if components.IconButton(c, lucide.FoldVertical(), "折叠项目 "+tr.project.Name+" 的全部目录",
+			components.IconButtonCompact).Clicked() {
+			s.setTreeOpen(tr.project.ID, false)
+		}
+	})
+}
+
+// projectMenu gives a project node its right click: folding and unfolding every
+// directory of that project alone. A window with one project has no such node,
+// so the project panel's rows carry the same two entries.
+func (s *State) projectMenu(c *ui.Context, item ui.Element, tr projectTree) {
+	components.ContextMenu(c, item, func(m *components.Menu) {
+		if m.Item("展开此项目的全部目录").Chosen() {
+			s.setTreeOpen(tr.project.ID, true)
+		}
+		if m.Item("折叠此项目的全部目录").Chosen() {
+			s.setTreeOpen(tr.project.ID, false)
+		}
+	})
 }
 
 // nodeMenu gives a tree entry its right click: the entry itself on the

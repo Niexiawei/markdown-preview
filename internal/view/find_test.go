@@ -797,3 +797,30 @@ func TestTheFindPanesScrollAtTheIslandsEdges(t *testing.T) {
 		}
 	}
 }
+
+// TestShiftCmdGGoesToThePreviousMatch pins the keyboard's way back: the key
+// registered for Shift+Cmd+G is the one that comes with Shift held, since a
+// shortcut matches the modifiers held exactly.
+func TestShiftCmdGGoesToThePreviousMatch(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", "一 目标\n二 目标\n三 目标\n")
+	s.Refresh()
+	s.selectDoc("a.md")
+
+	tt := ui.NewTester(func(c *ui.Context) { s.Content(c) }, 900, 700)
+	tt.Key(ui.Cmd, ui.KeyF)
+	tt.Frame()
+	openFindOn(s, "目标")
+	tt.Frame()
+
+	tt.Key(ui.Cmd, ui.KeyG)
+	tt.Frame()
+	if s.find.current != 1 {
+		t.Fatalf("current = %d, want 1 after the next key", s.find.current)
+	}
+	tt.Key(ui.Cmd|ui.Shift, ui.KeyG)
+	tt.Frame()
+	if s.find.current != 0 {
+		t.Errorf("current = %d, want 0 after Shift+Cmd+G", s.find.current)
+	}
+}

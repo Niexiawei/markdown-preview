@@ -243,7 +243,7 @@ func (s *State) webPreview(c *ui.Context) {
 		return
 	}
 	s.loadWebDoc()
-	ui.WebView(c, s.wv).Grow(1)
+	ui.WebView(c, s.wv).Grow(1).HandleInput(s.bodyPress)
 }
 
 // ensureWebView makes the window's web view, reporting whether it could: a

@@ -206,6 +206,9 @@ func (s *State) openFind() {
 	if !s.findable() {
 		return
 	}
+	// One panel at a time holds the keys, and the document's search is the one
+	// the body answers to: the tree's folds away, keeping its phrase.
+	s.treeFocused, s.treeSearch.open = false, false
 	s.find.open = true
 	// The field takes the keyboard as the panel opens, even when the last
 	// phrase is still in it: the user asked to search, not to read.
@@ -296,24 +299,23 @@ func blockAt(d *parser.Document, at int) int {
 	return best
 }
 
-// findShortcuts handles the panel's keys: Cmd+F opens it, Escape empties the
-// field before it closes the panel, and Cmd+G walks the matches.
+// findShortcuts handles the panel's keys: Escape empties the field before it
+// closes the panel, and Cmd+G walks the matches. Cmd+F is the one the two
+// searches share, and searchShortcuts routes it.
 func (s *State) findShortcuts(c *ui.Context) {
 	switch {
-	case c.Shortcut(ui.Cmd, ui.KeyF):
-		s.openFind()
-	case s.find.open && c.Shortcut(0, ui.KeyEscape):
+	case s.find.open && !s.treeSearch.open && c.Shortcut(0, ui.KeyEscape):
 		if s.find.query != "" {
 			s.find.query = ""
 			s.refreshMatches()
 			return
 		}
 		s.closeFind()
+	case s.find.open && c.Shortcut(ui.Cmd|ui.Shift, ui.KeyG):
+		// The registration carries Shift: a shortcut matches the modifiers held
+		// exactly, so Cmd+G's never sees the key while Shift is down.
+		s.findNext(-1)
 	case s.find.open && c.Shortcut(ui.Cmd, ui.KeyG):
-		if c.Modifiers()&ui.Shift != 0 {
-			s.findNext(-1)
-			return
-		}
 		s.findNext(1)
 	}
 }
@@ -382,7 +384,7 @@ func (s *State) findField(c *ui.Context) {
 	island.Children(func() {
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(t.Space(0.5)).Children(func() {
 			field := ui.SearchField(c, &s.find.query).Label("在文档中查找")
-			field.Grow(1).FontSize(12)
+			field.Grow(1).FontSize(12).Placeholder("在文档中查找")
 			if s.find.needFocus {
 				// AutoFocus gives the focus once, where Focus would take it back
 				// every frame, from the list or the buttons beside the field.

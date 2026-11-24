@@ -90,6 +90,14 @@ type State struct {
 	// find is the search over the document shown, which the floating panel
 	// shows.
 	find findState
+	// treeSearch is the search over the tree's file names, which the sidebar
+	// shows in place of the whole tree. treeFocused says the last press or key
+	// was the sidebar's: Cmd+F searches files when it was, and the document when
+	// it was not.
+	treeSearch  treeSearchState
+	treeFocused bool
+	// treeScroll is how far the tree scrolls.
+	treeScroll ui.ScrollState
 
 	// The document shown: its source, its parse, the outline built from it,
 	// and what the native markdown view shows it with.
@@ -320,6 +328,47 @@ func (s *State) openOf(path string) *bool {
 	return &b
 }
 
+// setOpen asks for the directory, or the project node, at key to be open or
+// folded. An entry that is there is written through its pointer, which is the
+// one the tree's items hold: replacing it would leave a tree item reading a
+// state that this frame no longer writes.
+func (s *State) setOpen(key string, open bool) {
+	if p, ok := s.open[key]; ok {
+		*p = open
+		return
+	}
+	s.open[key] = &open
+}
+
+// setTreeOpen folds or unfolds every directory of the open projects, or of the
+// project with projectID alone ("" for all of them). Folding closes the
+// directories and leaves the project nodes as the user left them — a folded
+// project still shows its top level, as a window of one project does; unfolding
+// opens the nodes too, so that nothing stays hidden after it.
+func (s *State) setTreeOpen(projectID string, open bool) {
+	for _, tr := range s.trees {
+		if projectID != "" && tr.project.ID != projectID {
+			continue
+		}
+		if open && len(s.trees) > 1 {
+			s.setOpen("project:"+tr.project.ID, true)
+		}
+		var walk func(n *workspace.Node)
+		walk = func(n *workspace.Node) {
+			for _, child := range n.Children {
+				if !child.IsDir {
+					continue
+				}
+				s.setOpen(tr.project.ID+":"+child.Path, open)
+				walk(child)
+			}
+		}
+		if tr.root != nil {
+			walk(tr.root)
+		}
+	}
+}
+
 // Trees returns the trees of the open projects, in the order they were added.
 func (s *State) Trees() []projectTree { return s.trees }
 
@@ -437,6 +486,11 @@ func (s *State) reloadTree() {
 		s.dropTabsOf(p.ID)
 		s.ws.SetConfig(s.cfg)
 		s.save()
+	}
+	if s.treeSearch.open {
+		// The tree the search walks is the one just read: a file added or
+		// renamed behind the window's back changes what it offers.
+		s.refreshCandidates()
 	}
 	if s.sel.empty() {
 		return
