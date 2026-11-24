@@ -140,9 +140,10 @@ type State struct {
 	// tocScroll is how far the document's outline scrolls, both ways.
 	tocScroll ui.ScrollState
 	// contentWidth, when set, says how wide the window's content is on either
-	// side of the sidebar. The app sets it, since only it sees the shell;
-	// tests set their own.
-	contentWidth func() float32
+	// side of the sidebar; contentHeight how tall it is. The app sets them,
+	// since only it sees the shell; tests set their own.
+	contentWidth  func() float32
+	contentHeight func() float32
 
 	inbox chan func()
 }
@@ -486,6 +487,19 @@ func (s *State) windowWidth() float32 {
 		return max(320, s.contentWidth())
 	}
 	return 840
+}
+
+// SetContentHeight tells the window how tall its content is, as SetContentWidth
+// does how wide: the outline of the document and the search panel fit in it.
+func (s *State) SetContentHeight(fn func() float32) { s.contentHeight = fn }
+
+// windowHeight is how tall the window's content is: what the app measured, or a
+// default for the tests that build the view without a window.
+func (s *State) windowHeight() float32 {
+	if s.contentHeight != nil {
+		return max(320, s.contentHeight())
+	}
+	return 700
 }
 
 // bodyPaneWidth is how wide the document's body is: the window's content less

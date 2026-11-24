@@ -19,24 +19,70 @@ import (
 // shows on either side of a match.
 const (
 	findPaneWidth float32 = 420
-	// findListHeight is how tall the matches' island is until the divider is
+	// findListHeight is how tall the matches' island is until its band is
 	// dragged; findListMin and findListMax are how short and how tall a drag
 	// may leave it.
 	findListHeight float32 = 132
 	findListMin    float32 = 72
 	findListMax    float32 = 320
-	// findGrip is the band between the matches and the preview that drags the
-	// matches' island taller or shorter, in DIPs. It is wider than the room
-	// between the islands was, since it has to be caught with a pointer.
-	findGrip        float32 = 10
-	findPreviewSize float32 = 148
-	findContext     int     = 2
+	// The preview's island, likewise: findPreviewMin is its caption and a
+	// couple of lines, and findPreviewMax is as much context as is worth
+	// showing at once.
+	findPreviewHeight float32 = 148
+	findPreviewMin    float32 = 96
+	findPreviewMax    float32 = 420
+	// findGrip is the band under each island that drags it taller or shorter,
+	// in DIPs. It is wider than the room between the islands was, since it has
+	// to be caught with a pointer.
+	findGrip    float32 = 10
+	findContext int     = 2
 	// findIslandPad is the room inside each pane of the panel, in DIPs.
 	findIslandPad float32 = 6
 	// findPaneInner is how wide what sits in a pane is: the panel less a
 	// pane's room on either side and its border.
 	findPaneInner = findPaneWidth - 2*findIslandPad - 2
 )
+
+// findBand names which of the panel's two data islands a band resizes.
+type findBand int
+
+const (
+	findListBand findBand = iota
+	findPreviewBand
+)
+
+// findBandLabel is what a band is called for the reader and for the tests.
+func findBandLabel(which findBand) string {
+	if which == findPreviewBand {
+		return "调整命中上下文高度"
+	}
+	return "调整匹配列表高度"
+}
+
+// findBandMin is the shortest a band's island may be left.
+func findBandMin(which findBand) float32 {
+	if which == findPreviewBand {
+		return findPreviewMin
+	}
+	return findListMin
+}
+
+// findBandMax is the tallest a band's island may be dragged on its own, before
+// the window has its say.
+func findBandMax(which findBand) float32 {
+	if which == findPreviewBand {
+		return findPreviewMax
+	}
+	return findListMax
+}
+
+// findBandDefault is the height a band's island shows at until it is dragged.
+func findBandDefault(which findBand) float32 {
+	if which == findPreviewBand {
+		return findPreviewHeight
+	}
+	return findListHeight
+}
 
 // findState is the window's search over the document shown: whether the panel
 // floats, the phrase, where it matches, and which match the body shows.
@@ -47,14 +93,20 @@ type findState struct {
 	matches   []workspace.Match
 	current   int // 0-based into matches
 	truncated bool
-	// listH is how tall the matches' island is, as the user dragged it: 0
-	// until then, and for as long as the window lives (findListHeightOf
-	// reads it, within what the panel allows).
-	listH float32
-	// dragOver is how far past a limit the pointer dragged the divider, so that
-	// coming back moves it at once rather than once the pointer is over it
-	// again, as ui.Split keeps its own (splitOvershoot).
-	dragOver float32
+	// listH and previewH are how tall the two data islands are, as the user
+	// dragged them: 0 until then, and for as long as the window lives
+	// (findHeightOf reads them, within what the panel allows).
+	listH, previewH float32
+	// shownList and shownPreview are how tall they show this frame, which the
+	// window may leave less than the user asked for.
+	shownList, shownPreview float32
+	// fieldH is the field's island as the last frame laid it out: the room the
+	// two islands have is measured from it.
+	fieldH float32
+	// listOver and previewOver are how far past a limit the pointer dragged a
+	// band, so that coming back moves it at once rather than once the pointer is
+	// over it again, as ui.Split keeps its own (splitOvershoot).
+	listOver, previewOver float32
 	// lines are the source's lines, kept from the last load: the preview
 	// reads them every frame, and splitting the source per frame is the kind
 	// of work the window's thread must not do.
@@ -65,13 +117,77 @@ type findState struct {
 func (s *State) findable() bool { return !s.sel.empty() && s.src != "" }
 
 // findListHeightOf returns how tall the matches' island is: the height the user
-// dragged it to, within what the panel allows, and the default until the divider
-// is dragged.
-func (s *State) findListHeightOf() float32 {
-	if s.find.listH == 0 {
-		return findListHeight
+// dragged it to, within what the panel allows, and the default until its band is
+// dragged.
+func (s *State) findListHeightOf() float32 { return s.findHeightOf(findListBand) }
+
+// findPreviewHeightOf is findListHeightOf for the preview's island.
+func (s *State) findPreviewHeightOf() float32 { return s.findHeightOf(findPreviewBand) }
+
+// findHeightOf returns how tall one of the panel's data islands is: the height
+// the user dragged it to, within what the panel allows, and the default until
+// its band is dragged.
+func (s *State) findHeightOf(which findBand) float32 {
+	h := s.find.listH
+	if which == findPreviewBand {
+		h = s.find.previewH
 	}
-	return min(max(s.find.listH, findListMin), findListMax)
+	if h == 0 {
+		return findBandDefault(which)
+	}
+	return min(max(h, findBandMin(which)), findBandMax(which))
+}
+
+// setFindHeight asks for one island to be h tall, within its own floor and the
+// ceiling the window leaves it. The ceiling is passed in rather than measured
+// here: only a build may ask the theme or the shell how much room there is.
+func (s *State) setFindHeight(which findBand, h, room float32) {
+	h = min(max(h, findBandMin(which)), room)
+	if which == findPreviewBand {
+		s.find.previewH = h
+		return
+	}
+	s.find.listH = h
+}
+
+// findHeightMaxOf returns how tall one island may be: its own ceiling, or what
+// the window has left once the other island is placed, whichever is less.
+func (s *State) findHeightMaxOf(c *ui.Context, which findBand) float32 {
+	other := s.findListHeightOf()
+	if which == findListBand {
+		other = s.findPreviewHeightOf()
+	}
+	return max(min(findBandMax(which), s.findRoom(c)-other), findBandMin(which))
+}
+
+// findTop is where the panel starts, below the header which holds the tabs and
+// below the title row the page shows first.
+func (s *State) findTop(c *ui.Context) float32 {
+	return sidebar.HeaderHeight(c) + titleRowHeight + c.Theme().Space(2)
+}
+
+// findRoom is what the panel's data islands and their bands may take: the
+// window's height, less the room above the panel, the room below it, the field's
+// island and the bands.
+func (s *State) findRoom(c *ui.Context) float32 {
+	room := s.windowHeight() - s.findTop(c) - c.Theme().Space(2) - s.find.fieldH - 2*findGrip
+	return max(room, findListMin+findPreviewMin)
+}
+
+// fitFindHeights decides how tall the two islands show: the heights the user
+// asked for, less what the window cannot hold. The preview gives way first, since
+// it is the context around a hit rather than the hits themselves; what was asked
+// for is kept, so that a window made taller again shows it.
+func (s *State) fitFindHeights(c *ui.Context) {
+	room := s.findRoom(c)
+	list, preview := s.findListHeightOf(), s.findPreviewHeightOf()
+	if over := list + preview - room; over > 0 {
+		preview = max(preview-over, min(findPreviewMin, preview))
+		if over = list + preview - room; over > 0 {
+			list = max(list-over, min(findListMin, list))
+		}
+	}
+	s.find.shownList, s.find.shownPreview = list, preview
 }
 
 // openFind shows the panel over the document shown, over what was searched for
@@ -204,18 +320,19 @@ func (s *State) findPanel(c *ui.Context) {
 		return
 	}
 	t := c.Theme()
+	// What the window has room for, before any island asks for its height.
+	s.fitFindHeights(c)
 	ui.Overlay(c, func() {
 		ui.Column(c).Absolute().
 			Right(t.Space(2)).
-			// Under the header, which holds the tabs, and under the title
-			// row the page shows first.
-			Top(sidebar.HeaderHeight(c) + titleRowHeight + t.Space(2)).
+			Top(s.findTop(c)).
 			Width(findPaneWidth).
 			Children(func() {
 				s.findField(c)
 				s.findList(c)
-				s.findDivider(c)
+				s.findGripBand(c, findListBand)
 				s.findPreview(c)
+				s.findGripBand(c, findPreviewBand)
 			})
 	})
 }
@@ -239,7 +356,8 @@ func findCaption(c *ui.Context, text string) {
 // walking the matches or closing the panel.
 func (s *State) findField(c *ui.Context) {
 	t := c.Theme()
-	findIsland(c).Label("搜索输入").Children(func() {
+	island := findIsland(c).Label("搜索输入")
+	island.Children(func() {
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(t.Space(0.5)).Children(func() {
 			field := ui.SearchField(c, &s.find.query).Label("在文档中查找")
 			field.Grow(1).FontSize(12)
@@ -267,6 +385,10 @@ func (s *State) findField(c *ui.Context) {
 			}
 		})
 	})
+	// The island as the last frame laid it out: the room the two data islands
+	// have is measured from it, and the field's height is the theme's, not the
+	// view's to count.
+	s.find.fieldH = island.Bounds().H
 }
 
 // findCount is the panel's "3/17": which match the body shows, of how many.
@@ -293,8 +415,8 @@ func (s *State) findList(c *ui.Context) {
 	if len(s.find.matches) == 0 {
 		return
 	}
-	findIsland(c).Label("匹配行").Margin(t.Space(1.5), 0, 0, 0).Children(func() {
-		ui.ScrollBoth(c).Height(s.findListHeightOf()).Children(func() {
+	findIsland(c).Label("匹配行").Height(s.find.shownList).Margin(t.Space(1.5), 0, 0, 0).Children(func() {
+		ui.ScrollBoth(c).Grow(1).Children(func() {
 			ui.Column(c).MinWidth(findPaneInner).Gap(t.Space(0.25)).Children(func() {
 				for i, m := range s.find.matches {
 					i, m := i, m
@@ -317,34 +439,67 @@ func (s *State) findList(c *ui.Context) {
 	})
 }
 
-// findDivider is the band between the matches and the preview: the pointer
-// drags it to resize the matches' island, and a double click puts it back to its
-// default. It is drawn only while the pointer is over it or dragging it, so that
-// the panel stays three islands rather than one card with a rule through it.
+// findGripBand is the band under one of the panel's data islands: the pointer
+// drags it to resize the island above it, the arrows move it once it has the
+// keyboard, and a double click puts it back to its default. It is drawn only
+// while the pointer is over it or dragging it, so that the panel stays three
+// islands rather than one card with a rule through it.
 //
 // Dragged reports what the pointer moved since the frame before, not since the
 // press: adding it to the height each frame is what makes the island follow the
-// pointer. The overshoot kept in dragOver is what makes coming back from a limit
-// move the island at once. Without matches there is nothing below to resize, so
-// the band is left out with them.
-func (s *State) findDivider(c *ui.Context) {
+// pointer. The overshoot kept beside the height is what makes coming back from a
+// limit move the island at once. Without matches there is nothing to resize, so
+// the bands are left out with them.
+func (s *State) findGripBand(c *ui.Context, which findBand) {
 	if len(s.find.matches) == 0 {
 		return
 	}
 	t := c.Theme()
-	band := ui.Box(c).FillWidth().Height(findGrip).
-		Cursor(ui.CursorResizeNS).Role(ui.RoleSplitter).Label("调整匹配列表高度")
+	band := ui.Box(c).FillWidth().Height(findGrip).Focusable().
+		Cursor(ui.CursorResizeNS).Role(ui.RoleSplitter).Label(findBandLabel(which))
+	over := &s.find.listOver
+	if which == findPreviewBand {
+		over = &s.find.previewOver
+	}
+	// What the window leaves this island, read now: the band's input comes
+	// before the next build, where no theme or shell is at hand.
+	room := s.findHeightMaxOf(c, which)
+	// A press here takes the keyboard, so that the arrows that follow move the
+	// edge rather than leaving the band with nothing to tab to.
+	if band.Pressed() {
+		band.Focus()
+	}
+	band.HandleInput(func(ev ui.InputEvent) bool {
+		if ev.Kind != ui.InputKeyDown {
+			return false
+		}
+		step := t.Space(2.5)
+		switch ev.Key {
+		case ui.KeyUp:
+			s.setFindHeight(which, s.findHeightOf(which)-step, room)
+		case ui.KeyDown:
+			s.setFindHeight(which, s.findHeightOf(which)+step, room)
+		default:
+			return false
+		}
+		return true
+	})
 	_, dy, held := band.Dragged()
-	if held {
-		want := s.findListHeightOf() + dy + s.find.dragOver
-		s.find.listH = min(max(want, findListMin), findListMax)
-		s.find.dragOver = want - s.find.listH
-	} else {
-		s.find.dragOver = 0
+	switch {
+	case !held:
+		// The press ended, or never came: the next drag starts with the band
+		// under the pointer.
+		*over = 0
+	case dy != 0:
+		// A press that moves nothing is no drag: it must not pull the island
+		// down to what the window shows of it.
+		want := s.findHeightOf(which) + dy + *over
+		s.setFindHeight(which, want, room)
+		*over = want - s.findHeightOf(which)
 	}
 	if band.DoubleClicked() {
-		s.find.listH = findListHeight
-		s.find.dragOver = 0
+		s.setFindHeight(which, findBandDefault(which), room)
+		*over = 0
 	}
 	band.Draw(func(p *ui.Painter, r ui.Rect) {
 		if !held && !band.Hovered() {
@@ -367,9 +522,9 @@ func (s *State) findPreview(c *ui.Context) {
 	lines := s.find.lines
 	from := max(1, m.Line-findContext)
 	to := min(len(lines), m.Line+findContext)
-	findIsland(c).Label("命中上下文").Children(func() {
+	findIsland(c).Label("命中上下文").Height(s.find.shownPreview).Children(func() {
 		findCaption(c, "第 "+strconv.Itoa(m.Line)+" 行上下文")
-		ui.ScrollBoth(c).MaxHeight(findPreviewSize).Children(func() {
+		ui.ScrollBoth(c).Grow(1).Children(func() {
 			ui.Column(c).MinWidth(findPaneInner).Gap(t.Space(0.25)).Children(func() {
 				for n := from; n <= to; n++ {
 					text := strings.TrimSuffix(lines[n-1], "")
