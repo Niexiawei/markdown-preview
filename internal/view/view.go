@@ -306,7 +306,7 @@ func (tr projectTree) childOf(node *workspace.Node) projectTree {
 func (s *State) statusBar(c *ui.Context) {
 	t := c.Theme()
 	ui.Row(c).Height(24).PaddingX(t.Space(1)).AlignItems(ui.Center).Gap(t.Space(1)).Children(func() {
-		components.Text(c, trimEllipsis(s.status, 140)).FontSize(11).TextColor(t.TextMuted).SingleLine()
+		components.Text(c, trimEllipsis(s.Status(), 140)).FontSize(11).TextColor(t.TextMuted).SingleLine()
 		ui.Spacer(c)
 	})
 }

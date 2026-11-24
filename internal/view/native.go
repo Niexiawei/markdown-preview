@@ -30,13 +30,13 @@ func (s *State) loadDoc() {
 	doc, headings, err := s.ws.Parse(p.ID, s.sel.path)
 	if err != nil {
 		s.docErr = err
-		s.status = err.Error()
+		s.notifyErr(err.Error())
 		return
 	}
 	src, err := s.ws.ReadMarkdown(p.ID, s.sel.path)
 	if err != nil {
 		s.docErr = err
-		s.status = err.Error()
+		s.notifyErr(err.Error())
 		return
 	}
 	s.doc, s.headings, s.src = doc, headings, src
@@ -165,7 +165,7 @@ func (s *State) followLink(url string) {
 		return
 	}
 	if _, err := s.ws.Stat(p.ID, target); err != nil {
-		s.status = "链接的文档不存在：" + target
+		s.notifyWarn("链接的文档不存在：" + target)
 		return
 	}
 	s.selectDoc(target)

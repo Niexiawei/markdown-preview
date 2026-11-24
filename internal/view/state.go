@@ -16,6 +16,7 @@ import (
 	"github.com/egoist/mygo/ui/markdown/parser"
 
 	"mdpreview/internal/config"
+	"mdpreview/internal/notices"
 	"mdpreview/internal/workspace"
 )
 
@@ -57,7 +58,16 @@ type State struct {
 	// shows the document where the user left it.
 	scrolls map[docSel]*ui.ScrollState
 	sel     docSel
-	status  string
+	// notes are the messages the window reported, the newest first: the toasts
+	// pop up from them and the bell's history lists them. They survive a
+	// restart in the user data directory.
+	notes *notices.Store
+	// noticeShown is the ID of the last message handed to a toast, so that a
+	// message toasts once — a click builds the view twice — and so that the
+	// messages of the last run do not toast again on this one.
+	noticeShown int
+	// noticeOpen is whether the history panel shows.
+	noticeOpen bool
 	// tabsOpen is whether the panel listing every tab shows.
 	tabsOpen bool
 	// tabScroll is how far the strip of tabs scrolls sideways; tabShown is the
@@ -149,8 +159,11 @@ type State struct {
 }
 
 // New returns the state of a window showing the projects in cfg, whose
-// configuration lives in dir.
+// configuration lives in dir, as do the messages it reported.
 func New(ws *workspace.Workspace, cfg config.Config, dir string) *State {
+	// A file this app cannot read leaves an empty history, which the window
+	// shows as no messages at all: it must open all the same.
+	book, _ := notices.Load(dir)
 	s := &State{
 		ws:         ws,
 		cfgDir:     dir,
@@ -161,9 +174,13 @@ func New(ws *workspace.Workspace, cfg config.Config, dir string) *State {
 		gone:       map[string]bool{},
 		watches:    map[string]context.CancelFunc{},
 		renderMode: map[docSel]config.RenderMode{},
-		sidebarW:   300,
-		tocW:       240,
-		inbox:      make(chan func(), 1024),
+		notes:      book,
+		// The messages the last run left are history, not news: they show in
+		// the bell's list without popping up again.
+		noticeShown: book.Last(),
+		sidebarW:    300,
+		tocW:        240,
+		inbox:       make(chan func(), 1024),
 	}
 	if !cfg.IsOpen(s.activeID) {
 		s.activeID = ""
@@ -184,10 +201,10 @@ func (s *State) revealProject(p workspace.Project) {
 		return
 	}
 	if err := s.sys.Reveal(p.Root); err != nil {
-		s.status = "无法打开文件管理器：" + err.Error()
+		s.notifyErr("无法打开文件管理器：" + err.Error())
 		return
 	}
-	s.status = "已在文件管理器中打开：" + p.Root
+	s.notify("已在文件管理器中打开：" + p.Root)
 }
 
 // copyProjectPath puts a project's directory in the clipboard.
@@ -196,7 +213,7 @@ func (s *State) copyProjectPath(p workspace.Project) {
 		return
 	}
 	s.sys.CopyText(p.Root)
-	s.status = "已复制项目路径：" + p.Root
+	s.notifyDone("已复制项目路径：" + p.Root)
 }
 
 // SetWindow gives the state the window it draws in, which it asks for a frame
@@ -283,8 +300,15 @@ func (s *State) SelectedProject() (workspace.Project, bool) {
 // IsOpen reports whether the window shows the project with id.
 func (s *State) IsOpen(id string) bool { return s.cfg.IsOpen(id) }
 
-// Status returns the line the status bar shows besides the rendering mode.
-func (s *State) Status() string { return s.status }
+// Status returns the text of the newest message the window reported, "" when
+// it reported none. The history keeps them all; this is the one a reader would
+// care about most.
+func (s *State) Status() string {
+	if len(s.Messages()) == 0 {
+		return ""
+	}
+	return s.Messages()[0].Text
+}
 
 // openOf returns the open state of the directory at path, which starts open.
 func (s *State) openOf(path string) *bool {
@@ -364,7 +388,7 @@ func (s *State) RemoveProject(id string) {
 		Message:      "从列表中移除 “" + p.Name + "”？项目里的文件不会被删除。",
 		ConfirmLabel: "移除",
 	}) {
-		s.status = "已取消移除"
+		s.notify("已取消移除")
 		return
 	}
 	s.removeProject(id)
@@ -403,11 +427,11 @@ func (s *State) reloadTree() {
 			continue
 		}
 		if s.gone[p.ID] {
-			s.status = "项目目录不可用：" + p.Root
+			s.notifyErr("项目目录不可用：" + p.Root)
 			continue
 		}
 		s.gone[p.ID] = true
-		s.status = "项目目录不可用：" + p.Root
+		s.notifyErr("项目目录不可用：" + p.Root)
 		s.cfg.RemoveProject(p.ID)
 		s.activeID = s.cfg.ActiveID
 		s.dropTabsOf(p.ID)
@@ -430,7 +454,7 @@ func (s *State) reloadTree() {
 	}
 	if _, err := s.ws.Stat(s.sel.project, s.sel.path); err != nil {
 		s.closeTab(s.sel)
-		s.status = "文件已被删除"
+		s.notifyWarn("文件已被删除")
 	}
 }
 

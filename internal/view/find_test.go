@@ -280,8 +280,8 @@ func TestFindJumpWithoutAWebViewOnlyMovesTheList(t *testing.T) {
 	if s.wv != nil {
 		t.Fatal("a web view was made without a window")
 	}
-	if !strings.Contains(s.status, "WebView") {
-		t.Errorf("status = %q, want the web view's absence reported", s.status)
+	if !strings.Contains(s.Status(), "WebView") {
+		t.Errorf("status = %q, want the web view's absence reported", s.Status())
 	}
 }
 

@@ -265,17 +265,17 @@ func (s *State) gotoMatch(i int) {
 // whichever of the two runs out first.
 func (s *State) findInWeb() {
 	if s.wv == nil {
-		s.status = "WebView 不可用，未在页面内高亮"
+		s.notifyErr("WebView 不可用，未在页面内高亮")
 		return
 	}
 	res, err := s.wv.Page().FindInPage(s.find.query, mygo.FindOptions{})
 	if err != nil {
-		s.status = "无法在页面中查找：" + err.Error()
+		s.notifyErr("无法在页面中查找：" + err.Error())
 		return
 	}
 	for n := 1; n <= min(s.find.current, res.Matches-1); n++ {
 		if _, err := s.wv.Page().FindInPage(s.find.query, mygo.FindOptions{FindNext: true}); err != nil {
-			s.status = "无法在页面中查找：" + err.Error()
+			s.notifyErr("无法在页面中查找：" + err.Error())
 			return
 		}
 	}

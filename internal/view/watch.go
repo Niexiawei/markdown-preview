@@ -35,7 +35,7 @@ func (s *State) startWatch(id, root string) {
 	src, err := watch.Watch(ctx, root)
 	if err != nil {
 		cancel()
-		s.status = "无法监听这个项目：" + err.Error()
+		s.notifyErr("无法监听这个项目：" + err.Error())
 		return
 	}
 	s.watches[id] = cancel
@@ -80,7 +80,7 @@ func (s *State) applyChanges(id string, set watch.ChangeSet) {
 				// The document shown went away: its neighbours take over.
 				s.closeTab(s.sel)
 				s.reloadTree()
-				s.status = "文件已被删除"
+				s.notifyWarn("文件已被删除")
 				continue
 			}
 			s.onDocChanged()

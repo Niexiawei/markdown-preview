@@ -63,7 +63,7 @@ func (s *State) mcpSettings(c *ui.Context) {
 			ui.Text(c, trimEllipsis(s.mcpToken, 60)).FontSize(12)
 			if ui.Button(c, "复制 token").Clicked() {
 				c.Services().WriteClipboard(s.mcpToken)
-				s.status = "token 已复制"
+				s.notifyDone("token 已复制")
 			}
 			ui.Text(c, "在 agent 的 MCP 配置里填上面的地址，请求头带 Authorization: Bearer <token>。").
 				FontSize(12).TextColor(t.TextMuted)
