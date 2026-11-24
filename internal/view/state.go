@@ -320,6 +320,45 @@ func (s *State) openOf(path string) *bool {
 	return &b
 }
 
+// setOpen asks for the directory, or the project node, at key to be open or
+// folded. An entry that is there is written through its pointer, which is the
+// one the tree's items hold: replacing it would leave a tree item reading a
+// state that this frame no longer writes.
+func (s *State) setOpen(key string, open bool) {
+	if p, ok := s.open[key]; ok {
+		*p = open
+		return
+	}
+	s.open[key] = &open
+}
+
+// setTreeOpen folds or unfolds every directory of the open projects, or of the
+// project with projectID alone ("" for all of them): the project nodes the tree
+// puts on top of several projects, and every directory under them.
+func (s *State) setTreeOpen(projectID string, open bool) {
+	for _, tr := range s.trees {
+		if projectID != "" && tr.project.ID != projectID {
+			continue
+		}
+		if len(s.trees) > 1 {
+			s.setOpen("project:"+tr.project.ID, open)
+		}
+		var walk func(n *workspace.Node)
+		walk = func(n *workspace.Node) {
+			for _, child := range n.Children {
+				if !child.IsDir {
+					continue
+				}
+				s.setOpen(tr.project.ID+":"+child.Path, open)
+				walk(child)
+			}
+		}
+		if tr.root != nil {
+			walk(tr.root)
+		}
+	}
+}
+
 // Trees returns the trees of the open projects, in the order they were added.
 func (s *State) Trees() []projectTree { return s.trees }
 

@@ -953,3 +953,126 @@ func TestTreeMenuReportsACopyFailure(t *testing.T) {
 		t.Errorf("status = %q, want the failure reported", s.Status())
 	}
 }
+
+// TestUnfoldingAndFoldingEveryDirectoryOfTheTree pins the sidebar's two bulk
+// actions: folding every directory of every open project at once, and
+// unfolding them all again.
+func TestUnfoldingAndFoldingEveryDirectoryOfTheTree(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "notes/a.md", "# A\n")
+	writeDoc(t, root, "draft/deep/b.md", "# B\n")
+	s.Refresh()
+
+	tt := newTester(s)
+	if !tt.HasText("a.md") || !tt.HasText("b.md") {
+		t.Fatalf("texts = %q, want both documents before folding", tt.Texts())
+	}
+	if err := tt.Click("折叠全部目录树"); err != nil {
+		t.Fatalf("Click fold: %v", err)
+	}
+	tt.Frame()
+	for _, gone := range []string{"a.md", "b.md"} {
+		if tt.HasText(gone) {
+			t.Errorf("texts = %q, want %q folded away", tt.Texts(), gone)
+		}
+	}
+	if err := tt.Click("展开全部目录树"); err != nil {
+		t.Fatalf("Click unfold: %v", err)
+	}
+	tt.Frame()
+	for _, want := range []string{"a.md", "b.md"} {
+		if !tt.HasText(want) {
+			t.Errorf("texts = %q, want %q back after unfolding", tt.Texts(), want)
+		}
+	}
+}
+
+// TestBulkActionsSitLeftOfTheProjectSwitcher pins where the tree's bulk actions
+// live: in the sidebar header, before the project panel's button.
+func TestBulkActionsSitLeftOfTheProjectSwitcher(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", "# A\n")
+	s.Refresh()
+
+	tt := ui.NewTester(func(c *ui.Context) { s.LeftHeader(c) }, 300, 48)
+	switch_, ok := tt.Find("切换项目")
+	if !ok {
+		t.Fatalf("no project switcher; texts = %q", tt.Texts())
+	}
+	right := switch_.X
+	for _, label := range []string{"展开全部目录树", "折叠全部目录树"} {
+		r, ok := tt.Find(label)
+		if !ok {
+			t.Fatalf("no %q; texts = %q", label, tt.Texts())
+		}
+		if r.X+r.W > right+1 {
+			t.Errorf("%q sits at X %v..%v, want it left of the switcher at %v", label, r.X, r.X+r.W, right)
+		}
+		// The two are one row: the icon's own label is shorter than the
+		// switcher's, so their boxes only have to overlap vertically.
+		if r.Y+r.H < switch_.Y || r.Y > switch_.Y+switch_.H {
+			t.Errorf("%q sits at Y %v..%v, want it in the switcher's row %v..%v",
+				label, r.Y, r.Y+r.H, switch_.Y, switch_.Y+switch_.H)
+		}
+	}
+}
+
+// TestTheProjectMenuFoldsOneProjectOnly pins the tree's project node: its
+// right click folds that project's directories, and leaves the other project's
+// alone.
+func TestTheProjectMenuFoldsOneProjectOnly(t *testing.T) {
+	s, alphaRoot, betaRoot := twoProjects(t)
+	writeDoc(t, alphaRoot, "a.md", "# A\n")
+	writeDoc(t, betaRoot, "b.md", "# B\n")
+	s.Refresh()
+
+	tt := newTester(s)
+	if !tt.HasText("b.md") {
+		t.Fatalf("texts = %q, want beta's document before folding", tt.Texts())
+	}
+	if err := tt.RightClick("beta"); err != nil {
+		t.Fatalf("RightClick: %v", err)
+	}
+	if err := tt.Click("折叠此项目的全部目录"); err != nil {
+		t.Fatalf("Click fold: %v", err)
+	}
+	tt.Frame()
+	if tt.HasText("b.md") {
+		t.Errorf("texts = %q, want beta folded away", tt.Texts())
+	}
+	if !tt.HasText("a.md") {
+		t.Errorf("texts = %q, want alpha's document kept", tt.Texts())
+	}
+	if err := tt.RightClick("beta"); err != nil {
+		t.Fatalf("RightClick again: %v", err)
+	}
+	if err := tt.Click("展开此项目的全部目录"); err != nil {
+		t.Fatalf("Click unfold: %v", err)
+	}
+	tt.Frame()
+	if !tt.HasText("b.md") {
+		t.Errorf("texts = %q, want beta's document back", tt.Texts())
+	}
+}
+
+// TestTheProjectPanelFoldsOneProject pins the same action where a window with
+// one project can reach it: the project panel's own right click, since the tree
+// puts no project node on top of a single project.
+func TestTheProjectPanelFoldsOneProject(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "notes/a.md", "# A\n")
+	s.Refresh()
+
+	tt := newTester(s)
+	openPanel(t, tt)
+	if err := tt.RightClick("项目：alpha"); err != nil {
+		t.Fatalf("RightClick: %v", err)
+	}
+	if err := tt.Click("折叠此项目的全部目录"); err != nil {
+		t.Fatalf("Click fold: %v", err)
+	}
+	tt.Frame()
+	if tt.HasText("a.md") {
+		t.Errorf("texts = %q, want the project's directories folded", tt.Texts())
+	}
+}

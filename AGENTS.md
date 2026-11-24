@@ -94,6 +94,10 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
   `view.go` 的 `titleRow` → `contentTitle`（路径 + 复制 + `modeToggle`）是 `Content` 的第一行；
   `leftHeader`（项目面板：点一行开/关、右键打开/复制/移除）、`leftToolbar`（动作图标 + 铃铛）各就各位。
   改布局时 `View` 与 `Content` 两条拼装路径要一起改（`TestShellSlotsBuild`、`TestTabsSitAboveTheTitle`）。
+- **改树的展开 / 折叠**：批量只改 `state.go` 的 `setTreeOpen`（写 `s.open`，已有指针就地改值，别换指针）；
+  两个入口是 `view.go` 的 `treeBulkActions`（`leftHeader`，项目选择按钮左边）与 `projectMenu` +
+  项目面板每行的右键菜单。label 不得与目录工具条重名（树是 `展开全部目录树`，目录是 `展开全部目录`），
+  重名会让 `tt.Find`、读屏与快捷键提示都分不清。
 - **改提示消息**：写入只调 `internal/view/notices.go` 的 `notify` / `notifyDone` / `notifyWarn` / `notifyErr`，
   不要直接在 view 里 `c.AddToast`（绕过了账本、去重与历史）；浮层与铃铛也在这个文件（`bellButton` /
   `noticePanel` / `noticeRow` / `noticeBadgeText` / `noticeTime`）。账本自己的行为（落盘、上限、未读）改
