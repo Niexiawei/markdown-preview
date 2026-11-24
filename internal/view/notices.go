@@ -79,8 +79,11 @@ func (s *State) updateToasts(c *ui.Context) {
 // The history the bell opens, and the badge over it.
 const (
 	// noticePanelWidth and noticePanelHeight size the panel the history shows
-	// in, and the room its list scrolls within.
+	// in, and the room its list scrolls within; noticePanelMin is the room it
+	// keeps whether it holds any message or none, so that it reads as one panel
+	// and does not grow under the pointer as messages arrive.
 	noticePanelWidth  float32 = 360
+	noticePanelMin    float32 = 180
 	noticePanelHeight float32 = 320
 	// noticeBadgeMax is the most the badge counts: past it, it says "99+",
 	// which stays a pill of two digits wide.
@@ -158,7 +161,8 @@ func noticeBadgeText(unread int) string {
 func (s *State) noticePanel(c *ui.Context) {
 	t := c.Theme()
 	msgs := append([]notices.Message(nil), s.Messages()...)
-	ui.Column(c).Width(noticePanelWidth).Padding(t.Space(1.5)).Gap(t.Space(1)).Children(func() {
+	ui.Column(c).Width(noticePanelWidth).MinHeight(noticePanelMin).
+		Label("消息历史").Padding(t.Space(1.5)).Gap(t.Space(1)).Children(func() {
 		ui.Row(c).AlignItems(ui.Center).Gap(t.Space(2)).Children(func() {
 			components.Text(c, "消息").FontSize(13).Bold().Grow(1)
 			if len(msgs) == 0 {

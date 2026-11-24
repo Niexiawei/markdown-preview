@@ -434,3 +434,38 @@ func TestAMessageArrivingInTheOpenHistoryIsRead(t *testing.T) {
 		t.Errorf("texts = %q, want no badge over the open history", tt.Texts())
 	}
 }
+
+// TestTheHistoryKeepsItsRoom pins the panel's fixed minimum height: an empty
+// history shows the same card as one holding a message, rather than a sliver
+// that grows as messages arrive.
+func TestTheHistoryKeepsItsRoom(t *testing.T) {
+	// The number the panel keeps, in DIPs. It is written here rather than taken
+	// from the constant, so that a constant lowered to nothing still fails.
+	const want float32 = 180
+	heights := make([]float32, 0, 2)
+	for _, c := range []struct {
+		name string
+		msgs []string
+	}{
+		{"empty", nil},
+		{"one message", []string{"一"}},
+	} {
+		s, _ := newState(t)
+		for _, text := range c.msgs {
+			s.notify(text)
+		}
+		s.noticeOpen = true
+		tt := newTester(s)
+		panel, ok := tt.Find("消息历史")
+		if !ok {
+			t.Fatalf("%s: no panel labelled 消息历史", c.name)
+		}
+		if panel.H < want {
+			t.Errorf("%s: panel height = %v, want at least %v", c.name, panel.H, want)
+		}
+		heights = append(heights, panel.H)
+	}
+	if heights[0] != heights[1] {
+		t.Errorf("heights = %v, want the empty history to keep the room of a full one", heights)
+	}
+}
