@@ -151,11 +151,21 @@ func (s *State) setFindHeight(which findBand, h, room float32) {
 }
 
 // findHeightMaxOf returns how tall one island may be: its own ceiling, or what
-// the window has left once the other island is placed, whichever is less.
+// the window has left once the other island is placed, whichever is less. The
+// room the other takes is what it shows, not what it asked for: in a window too
+// short for both, dragging one must not shrink the other to its floor.
 func (s *State) findHeightMaxOf(c *ui.Context, which findBand) float32 {
-	other := s.findListHeightOf()
-	if which == findListBand {
-		other = s.findPreviewHeightOf()
+	other := s.find.shownPreview
+	if which == findPreviewBand {
+		other = s.find.shownList
+	}
+	if other == 0 {
+		// Before the panel has laid the two of them out once.
+		if which == findPreviewBand {
+			other = s.findListHeightOf()
+		} else {
+			other = s.findPreviewHeightOf()
+		}
 	}
 	return max(min(findBandMax(which), s.findRoom(c)-other), findBandMin(which))
 }

@@ -747,3 +747,21 @@ func TestThePanelNeverGrowsPastTheWindow(t *testing.T) {
 		t.Errorf("the panel ends at %v, past the window's %v", bottom, height)
 	}
 }
+
+// TestABandInAShortWindowLeavesTheOtherIslandAlone pins the other half of the
+// cap: in a window too short for both islands as asked, dragging one of them must
+// move that one, not crush the other down to its floor.
+func TestABandInAShortWindowLeavesTheOtherIslandAlone(t *testing.T) {
+	s, tt := newFindPanelAt(t, "甲 目标\n乙 目标\n丙\n", 900, 420)
+	s.find.listH, s.find.previewH = findListHeight, 200
+	tt.Frame()
+	list, preview := s.find.shownList, s.find.shownPreview
+	if list <= findListMin || preview <= findPreviewMin {
+		t.Fatalf("shown = %v/%v, want both above their floors to have room to fight over", list, preview)
+	}
+	dragBand(t, tt, "匹配行", 60)
+	if s.find.shownList != list || s.find.shownPreview != preview {
+		t.Errorf("shown = %v/%v, want %v/%v: a drag of the list moved the preview",
+			s.find.shownList, s.find.shownPreview, list, preview)
+	}
+}
