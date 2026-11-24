@@ -136,8 +136,11 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
   `os.Symlink` 需要管理员权限，相关用例会 `t.Skip`。
 - **webview 重载丢滚动位置**（原生模式保留），已写进 README「已知限制」。
 - **`App.SetName` 会改配置目录**：`Path(PathUserData)` 是 `UserConfigDir/<App.Name()>`，名字一变，
-  `config.json` / `mcp.json` 就跑到新目录，看起来像「配置丢了」。要改显示名就改 `mygo.json`（打包名）或
-  shell 的 `Title`，不要在 `main.go` 里 `SetName`。
+  `config.json` / `notices.json` / `window-state.json` / `mcp.json` 就跑到新目录，看起来像「配置丢了」。
+  要改显示名就改 `mygo.json`（打包名）或 shell 的 `Title`，不要在 `main.go` 里 `SetName`。
+- **未打包时目录名就是 exe 文件名**：`App.Name()` 没有 bundle 名时取可执行文件名，所以
+  `go build -o mdpreview.exe .` 用 `…\AppData\Roaming\mdpreview\`，而本文件推荐过的 `go build -o mp.exe .`
+  会另起一个空的 `…\Roaming\mp\`（本机两者都存在过）。调试时记住自己用的是哪个名字，否则会以为历史/配置没写盘。
 - **「退出」退不掉 / 托盘留幽灵图标**：前者是 `keep.quitting` 没接上（见硬规则）；后者是漏了
   `App.OnWillQuit` 里的 `tray.Destroy()`，Windows 会把图标留到鼠标划过才消失。
 - **`IconIsTemplate` 只认不透明像素**：托盘图必须是「实心剪影 + 透明底」；带底色方块或半透明渐变，

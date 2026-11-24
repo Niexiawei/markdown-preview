@@ -116,11 +116,39 @@ Linux 是可执行文件 + 带 `install.sh` 的 `.tar.gz`，以及 `.deb` / `.rp
 `project` 省略时用当前活动项目（有选中文档时是它所属的项目，否则是第一个打开的项目）。手写一次调用：
 
 ```sh
-TOKEN=$(cat "$LOCALAPPDATA/markdown-preview/mcp.json" | grep token | cut -d'"' -f4)
+TOKEN=$(grep -o '"token": *"[^"]*' ~/.config/mdpreview/mcp.json | cut -d'"' -f4)   # 路径见下一节
 curl -s http://127.0.0.1:8765/mcp \
   -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_docs","arguments":{}}}'
 ```
+
+## 配置文件与数据存放位置
+
+全部落在用户的配置目录下，具体是 `mygo.App.Path(PathUserData)` = `os.UserConfigDir()` 加上**应用名**：
+
+| 平台 | 目录 |
+| --- | --- |
+| Windows | `%AppData%\<应用名>\`（一般是 `C:\Users\<你>\AppData\Roaming\<应用名>\`） |
+| macOS | `~/Library/Application Support/<应用名>/` |
+| Linux | `$XDG_CONFIG_HOME/<应用名>/`（默认 `~/.config/<应用名>/`） |
+
+目录里的文件：
+
+| 文件 | 内容 |
+| --- | --- |
+| `config.json` | 项目列表、哪些项目是打开的、活动项目、渲染模式、MCP 设置 |
+| `notices.json` | 消息历史（每条的类型、内容、时间、是否已读），重启后原样恢复；不设条数上限 |
+| `window-state.json` | 窗口位置、大小、是否最大化（mygo 自己记的） |
+| `mcp.json` | 只在 MCP 开着时写：给 agent 拄的地址与 token |
+
+里面都是 JSON，写盘走「临时文件 + 改名」，写到一半崩溃不会把上一份弄坏。删掉这些文件不影响文档，
+只是丢掉上面那些状态（删 `notices.json` 就是清空消息历史）。
+
+**应用名跟可执行文件走（未打包时）**：`App.Name()` 没有 bundle 名时取 exe 文件名，所以
+`go build -o mdpreview.exe .` 用 `…\Roaming\mdpreview\`，而 `go build -o mp.exe .`（本仓 AGENTS.md 里的建议命令）
+会另起一个 `…\Roaming\mp\`——换一个输出文件名，配置和历史看起来就像「丢了」。
+用 `mygo build` 打的安装包才有 bundle 名，那时统一是 `Markdown Preview`。要搬目录只能 `SetPath`，
+不要用 `SetName`（它会连带改掉整个目录）。
 
 ## 已知限制
 
