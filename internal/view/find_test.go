@@ -474,3 +474,132 @@ func TestFindListHeightIsClampedToThePanel(t *testing.T) {
 		t.Errorf("9999 → %v, want the maximum %v", got, findListMax)
 	}
 }
+
+// newFindPanel opens the search panel on a document and returns the window with
+// its panel built, as a user who searched for 目标 leaves it.
+func newFindPanel(t *testing.T, body string) (*State, *ui.Tester) {
+	t.Helper()
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", body)
+	s.Refresh()
+	s.selectDoc("a.md")
+	openFindOn(s, "目标")
+	tt := ui.NewTester(func(c *ui.Context) { s.findPanel(c) }, 900, 700)
+	tt.Frame()
+	return s, tt
+}
+
+// findDividerPoint returns the middle of the band between the two data islands,
+// where the pointer catches it, as the last frame laid it out. The panel floats
+// over the body's right, so a press anywhere but on the band itself is no press
+// on the panel at all.
+func findDividerPoint(t *testing.T, tt *ui.Tester) (x, y float32) {
+	t.Helper()
+	list, ok := tt.Find("匹配行")
+	if !ok {
+		t.Fatalf("texts = %q, want the matches' island", tt.Texts())
+	}
+	return list.X + list.W/2, list.Y + list.H + findGrip/2
+}
+
+// TestDraggingTheDividerResizesTheMatchList pins the gesture: 40 DIPs down is
+// 40 more for the matches' island, not the ceiling.
+func TestDraggingTheDividerResizesTheMatchList(t *testing.T) {
+	s, tt := newFindPanel(t, "甲 目标\n乙 目标\n丙\n")
+	x, y := findDividerPoint(t, tt)
+	tt.Press(x, y)
+	tt.Move(x, y+40)
+	tt.Release(x, y+40)
+	if got := s.findListHeightOf(); got != findListHeight+40 {
+		t.Errorf("listH = %v, want %v", got, findListHeight+40)
+	}
+}
+
+// TestDraggingTheDividerStopsAtTheLimits pins both ends.
+func TestDraggingTheDividerStopsAtTheLimits(t *testing.T) {
+	s, tt := newFindPanel(t, "甲 目标\n乙 目标\n丙\n")
+	x, y := findDividerPoint(t, tt)
+	tt.Press(x, y)
+	tt.Move(x, y-400)
+	tt.Release(x, y-400)
+	if got := s.findListHeightOf(); got != findListMin {
+		t.Errorf("dragged far up → %v, want %v", got, findListMin)
+	}
+	x, y = findDividerPoint(t, tt)
+	tt.Press(x, y)
+	tt.Move(x, y+900)
+	tt.Release(x, y+900)
+	if got := s.findListHeightOf(); got != findListMax {
+		t.Errorf("dragged far down → %v, want %v", got, findListMax)
+	}
+}
+
+// TestDraggingPastTheLimitComesBack pins the overshoot: past the ceiling, the
+// pointer has to come back over the divider before the island shrinks.
+func TestDraggingPastTheLimitComesBack(t *testing.T) {
+	s, tt := newFindPanel(t, "甲 目标\n乙 目标\n丙\n")
+	x, y := findDividerPoint(t, tt)
+	tt.Press(x, y)
+	tt.Move(x, y+600) // clamped at findListMax
+	back := y + (findListMax - findListHeight) - 100
+	tt.Move(x, back)
+	tt.Release(x, back)
+	if got := s.findListHeightOf(); got != findListMax-100 {
+		t.Errorf("listH = %v, want %v", got, findListMax-100)
+	}
+}
+
+// TestDoubleClickingTheDividerPutsTheHeightBack pins the reset gesture.
+func TestDoubleClickingTheDividerPutsTheHeightBack(t *testing.T) {
+	s, tt := newFindPanel(t, "甲 目标\n乙 目标\n丙\n")
+	s.find.listH = 300
+	tt.Frame()
+	x, y := findDividerPoint(t, tt)
+	tt.ClickAt(x, y)
+	tt.ClickAt(x, y)
+	if got := s.findListHeightOf(); got != findListHeight {
+		t.Errorf("listH = %v, want the default back: %v", got, findListHeight)
+	}
+}
+
+// TestFindIslandsKeepTheirGaps pins the layout: the band replaced the gap, it
+// did not add one, so no island sits further from its neighbour than before.
+// The two DIPs of slack are the border of an island, which may or may not count
+// in its box.
+func TestFindIslandsKeepTheirGaps(t *testing.T) {
+	_, tt := newFindPanel(t, "甲 目标\n乙 目标\n丙\n")
+	in, ok := tt.Find("搜索输入")
+	if !ok {
+		t.Fatalf("texts = %q, want the input island", tt.Texts())
+	}
+	list, ok := tt.Find("匹配行")
+	if !ok {
+		t.Fatalf("texts = %q, want the matches' island", tt.Texts())
+	}
+	preview, ok := tt.Find("命中上下文")
+	if !ok {
+		t.Fatalf("texts = %q, want the preview island", tt.Texts())
+	}
+	if gap := list.Y - (in.Y + in.H); gap < 4 || gap > 8 {
+		t.Errorf("input→matches gap = %v, want the theme's 6", gap)
+	}
+	if gap := preview.Y - (list.Y + list.H); gap < findGrip-2 || gap > findGrip+2 {
+		t.Errorf("matches→preview gap = %v, want the band's %v", gap, findGrip)
+	}
+}
+
+// TestDraggingKeepsTheChosenMatch pins that a drag is no search: the query,
+// the count and the chosen match stay as they were.
+func TestDraggingKeepsTheChosenMatch(t *testing.T) {
+	s, tt := newFindPanel(t, "甲 目标\n乙 目标\n丙 目标\n")
+	s.findNext(1)
+	tt.Frame()
+	before := s.find.current
+	x, y := findDividerPoint(t, tt)
+	tt.Press(x, y)
+	tt.Move(x, y+50)
+	tt.Release(x, y+50)
+	if s.find.current != before || s.find.query != "目标" {
+		t.Errorf("current = %d, query = %q: a drag changed the search", s.find.current, s.find.query)
+	}
+}

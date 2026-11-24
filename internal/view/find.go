@@ -51,6 +51,10 @@ type findState struct {
 	// until then, and for as long as the window lives (findListHeightOf
 	// reads it, within what the panel allows).
 	listH float32
+	// dragOver is how far past a limit the pointer dragged the divider, so that
+	// coming back moves it at once rather than once the pointer is over it
+	// again, as ui.Split keeps its own (splitOvershoot).
+	dragOver float32
 	// lines are the source's lines, kept from the last load: the preview
 	// reads them every frame, and splitting the source per frame is the kind
 	// of work the window's thread must not do.
@@ -207,11 +211,12 @@ func (s *State) findPanel(c *ui.Context) {
 			// row the page shows first.
 			Top(sidebar.HeaderHeight(c) + titleRowHeight + t.Space(2)).
 			Width(findPaneWidth).
-			Gap(t.Space(1.5)).Children(func() {
-			s.findField(c)
-			s.findList(c)
-			s.findPreview(c)
-		})
+			Children(func() {
+				s.findField(c)
+				s.findList(c)
+				s.findDivider(c)
+				s.findPreview(c)
+			})
 	})
 }
 
@@ -234,7 +239,7 @@ func findCaption(c *ui.Context, text string) {
 // walking the matches or closing the panel.
 func (s *State) findField(c *ui.Context) {
 	t := c.Theme()
-	findIsland(c).Children(func() {
+	findIsland(c).Label("搜索输入").Children(func() {
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(t.Space(0.5)).Children(func() {
 			field := ui.SearchField(c, &s.find.query).Label("在文档中查找")
 			field.Grow(1).FontSize(12)
@@ -288,7 +293,7 @@ func (s *State) findList(c *ui.Context) {
 	if len(s.find.matches) == 0 {
 		return
 	}
-	findIsland(c).Label("匹配行").Children(func() {
+	findIsland(c).Label("匹配行").Margin(t.Space(1.5), 0, 0, 0).Children(func() {
 		ui.ScrollBoth(c).Height(s.findListHeightOf()).Children(func() {
 			ui.Column(c).MinWidth(findPaneInner).Gap(t.Space(0.25)).Children(func() {
 				for i, m := range s.find.matches {
@@ -309,6 +314,39 @@ func (s *State) findList(c *ui.Context) {
 				}
 			})
 		})
+	})
+}
+
+// findDivider is the band between the matches and the preview: the pointer
+// drags it to resize the matches' island, and a double click puts it back to its
+// default. It is drawn only while the pointer is over it or dragging it, so that
+// the panel stays three islands rather than one card with a rule through it.
+//
+// Dragged reports what the pointer moved since the frame before, not since the
+// press: adding it to the height each frame is what makes the island follow the
+// pointer. The overshoot kept in dragOver is what makes coming back from a limit
+// move the island at once.
+func (s *State) findDivider(c *ui.Context) {
+	t := c.Theme()
+	band := ui.Box(c).FillWidth().Height(findGrip).
+		Cursor(ui.CursorResizeNS).Role(ui.RoleSplitter).Label("调整匹配列表高度")
+	_, dy, held := band.Dragged()
+	if held {
+		want := s.findListHeightOf() + dy + s.find.dragOver
+		s.find.listH = min(max(want, findListMin), findListMax)
+		s.find.dragOver = want - s.find.listH
+	} else {
+		s.find.dragOver = 0
+	}
+	if band.DoubleClicked() {
+		s.find.listH = findListHeight
+		s.find.dragOver = 0
+	}
+	band.Draw(func(p *ui.Painter, r ui.Rect) {
+		if !held && !band.Hovered() {
+			return
+		}
+		p.Fill(ui.Rect{X: r.X, Y: r.Y + r.H/2, W: r.W, H: 1}, t.Accent, 0)
 	})
 }
 
