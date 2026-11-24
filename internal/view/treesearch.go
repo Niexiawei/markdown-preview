@@ -9,6 +9,7 @@ import (
 	"github.com/oneo-me/onevra/source/components"
 	"github.com/oneo-me/onevra/source/icons/lucide"
 
+	"mdpreview/internal/config"
 	"mdpreview/internal/workspace"
 )
 
@@ -120,7 +121,10 @@ func (s *State) searchShortcuts(c *ui.Context) {
 		s.openTreeSearch()
 		return
 	case c.Shortcut(ui.Cmd, ui.KeyF):
-		if s.treeFocused {
+		// A press in the page never reaches an element, so the focus cannot say
+		// which pane was used: while the page shows, the key searches the
+		// document, and Shift+Cmd+F searches the file names.
+		if s.treeFocused && s.mode() != config.RenderWebView {
 			s.openTreeSearch()
 			return
 		}

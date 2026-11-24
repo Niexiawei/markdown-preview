@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/egoist/mygo/ui"
+
+	"mdpreview/internal/config"
 )
 
 // openTreeSearchOn opens the tree's search on the window's trees and types
@@ -516,5 +518,33 @@ func TestCandidateIndexFindsEveryCandidate(t *testing.T) {
 	}
 	if got := s.candidateIndex(id, "other.md"); got != -1 {
 		t.Errorf("candidateIndex(other.md) = %d, want -1", got)
+	}
+}
+
+// TestCmdFInTheWebViewSearchesTheDocument pins the one place the focus cannot
+// say which pane was used: a press in the page goes to the page itself and never
+// to an element, so while the page shows, Cmd+F searches the document even after
+// a press in the tree. Shift+Cmd+F still searches the file names.
+func TestCmdFInTheWebViewSearchesTheDocument(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "notes/a.md", "# A\n")
+	s.Refresh()
+	s.selectDoc("notes/a.md")
+
+	tt := newTester(s)
+	if err := tt.Click("a.md"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	tt.Frame()
+	s.setMode(config.RenderWebView)
+	tt.Frame()
+
+	tt.Key(ui.Cmd, ui.KeyF)
+	tt.Frame()
+	if !s.find.open {
+		t.Error("the document's search did not open while the page shows")
+	}
+	if s.treeSearch.open {
+		t.Error("the tree's search opened, want the document's")
 	}
 }

@@ -219,6 +219,9 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
 - **`Cmd+F` 按焦点分派，而焦点是上一帧的**：`State.treeFocused` 由侧栏树与正文滚动容器的 `HandleInput`
   （`InputPointerDown`）记，读它的是 `handleShortcuts`（构建之前）；点完窗格要等一帧再按快捷键。
   两个滚动容器都返回 false，不吞事件；`openTreeSearch` / `openFind` 会直接置位，因为那时没有指针事件。
+- **WebView 里的点击拿不到**：`platform.WebViewPress` 只把焦点给 webview 节点、不调用它的 `HandleInput`，
+  所以「最后一次按在哪个窗格」在 WebView 模式下永远是侧栏（用户从树里点开的文档）。因此 `searchShortcuts`
+  在 WebView 模式下让 `Cmd+F` 一律搜正文（搜文件用 `Shift+Cmd+F`），这是写进 README 的约定，不要改成猜。
 - **mygo 的快捷键要求修饰键完全相等**：`c.Shortcut(ui.Cmd, ui.KeyF)` 在按住 Shift 时**不会**匹配
   （`routeKey` 比的是 `mods == k.mods`），带 Shift 的组合必须单独注册一次（`ui.Cmd|ui.Shift`）。
   已知遗漏：`find.go` 的 `Shift+Cmd+G`（上一个匹配）还是`Shortcut(ui.Cmd, ui.KeyG)` + 看 `Modifiers()` 的老写法，
