@@ -344,13 +344,18 @@ func (s *State) nativePreview(c *ui.Context) {
 	// with the hook, and the block would slide up out of the pane as the jump
 	// landed: the room is measured and spent in the same layout.
 	s.md.Block = s.jumpMarker
+	// The scroll fills the pane; the room around the text is the column's own,
+	// inside it, so that both bars lie against the pane's edges rather than
+	// inside its padding, where a reader pressing near the edge would drag a
+	// bar while aiming at the text, or miss the bar while aiming at it.
 	ui.ScrollBoth(c).TrackScroll(s.docScroll()).Fill().
-		Padding(bodyPadding-bodyJumpGap, bodyPadding, bodyPadding, bodyPadding).
 		BorderWidth(bodyJumpGap, 0, 0, 0).BorderColor(ui.Transparent).
 		Children(func() {
-			ui.Column(c).Width(max(200, s.bodyPaneWidth()-2*bodyPadding-2)).Gap(12).Children(func() {
-				ui.Text(c, s.sel.path).FontSize(11).TextColor(t.TextMuted)
-				markdown.View(c, s.src, &s.md)
-			})
+			ui.Column(c).Width(max(200, s.bodyPaneWidth()-2)).Gap(12).
+				Padding(bodyPadding-bodyJumpGap, bodyPadding, bodyPadding, bodyPadding).
+				Children(func() {
+					ui.Text(c, s.sel.path).FontSize(11).TextColor(t.TextMuted)
+					markdown.View(c, s.src, &s.md)
+				})
 		})
 }
