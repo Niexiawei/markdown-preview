@@ -572,3 +572,7 @@ PR 合并、我们升级依赖之后，另写一份本仓库的计划：`refresh
    `dragBand` / `TestFindIslandsKeepTheirGaps` 都靠它。这条推翻了上一轮「`Height` 量在滚动容器上」的说法。
 6. 仍然**没有**做的：高度不落盘（会话内，与 `zoom` 一致）；带子只响应鼠标拖动与 `↑`/`↓`，
    没有 Home/End/PageUp 之类的跳跃。
+7. **追加需求里又抓到一个洞**：`findHeightMaxOf` 起初用「另一条岛**要**的高度」算余量，于是窗口一矮
+   （两条岛都被 `fitFindHeights` 压过之后）再拖其中一条，它会被提前压到地板——实测 132 直接变 72、
+   上下文从 126 弹到 186。改成用**实际显示**的高度（`shown*`），补 `TestABandInAShortWindowLeavesTheOtherIslandAlone`
+   （先把它跑红：把实现临时换回旧算法，报 `shown = 72/185.99805, want 132/125.99805`）。
