@@ -166,6 +166,7 @@ func (s *State) leftToolbar(c *ui.Context) {
 			s.Refresh()
 		}
 		ui.Spacer(c)
+		s.bellButton(c)
 		s.mcpSettings(c)
 	})
 }

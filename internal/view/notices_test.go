@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/oneo-me/onevra/source/components"
@@ -182,5 +183,230 @@ func TestTheToastKeepsLongMessagesShort(t *testing.T) {
 	}
 	if s.Messages()[0].Text != long {
 		t.Error("the history lost the long message, want it kept whole")
+	}
+}
+
+// newToolbar builds the sidebar's own footer, where the bell lives.
+func newToolbar(s *State) *ui.Tester { return ui.NewTester(s.LeftToolbar, 280, 40) }
+
+// textIndex is where texts first holds want, or -1.
+func textIndex(texts []string, want string) int {
+	for i, got := range texts {
+		if got == want {
+			return i
+		}
+	}
+	return -1
+}
+
+func TestTheToolbarShowsTheBell(t *testing.T) {
+	s, _ := newState(t)
+	if tt := newToolbar(s); !tt.HasText("消息") {
+		t.Errorf("texts = %q, want the bell", tt.Texts())
+	}
+}
+
+func TestTheBellOpensAndClosesTheHistory(t *testing.T) {
+	s, _ := newState(t)
+	if err := newToolbar(s).Click("消息"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if !s.noticeOpen {
+		t.Error("noticeOpen = false, want the history open")
+	}
+	if err := newToolbar(s).Click("消息"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if s.noticeOpen {
+		t.Error("noticeOpen = true, want the history closed")
+	}
+}
+
+func TestTheBadgeCountsTheUnreadOnes(t *testing.T) {
+	s, _ := newState(t)
+	s.notify("一")
+	s.notify("二")
+	tt := newToolbar(s)
+	if !tt.HasText("2") {
+		t.Errorf("texts = %q, want the badge to count two", tt.Texts())
+	}
+	if !tt.HasText("消息（2 条未读）") {
+		t.Errorf("texts = %q, want the count in the bell's name too", tt.Texts())
+	}
+}
+
+func TestNoBadgeWithoutUnread(t *testing.T) {
+	s, _ := newState(t)
+	tt := newToolbar(s)
+	if tt.HasText("0") {
+		t.Errorf("texts = %q, want no badge", tt.Texts())
+	}
+	if !tt.HasText("消息") {
+		t.Errorf("texts = %q, want the bell", tt.Texts())
+	}
+}
+
+func TestTheBadgeTextNeverGrows(t *testing.T) {
+	for _, c := range []struct {
+		unread int
+		want   string
+	}{
+		{0, ""},
+		{1, "1"},
+		{99, "99"},
+		{100, "99+"},
+		{12345, "99+"},
+	} {
+		if got := noticeBadgeText(c.unread); got != c.want {
+			t.Errorf("noticeBadgeText(%d) = %q, want %q", c.unread, got, c.want)
+		}
+	}
+}
+
+func TestTheBadgeIsCappedAt99(t *testing.T) {
+	s, _ := newState(t)
+	for range 120 {
+		s.notify("消息")
+	}
+	if tt := newToolbar(s); !tt.HasText("99+") {
+		t.Errorf("texts = %q, want the badge capped", tt.Texts())
+	}
+}
+
+func TestOpeningTheHistoryMarksThemSeen(t *testing.T) {
+	s, _ := newState(t)
+	s.notify("一")
+	s.notify("二")
+	if err := newToolbar(s).Click("消息（2 条未读）"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if got := s.notes.Unseen(); got != 0 {
+		t.Errorf("Unseen = %d, want the history read", got)
+	}
+	tt := newToolbar(s)
+	if !tt.HasText("消息") || tt.HasText("消息（2 条未读）") {
+		t.Errorf("texts = %q, want the count gone", tt.Texts())
+	}
+}
+
+func TestUnreadSurvivesARestart(t *testing.T) {
+	s, _ := newState(t)
+	s.notify("一")
+	s.notify("二")
+	again := restart(t, s)
+	if got := again.notes.Unseen(); got != 2 {
+		t.Errorf("Unseen = %d, want the two kept", got)
+	}
+	if tt := newToolbar(again); !tt.HasText("消息（2 条未读）") {
+		t.Errorf("texts = %q, want the count kept", tt.Texts())
+	}
+}
+
+func TestTheHistoryListsTheNewestFirst(t *testing.T) {
+	s, _ := newState(t)
+	s.notify("旧的")
+	s.notify("新的")
+	s.noticeOpen = true
+	texts := newTester(s).Texts()
+	old, fresh := textIndex(texts, "旧的"), textIndex(texts, "新的")
+	if old < 0 || fresh < 0 {
+		t.Fatalf("texts = %q, want both messages listed", texts)
+	}
+	if fresh > old {
+		t.Errorf("texts = %q, want the newest message first", texts)
+	}
+}
+
+func TestLongMessagesWrapInTheHistory(t *testing.T) {
+	s, _ := newState(t)
+	long := "已复制文件：" + strings.Repeat("很长的目录\\", 60) + "a.md"
+	s.notifyDone(long)
+	s.noticeOpen = true
+	if tt := newTester(s); !tt.HasText(long) {
+		t.Errorf("texts = %q, want the whole message in the history", tt.Texts())
+	}
+	if got := s.Messages()[0].Text; got != long {
+		t.Errorf("Text = %q, want the whole message kept", got)
+	}
+}
+
+func TestTheHistoryDeletesOneMessage(t *testing.T) {
+	s, _ := newState(t)
+	s.notify("一")
+	s.notify("二")
+	s.notify("三")
+	s.noticeOpen = true
+	if err := newTester(s).Click("删除消息：二"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if got := len(s.Messages()); got != 2 {
+		t.Errorf("Messages = %d, want the one removed", got)
+	}
+	if !s.noticeOpen {
+		t.Error("noticeOpen = false, want the history still open")
+	}
+	if got := len(restart(t, s).Messages()); got != 2 {
+		t.Errorf("after a restart: %d messages, want the removal saved", got)
+	}
+}
+
+func TestDeletingAMessageKeepsTheRestInOrder(t *testing.T) {
+	s, _ := newState(t)
+	s.notify("一")
+	s.notify("二")
+	s.notify("三")
+	s.noticeOpen = true
+	if err := newTester(s).Click("删除消息：二"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	got := s.Messages()
+	if len(got) != 2 || got[0].Text != "三" || got[1].Text != "一" {
+		t.Errorf("Messages = %v, want 三, 一", got)
+	}
+}
+
+func TestTheHistoryClearsEveryMessage(t *testing.T) {
+	s, _ := newState(t)
+	s.notify("一")
+	s.notifyDone("二")
+	s.noticeOpen = true
+	tt := newTester(s)
+	if err := tt.Click("清空全部"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if got := len(s.Messages()); got != 0 {
+		t.Errorf("Messages = %d, want none", got)
+	}
+	texts := newTester(s).Texts()
+	if !newTester(s).HasText("暂无消息") {
+		t.Errorf("texts = %q, want the empty history to say so", texts)
+	}
+}
+
+func TestTheHistorySaysWhenItIsEmpty(t *testing.T) {
+	s, _ := newState(t)
+	s.noticeOpen = true
+	tt := newTester(s)
+	if !tt.HasText("暂无消息") {
+		t.Errorf("texts = %q, want the empty history to say so", tt.Texts())
+	}
+	if tt.HasText("清空全部") {
+		t.Errorf("texts = %q, want no clear button over nothing", tt.Texts())
+	}
+}
+
+func TestMessageTimesReadAcrossDays(t *testing.T) {
+	now := time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC)
+	for _, c := range []struct {
+		at   time.Time
+		want string
+	}{
+		{time.Date(2026, 11, 24, 9, 41, 0, 0, time.UTC), "09:41"},
+		{time.Date(2026, 11, 23, 9, 41, 0, 0, time.UTC), "11-23 09:41"},
+		{time.Date(2025, 11, 23, 9, 41, 0, 0, time.UTC), "2025-11-23 09:41"},
+	} {
+		if got := noticeTime(c.at, now); got != c.want {
+			t.Errorf("noticeTime(%v) = %q, want %q", c.at, got, c.want)
+		}
 	}
 }

@@ -47,7 +47,7 @@ func TestShellSlotsBuild(t *testing.T) {
 	}{
 		{"Left", s.Left, 280, 600, []string{"notes", "a.md"}},
 		{"LeftHeader", s.LeftHeader, 280, 40, []string{"切换项目", "alpha"}},
-		{"LeftToolbar", s.LeftToolbar, 280, 40, []string{"打开项目", "刷新", "MCP"}},
+		{"LeftToolbar", s.LeftToolbar, 280, 40, []string{"打开项目", "刷新", "消息", "MCP"}},
 		{"ContentTitle", s.ContentTitle, 800, 40, []string{"文档：notes/a.md"}},
 		{"Content", s.Content, 800, 600, []string{"alpha/notes/a.md", "目录", "正文"}},
 	}
