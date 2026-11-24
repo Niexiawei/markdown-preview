@@ -483,3 +483,41 @@ git commit -m "feat: 树搜索的上下切换、回车打开与 Esc"
 git add docs/superpowers/specs/2026-11-21-markdown-preview-design.md docs/superpowers/plans/2026-11-24-tree-fold-and-file-search.md
 git commit -m "docs: 项目树批量折叠与文件名搜索的规格与计划回写"
 ```
+
+---
+
+## 执行后的修订（只追加，不改写上面的任务步骤）
+
+执行方式：内联（executing-plans），分支 `feat/tree-fold-and-file-search`，7 个任务各自一个提交。
+
+### 与计划不一致的地方（都是执行中实测出来的）
+
+1. **菜单项的测试写法**：任务 2 写的 `tt.ChooseMenuItem(...)` 用不了——mygo 的 `ChooseMenuItem` 只读平台菜单
+   （`currentMenu()` 返回 nil），而 `components.ContextMenu` 在无窗口环境里画的是元素。改用现有项目菜单测试的写法
+   `tt.Click("<菜单项>")`。渲染出来的菜单项 label 会出现两次（`tt.Find` 取第一个），点一次即可。
+2. **`tt.Find` 比的是文字标签的矩形，不是控件外框**：任务 2 的「三个按钮 Y 相同」改成了「图标按钮的文字框与切换器
+   的文字框在竖直方向有重叠」——图标按钮的字标签比按钮矮，Y 本来就不相等。
+3. **`View` 的侧栏列必须 `FillHeight()`**（计划里没有）：不给高度时 `Grow(1)` 不生效，树的滚动容器被内容撑高，
+   `s.treeScroll.MaxY` 恒为 0，任务 4 的「定位」测试根本测不到。补了 `FillHeight()`，并写进 AGENTS 的坑。
+4. **`gotoCandidate` / `openCandidate` 落在任务 4**（计划把它们列在任务 6）：任务 4 的「点击候选打开」就要用。
+   任务 6 只补 `moveCandidate` 与键盘。
+5. **带 Shift 的快捷键必须单独注册**：mygo 的 `routeKey` 比对修饰键**完全相等**，`c.Shortcut(ui.Cmd, ui.KeyF)`
+   在按住 Shift 时根本不匹配（`find.go` 里 `Shift+Cmd+G` 的老写法因此是失效的，本期不动，已记进 AGENTS）。
+   `searchShortcuts` 里 `ui.Cmd|ui.Shift` 与 `ui.Cmd` 各注册一次。
+6. **`Cmd+F` 的路由条件去掉了「或树搜索已开着」**：留着它的话，在正文里点一下再按 `Cmd+F` 仍会回到树搜索，
+   切不回正文查找。现在的规则只有一条：`s.treeFocused` 决定去向（`openTreeSearch` / `openFind` 会自己置位）。
+7. **搜索框的焦点要「每帧 `Focus()` 直到 `field.Focused()`」**（计划写的是 `AutoFocus`）：`ui.Tree` 是焦点组，
+   搜索打开的那一帧会把键盘抢走，单次 `AutoFocus` 输掉竞争，字段收不到敲字。
+8. **`↑` / `↓` 用窗口级 `c.Shortcut(0, ui.KeyUp/KeyDown)` 接**（计划写的是 `SearchField` 的 `HandleInput`）：
+   挂在外层 Element 上的 `HandleInput` 收不到按键——焦点在里面的输入框节点，`focusHandler` 只看焦点节点自己。
+   树行自己有 `Shortcut`，行上有焦点时先由树处理焦点移动（有意）。
+
+### 最终落地的文件
+
+- 新增：`internal/workspace/fuzzy.go` 与其测试；`internal/view/treesearch.go` 与其测试（`treesearch_test.go`）。
+- 修改：`internal/view/state.go`（`setOpen` / `setTreeOpen` / 三个字段 / `reloadTree` 末尾重算候选）、
+  `view.go`（`treeBulkActions`、`projectSwitcher`、`projectMenu`、`treeMatched` 分叉、搜索框那一行、
+  树滚动容器的 `Label`/`TrackScroll`/`HandleInput`、`View` 侧栏 `FillHeight`）、`theme.go`（两种底色）、
+  `find.go`（`openFind` 收起树搜索并清焦点、交出 `Cmd+F`、`Esc` 加守卫）、`fileacts.go`（改调 `searchShortcuts`）、
+  `native.go` / `webview.go`（正文滚动容器清焦点）。
+- 文档：README（用法 + 快捷键）、CHANGELOG（新增两条）、AGENTS（结构表、改动指引、6 条新坑）、规格末节。
