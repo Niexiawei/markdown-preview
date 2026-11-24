@@ -272,3 +272,18 @@ type Index interface {
   窗口/任务栏图标运行时 `win.SetIcon`（`internal/tray/assets/window.png`，embed 的 256）；
   托盘 `IconIsTemplate: true` + `assets/tray.png`（32，墨色剪影 + 透明），明暗由系统涂色，
   因此**不打包**图标套件里的 `tray-on-dark`，也不按 `Dark()` 换图。
+
+### 搜索面板的可调高度（新增，2026-11-23）
+
+- **匹配列表岛不再随内容塌缩**：高度由 `findState.listH` 决定，读取经 `findListHeightOf()` 钳制在
+  `[findListMin=72, findListMax=320]`（约 3~13 行），没拖过时是 `findListHeight=132`（约 5 行）。
+  以前是 `MaxHeight(132)`，只有一条命中时岛会塌成一行 + 横向滚动条。
+- **拖拽**：两块数据岛之间是一条 `findGrip=10` DIP 的带子（`findDivider`，`CursorResizeNS`、`RoleSplitter`、
+  读屏名「调整匹配列表高度」），拖动改列表高度、**双击复位**到 132；指针离开或松手后带子不画东西
+  （hover/拖动时在带子正中画 1 DIP 主色线），面板仍是三块浮岛而不是一张带分隔线的卡片。
+  带子按「上一帧的增量」累加（`Dragged()`），并保留拖过极限后的过冲（`dragOver`），所以拖回来立刻响应。
+- **布局**：面板列不再用 `Gap`——输入↔列表仍是 6 DIP（列表岛的 `Margin`），列表↔上下文是带子的 10 DIP。
+- **高度只在本次运行内记住**（与正文缩放 `zoom` 一致，不写 `config.json`）；换文档、关面板都不重置。
+  上下文预览岛不参与拖拽，仍是内容自适应 + `MaxHeight(148)`。
+- **正文高亮不在本期**：原生模式下搜索仍不高亮正文（见「已知限制」）。走 mygo 引擎侧的
+  `Options.Mark` 区间方案，见 `docs/superpowers/plans/2026-11-23-mygo-mark-ranges.md`。
