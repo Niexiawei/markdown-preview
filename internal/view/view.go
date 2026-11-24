@@ -16,6 +16,7 @@ import (
 func (s *State) View(c *ui.Context) {
 	s.drain()
 	s.handleShortcuts(c)
+	s.updateToasts(c)
 	s.openURL = func(url string) { c.Services().OpenURL(url) }
 	t := c.Theme()
 	ui.Row(c).Fill().Background(t.Background).Children(func() {
@@ -71,6 +72,7 @@ func (s *State) ContentTitle(c *ui.Context) {
 func (s *State) Content(c *ui.Context) {
 	s.drain()
 	s.handleShortcuts(c)
+	s.updateToasts(c)
 	ui.Column(c).Fill().Children(func() {
 		// The header, which holds the tabs, floats over the top of the page.
 		ui.Row(c).Height(sidebar.HeaderHeight(c))

@@ -3,8 +3,10 @@ package view
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/egoist/mygo/ui"
 	"github.com/oneo-me/onevra/source/components"
 
 	"mdpreview/internal/notices"
@@ -125,5 +127,60 @@ func TestAMessageWritesThroughToTheFile(t *testing.T) {
 	s.notify("已复制文件名称：a.md")
 	if _, err := os.Stat(filepath.Join(s.cfgDir, notices.FileName)); err != nil {
 		t.Errorf("Stat notices.json: %v, want the message written through", err)
+	}
+}
+
+func TestAMessageIsToastedOnce(t *testing.T) {
+	s, _ := newState(t)
+	s.notify("已复制文件路径：/tmp/a.md")
+	ui.NewTester(s.View, 1000, 700)
+	newest := s.Messages()[0].ID
+	if s.noticeShown != newest {
+		t.Errorf("noticeShown = %d, want %d toasted", s.noticeShown, newest)
+	}
+	ui.NewTester(s.View, 1000, 700)
+	if s.noticeShown != newest {
+		t.Errorf("noticeShown = %d, want the message toasted a single time", s.noticeShown)
+	}
+	s.notifyDone("已复制文件名称：a.md")
+	ui.NewTester(s.View, 1000, 700)
+	if got := s.Messages()[0].ID; s.noticeShown != got {
+		t.Errorf("noticeShown = %d, want the new message %d toasted", s.noticeShown, got)
+	}
+}
+
+func TestThePageToastsWhatItReports(t *testing.T) {
+	s, _ := newState(t)
+	s.notifyErr("无法打开文件管理器：boom")
+	ui.NewTester(s.Content, 800, 600)
+	if got := s.Messages()[0].ID; s.noticeShown != got {
+		t.Errorf("noticeShown = %d, want %d toasted by the page", s.noticeShown, got)
+	}
+}
+
+func TestOldMessagesAreNotToastedOnStartup(t *testing.T) {
+	s, _ := newState(t)
+	s.notify("一")
+	s.notify("二")
+	again := restart(t, s)
+	if got := again.Messages()[0].ID; again.noticeShown != got {
+		t.Errorf("noticeShown = %d, want the last run's %d to stay history", again.noticeShown, got)
+	}
+	ui.NewTester(again.View, 1000, 700)
+	if got := again.Messages()[0].ID; again.noticeShown != got {
+		t.Errorf("noticeShown = %d, want no toast for the last run's messages", again.noticeShown)
+	}
+}
+
+func TestTheToastKeepsLongMessagesShort(t *testing.T) {
+	s, _ := newState(t)
+	long := "已复制文件：D:\\" + strings.Repeat("很长的目录\\", 60) + "a.md"
+	s.notifyDone(long)
+	ui.NewTester(s.View, 1000, 700)
+	if got := s.Messages()[0].ID; s.noticeShown != got {
+		t.Errorf("noticeShown = %d, want the long message toasted", s.noticeShown)
+	}
+	if s.Messages()[0].Text != long {
+		t.Error("the history lost the long message, want it kept whole")
 	}
 }

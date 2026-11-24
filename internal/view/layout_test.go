@@ -405,14 +405,20 @@ func TestContentAppliesPostedChanges(t *testing.T) {
 }
 
 // TestTheStatusLineHasLeftTheWindow pins that the bottom bar is gone: a message
-// reaches the user through the toast and the bell alone.
+// reaches the user through the toast and the bell alone. The toasts are the
+// shell's overlay, drawn by the engine after the page builds, so the test closes
+// them before the frame is over: what it asks is that the page itself holds no
+// line to report them in.
 func TestTheStatusLineHasLeftTheWindow(t *testing.T) {
 	s, root := newState(t)
 	writeDoc(t, root, "a.md", "# A\n")
 	s.Refresh()
 	s.selectDoc("a.md")
 	s.notify("已复制文件路径：/tmp/a.md")
-	tt := newTester(s)
+	tt := ui.NewTester(func(c *ui.Context) {
+		s.View(c)
+		c.CloseToast("")
+	}, 1000, 700)
 	if tt.HasText("已复制文件路径：/tmp/a.md") {
 		t.Errorf("texts = %q, want no status line in the page", tt.Texts())
 	}

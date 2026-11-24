@@ -1,8 +1,10 @@
 package view
 
 import (
+	"strconv"
 	"time"
 
+	"github.com/egoist/mygo/ui"
 	"github.com/oneo-me/onevra/source/components"
 
 	"mdpreview/internal/notices"
@@ -45,3 +47,30 @@ func (s *State) RemoveMessage(id int) { _ = s.notes.Remove(id) }
 
 // ClearMessages forgets every message, as the history's clear button does.
 func (s *State) ClearMessages() { _ = s.notes.Clear() }
+
+// noticeToastText is how much of a message its toast shows: the history keeps
+// the whole of it, the toast is a line of the window.
+const noticeToastText = 120
+
+// updateToasts hands the messages the window has not toasted yet to this
+// frame's toasts, the oldest first, so that the newest of them shows last. A
+// click builds the view twice, and only the second build's asks survive it; the
+// ID of the last message toasted is what keeps the second build from adding the
+// same toast again. It runs in the build pass, before the shell draws them.
+func (s *State) updateToasts(c *ui.Context) {
+	msgs := s.Messages()
+	for i := len(msgs) - 1; i >= 0; i-- {
+		m := msgs[i]
+		if m.ID <= s.noticeShown {
+			continue
+		}
+		c.AddToast(ui.Toast{
+			ID:    "notice-" + strconv.Itoa(m.ID),
+			Title: trimEllipsis(m.Text, noticeToastText),
+			Type:  m.Kind,
+		})
+	}
+	if len(msgs) > 0 && msgs[0].ID > s.noticeShown {
+		s.noticeShown = msgs[0].ID
+	}
+}
