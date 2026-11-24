@@ -364,8 +364,8 @@ func findIsland(c *ui.Context) ui.Element {
 // rows' own, inside the scroll, so what they show is what they showed.
 func findScrollPane(c *ui.Context, label string, build func()) {
 	ui.ScrollBoth(c).Grow(1).Label(label).Children(func() {
-		ui.Column(c).MinWidth(findPaneInner+2*findIslandPad).Gap(c.Theme().Space(0.25)).
-			Padding(0, findIslandPad, findIslandPad, findIslandPad).Children(build)
+		ui.Column(c).MinWidth(findPaneInner + 2*findIslandPad).Gap(c.Theme().Space(0.25)).
+			Padding(findIslandPad).Children(build)
 	})
 }
 
