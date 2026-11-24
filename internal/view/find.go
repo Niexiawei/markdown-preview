@@ -206,6 +206,9 @@ func (s *State) openFind() {
 	if !s.findable() {
 		return
 	}
+	// One panel at a time holds the keys, and the document's search is the one
+	// the body answers to: the tree's folds away, keeping its phrase.
+	s.treeFocused, s.treeSearch.open = false, false
 	s.find.open = true
 	// The field takes the keyboard as the panel opens, even when the last
 	// phrase is still in it: the user asked to search, not to read.
@@ -296,12 +299,11 @@ func blockAt(d *parser.Document, at int) int {
 	return best
 }
 
-// findShortcuts handles the panel's keys: Cmd+F opens it, Escape empties the
-// field before it closes the panel, and Cmd+G walks the matches.
+// findShortcuts handles the panel's keys: Escape empties the field before it
+// closes the panel, and Cmd+G walks the matches. Cmd+F is the one the two
+// searches share, and searchShortcuts routes it.
 func (s *State) findShortcuts(c *ui.Context) {
 	switch {
-	case c.Shortcut(ui.Cmd, ui.KeyF):
-		s.openFind()
 	case s.find.open && c.Shortcut(0, ui.KeyEscape):
 		if s.find.query != "" {
 			s.find.query = ""

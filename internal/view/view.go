@@ -28,7 +28,7 @@ func (s *State) View(c *ui.Context) {
 				s.treeSearchRow(c)
 			}
 			ui.Scroll(c).Grow(1).Label("项目树").TrackScroll(&s.treeScroll).
-				Children(func() { s.fileTree(c) })
+				HandleInput(s.treePress).Children(func() { s.fileTree(c) })
 			s.leftToolbar(c)
 		})
 		ui.Column(c).Grow(1).MinWidth(0).FillHeight().Clip().Children(func() {
@@ -50,7 +50,7 @@ func (s *State) Left(c *ui.Context) {
 			s.treeSearchRow(c)
 		}
 		ui.Scroll(c).Grow(1).Label("项目树").TrackScroll(&s.treeScroll).
-			Children(func() { s.fileTree(c) })
+			HandleInput(s.treePress).Children(func() { s.fileTree(c) })
 	})
 }
 

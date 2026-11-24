@@ -266,3 +266,100 @@ func TestTheTreeScrollerIsNamed(t *testing.T) {
 		t.Errorf("tree Y = %v, want it below the header", r.Y)
 	}
 }
+
+// TestCmdFInTheTreeSearchesFiles pins the routing of the shortcut: a press in
+// the sidebar makes Cmd+F search the file names, not the document.
+func TestCmdFInTheTreeSearchesFiles(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "notes/a.md", "# A\n")
+	s.Refresh()
+	s.selectDoc("notes/a.md")
+
+	tt := newTester(s)
+	if err := tt.Click("a.md"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	tt.Frame()
+	tt.Key(ui.Cmd, ui.KeyF)
+	tt.Frame()
+	if !s.treeSearch.open {
+		t.Error("the tree's search did not open after a press in the tree")
+	}
+	if s.find.open {
+		t.Error("the document's search opened, want the tree's")
+	}
+}
+
+// TestCmdFInTheBodySearchesTheDocument pins the other side of the routing: a
+// press in the body makes Cmd+F search the document.
+func TestCmdFInTheBodySearchesTheDocument(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "notes/a.md", "# A\n\n正文\n")
+	s.Refresh()
+	s.selectDoc("notes/a.md")
+
+	tt := newTester(s)
+	tt.ClickAt(700, 400)
+	tt.Frame()
+	tt.Key(ui.Cmd, ui.KeyF)
+	tt.Frame()
+	if !s.find.open {
+		t.Error("the document's search did not open after a press in the body")
+	}
+	if s.treeSearch.open {
+		t.Error("the tree's search opened, want the document's")
+	}
+}
+
+// TestShiftCmdFOpensTheTreeSearchFromAnywhere pins the shortcut that needs no
+// routing: it searches file names wherever the focus is.
+func TestShiftCmdFOpensTheTreeSearchFromAnywhere(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", "# A\n")
+	s.Refresh()
+	s.selectDoc("a.md")
+
+	tt := newTester(s)
+	tt.Key(ui.Cmd|ui.Shift, ui.KeyF)
+	tt.Frame()
+	if !s.treeSearch.open {
+		t.Fatal("the tree's search did not open")
+	}
+	if s.find.open {
+		t.Error("the document's search opened, want only the tree's")
+	}
+}
+
+// TestOpeningOnePanelClosesTheOther pins that the two searches never share the
+// keyboard: opening either folds the other away.
+func TestOpeningOnePanelClosesTheOther(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "notes/a.md", "# A\n\n正文\n")
+	s.Refresh()
+	s.selectDoc("notes/a.md")
+
+	tt := newTester(s)
+	tt.Key(ui.Cmd, ui.KeyF)
+	tt.Frame()
+	if !s.find.open {
+		t.Fatalf("the document's search did not open; texts = %q", tt.Texts())
+	}
+	tt.Key(ui.Cmd|ui.Shift, ui.KeyF)
+	tt.Frame()
+	if s.find.open {
+		t.Error("the document's search is still open beside the tree's")
+	}
+	if !s.treeSearch.open {
+		t.Fatalf("the tree's search did not open")
+	}
+	tt.ClickAt(700, 400)
+	tt.Frame()
+	tt.Key(ui.Cmd, ui.KeyF)
+	tt.Frame()
+	if !s.find.open {
+		t.Error("the document's search did not reopen after a press in the body")
+	}
+	if s.treeSearch.open {
+		t.Error("the tree's search is still open beside the document's")
+	}
+}

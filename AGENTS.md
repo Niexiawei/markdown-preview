@@ -211,6 +211,13 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
   搜索面板写 `findPaneInner+2*findIslandPad`）；滚动容器要带读屏名（`目录列表` / `匹配行列表` /
   `命中上下文列表`）才能在测试里量到它的位置。正文那处改不了 Tester 里可断言的量（滚动条不是带名字的节点，
   文本几何也没变），靠 `TestBodyColumnFollowsPaneWidth` 保证不退化。
+- **`Cmd+F` 按焦点分派，而焦点是上一帧的**：`State.treeFocused` 由侧栏树与正文滚动容器的 `HandleInput`
+  （`InputPointerDown`）记，读它的是 `handleShortcuts`（构建之前）；点完窗格要等一帧再按快捷键。
+  两个滚动容器都返回 false，不吞事件；`openTreeSearch` / `openFind` 会直接置位，因为那时没有指针事件。
+- **mygo 的快捷键要求修饰键完全相等**：`c.Shortcut(ui.Cmd, ui.KeyF)` 在按住 Shift 时**不会**匹配
+  （`routeKey` 比的是 `mods == k.mods`），带 Shift 的组合必须单独注册一次（`ui.Cmd|ui.Shift`）。
+  已知遗漏：`find.go` 的 `Shift+Cmd+G`（上一个匹配）还是`Shortcut(ui.Cmd, ui.KeyG)` + 看 `Modifiers()` 的老写法，
+  所以那个组合目前不生效；要修就照 `searchShortcuts` 的样子单独注册。（不在树的搜索那一期里改。）
 - **`View` 的侧栏列要 `FillHeight()`**：`View` 是测试用的并排近似布局，侧栏列不给高度时 `Grow(1)` 不生效，
   树的滚动容器被内容撑高，`s.treeScroll.MaxY` 恒为 0（定位与滚动类断言全假）。真实 shell 的 `Left` 槽位是有界的，
   这个漏洞只出现在测试路径上。

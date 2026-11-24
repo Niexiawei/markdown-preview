@@ -94,12 +94,37 @@ func (s *State) matchTree(tr projectTree, n *workspace.Node) bool {
 }
 
 // openTreeSearch shows the tree's search, over the phrase searched before:
-// searching for the same name again is the common case.
+// searching for the same name again is the common case. It takes the keyboard,
+// and the document's search folds away: one panel at a time holds the keys.
 func (s *State) openTreeSearch() {
 	s.treeSearch.open = true
 	s.treeSearch.needFocus = true
 	s.treeSearch.current = 0
+	s.treeFocused = true
+	s.closeFind()
 	s.refreshCandidates()
+}
+
+// searchShortcuts handles the keys the two searches share: Cmd+F searches the
+// file names when the sidebar has the focus and the document when it has not,
+// and Cmd+Shift+F searches the file names wherever the focus is.
+//
+// The two are registered apart: a shortcut matches the modifiers held exactly,
+// so Cmd+F's registration never sees the key while Shift is down.
+func (s *State) searchShortcuts(c *ui.Context) {
+	switch {
+	case c.Shortcut(ui.Cmd|ui.Shift, ui.KeyF):
+		s.openTreeSearch()
+		return
+	case c.Shortcut(ui.Cmd, ui.KeyF):
+		if s.treeFocused {
+			s.openTreeSearch()
+			return
+		}
+		s.openFind()
+		return
+	}
+	s.findShortcuts(c)
 }
 
 // closeTreeSearch hides the tree's search, and shows every file again. The
@@ -272,4 +297,22 @@ func (s *State) matchedFile(c *ui.Context, tr projectTree, n *workspace.Node, i 
 		s.gotoCandidate(i)
 		s.openCandidate()
 	}
+}
+
+// treePress is the sidebar's pane seeing the pointer: a press there is what
+// makes Cmd+F search the file names.
+func (s *State) treePress(ev ui.InputEvent) bool {
+	if ev.Kind == ui.InputPointerDown {
+		s.treeFocused = true
+	}
+	return false
+}
+
+// bodyPress is the body's pane seeing the pointer: a press there is what makes
+// Cmd+F search the document again.
+func (s *State) bodyPress(ev ui.InputEvent) bool {
+	if ev.Kind == ui.InputPointerDown {
+		s.treeFocused = false
+	}
+	return false
 }
