@@ -64,21 +64,6 @@ func TestModeToggleSitsWithTheDocumentName(t *testing.T) {
 	}
 }
 
-// TestStatusBarDropsTheModeSwitch pins that the rendering switch left the
-// bottom bar, so the body keeps that room.
-func TestStatusBarDropsTheModeSwitch(t *testing.T) {
-	s, root := newState(t)
-	writeDoc(t, root, "a.md", "# A\n")
-	s.Refresh()
-	s.selectDoc("a.md")
-	tt := ui.NewTester(func(c *ui.Context) { s.statusBar(c) }, 600, 24)
-	for _, unwanted := range []string{"原生", "WebView"} {
-		if tt.HasText(unwanted) {
-			t.Errorf("status bar texts = %q, want no %q", tt.Texts(), unwanted)
-		}
-	}
-}
-
 // TestTOCScrollsBothWays pins that the outline scrolls both ways: a document
 // with many headings and one long heading is cut neither at the bottom nor at
 // the right edge.
@@ -416,5 +401,22 @@ func TestContentAppliesPostedChanges(t *testing.T) {
 	ui.NewTester(s.Content, 800, 600)
 	if s.zoom != 1.5 {
 		t.Errorf("zoom = %v, want the posted change applied", s.zoom)
+	}
+}
+
+// TestTheStatusLineHasLeftTheWindow pins that the bottom bar is gone: a message
+// reaches the user through the toast and the bell alone.
+func TestTheStatusLineHasLeftTheWindow(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", "# A\n")
+	s.Refresh()
+	s.selectDoc("a.md")
+	s.notify("已复制文件路径：/tmp/a.md")
+	tt := newTester(s)
+	if tt.HasText("已复制文件路径：/tmp/a.md") {
+		t.Errorf("texts = %q, want no status line in the page", tt.Texts())
+	}
+	if s.Status() == "" {
+		t.Error("the message is gone from the state too, want it kept for the bell")
 	}
 }
