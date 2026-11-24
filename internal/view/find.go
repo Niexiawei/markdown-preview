@@ -325,8 +325,12 @@ func (s *State) findList(c *ui.Context) {
 // Dragged reports what the pointer moved since the frame before, not since the
 // press: adding it to the height each frame is what makes the island follow the
 // pointer. The overshoot kept in dragOver is what makes coming back from a limit
-// move the island at once.
+// move the island at once. Without matches there is nothing below to resize, so
+// the band is left out with them.
 func (s *State) findDivider(c *ui.Context) {
+	if len(s.find.matches) == 0 {
+		return
+	}
 	t := c.Theme()
 	band := ui.Box(c).FillWidth().Height(findGrip).
 		Cursor(ui.CursorResizeNS).Role(ui.RoleSplitter).Label("调整匹配列表高度")

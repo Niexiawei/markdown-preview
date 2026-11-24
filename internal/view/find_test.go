@@ -603,3 +603,20 @@ func TestDraggingKeepsTheChosenMatch(t *testing.T) {
 		t.Errorf("current = %d, query = %q: a drag changed the search", s.find.current, s.find.query)
 	}
 }
+
+// TestFindDividerHidesWithoutMatches pins what the panel shows when the phrase
+// finds nothing: the field alone, with no band lying under it over nothing, as
+// the matches and the preview are left out.
+func TestFindDividerHidesWithoutMatches(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", "甲\n乙\n")
+	s.Refresh()
+	s.selectDoc("a.md")
+	openFindOn(s, "找不到的词")
+
+	tt := ui.NewTester(func(c *ui.Context) { s.findPanel(c) }, 900, 700)
+	tt.Frame()
+	if _, ok := tt.Find("调整匹配列表高度"); ok {
+		t.Error("the drag band showed with nothing to resize")
+	}
+}
