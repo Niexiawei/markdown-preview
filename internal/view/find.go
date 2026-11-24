@@ -311,11 +311,11 @@ func (s *State) findShortcuts(c *ui.Context) {
 			return
 		}
 		s.closeFind()
+	case s.find.open && c.Shortcut(ui.Cmd|ui.Shift, ui.KeyG):
+		// The registration carries Shift: a shortcut matches the modifiers held
+		// exactly, so Cmd+G's never sees the key while Shift is down.
+		s.findNext(-1)
 	case s.find.open && c.Shortcut(ui.Cmd, ui.KeyG):
-		if c.Modifiers()&ui.Shift != 0 {
-			s.findNext(-1)
-			return
-		}
 		s.findNext(1)
 	}
 }
@@ -384,7 +384,7 @@ func (s *State) findField(c *ui.Context) {
 	island.Children(func() {
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(t.Space(0.5)).Children(func() {
 			field := ui.SearchField(c, &s.find.query).Label("在文档中查找")
-			field.Grow(1).FontSize(12)
+			field.Grow(1).FontSize(12).Placeholder("在文档中查找")
 			if s.find.needFocus {
 				// AutoFocus gives the focus once, where Focus would take it back
 				// every frame, from the list or the buttons beside the field.

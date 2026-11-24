@@ -1022,8 +1022,8 @@ func TestBulkActionsSitLeftOfTheProjectSwitcher(t *testing.T) {
 // alone.
 func TestTheProjectMenuFoldsOneProjectOnly(t *testing.T) {
 	s, alphaRoot, betaRoot := twoProjects(t)
-	writeDoc(t, alphaRoot, "a.md", "# A\n")
-	writeDoc(t, betaRoot, "b.md", "# B\n")
+	writeDoc(t, alphaRoot, "docs/a.md", "# A\n")
+	writeDoc(t, betaRoot, "only/b.md", "# B\n")
 	s.Refresh()
 
 	tt := newTester(s)
@@ -1042,6 +1042,9 @@ func TestTheProjectMenuFoldsOneProjectOnly(t *testing.T) {
 	}
 	if !tt.HasText("a.md") {
 		t.Errorf("texts = %q, want alpha's document kept", tt.Texts())
+	}
+	if !tt.HasText("only") {
+		t.Errorf("texts = %q, want beta's own directory still shown: folding closed the folders, not the node", tt.Texts())
 	}
 	if err := tt.RightClick("beta"); err != nil {
 		t.Fatalf("RightClick again: %v", err)
@@ -1074,5 +1077,48 @@ func TestTheProjectPanelFoldsOneProject(t *testing.T) {
 	tt.Frame()
 	if tt.HasText("a.md") {
 		t.Errorf("texts = %q, want the project's directories folded", tt.Texts())
+	}
+}
+
+// TestTheProjectRowFoldsOnlyItsOwnProject pins the two actions on a project's
+// own row, after its name: they fold and unfold that project's directories
+// alone, without the other projects'.
+func TestTheProjectRowFoldsOnlyItsOwnProject(t *testing.T) {
+	s, alphaRoot, betaRoot := twoProjects(t)
+	writeDoc(t, alphaRoot, "docs/a.md", "# A\n")
+	writeDoc(t, betaRoot, "only/b.md", "# B\n")
+	s.Refresh()
+
+	tt := newTester(s)
+	name, ok := tt.Find("beta")
+	if !ok {
+		t.Fatalf("no project node for beta; texts = %q", tt.Texts())
+	}
+	unfold, ok := tt.Find("展开项目 beta 的全部目录")
+	if !ok {
+		t.Fatalf("no unfold action on beta's row; texts = %q", tt.Texts())
+	}
+	if unfold.X <= name.X {
+		t.Errorf("unfold sits at X %v, want it after beta's name at %v", unfold.X, name.X)
+	}
+	if err := tt.Click("折叠项目 beta 的全部目录"); err != nil {
+		t.Fatalf("Click fold: %v", err)
+	}
+	tt.Frame()
+	if tt.HasText("b.md") {
+		t.Errorf("texts = %q, want beta's document folded away", tt.Texts())
+	}
+	if !tt.HasText("a.md") {
+		t.Errorf("texts = %q, want alpha's document kept", tt.Texts())
+	}
+	if !tt.HasText("only") {
+		t.Errorf("texts = %q, want beta's own directory still shown: the button folded it, not closed the node", tt.Texts())
+	}
+	if err := tt.Click("展开项目 beta 的全部目录"); err != nil {
+		t.Fatalf("Click unfold: %v", err)
+	}
+	tt.Frame()
+	if !tt.HasText("b.md") {
+		t.Errorf("texts = %q, want beta's document back", tt.Texts())
 	}
 }

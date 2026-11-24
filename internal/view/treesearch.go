@@ -227,7 +227,7 @@ func (s *State) treeSearchRow(c *ui.Context) {
 	ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(t.Space(0.5)).
 		Padding(t.Space(0.5), t.Space(1)).Children(func() {
 		field := ui.SearchField(c, &s.treeSearch.query).Label("在项目树中查找")
-		field.Grow(1).FontSize(12)
+		field.Grow(1).FontSize(12).Placeholder("搜索文件名")
 		if s.treeSearch.needFocus {
 			// Asked for until the field has it: the tree below is a focus group
 			// of its own, and takes the keyboard on the frame the search opens

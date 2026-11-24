@@ -94,10 +94,11 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
   `view.go` 的 `titleRow` → `contentTitle`（路径 + 复制 + `modeToggle`）是 `Content` 的第一行；
   `leftHeader`（项目面板：点一行开/关、右键打开/复制/移除）、`leftToolbar`（动作图标 + 铃铛）各就各位。
   改布局时 `View` 与 `Content` 两条拼装路径要一起改（`TestShellSlotsBuild`、`TestTabsSitAboveTheTitle`）。
-- **改树的展开 / 折叠**：批量只改 `state.go` 的 `setTreeOpen`（写 `s.open`，已有指针就地改值，别换指针）；
-  两个入口是 `view.go` 的 `treeBulkActions`（`leftHeader`，项目选择按钮左边）与 `projectMenu` +
-  项目面板每行的右键菜单。label 不得与目录工具条重名（树是 `展开全部目录树`，目录是 `展开全部目录`），
-  重名会让 `tt.Find`、读屏与快捷键提示都分不清。
+- **改树的展开 / 折叠**：批量只改 `state.go` 的 `setTreeOpen`（写 `s.open`，已有指针就地改值，别换指针；
+  **折叠只收目录、项目节点不动，展开会把项目节点一起展开**——否则项目下只有根目录文件时折叠看起来没反应）；
+  三个入口是 `view.go` 的 `treeBulkActions`（`leftHeader`，项目选择按钮左边）、项目节点的 `projectActions`
+  （项目名后面那两个行内小按钮，label 带项目名以便区分）与 `projectMenu` + 项目面板每行的右键菜单。
+  label 不得与目录工具条重名（树是 `展开全部目录树`，目录是 `展开全部目录`），重名会让 `tt.Find`、读屏与快捷键提示都分不清。
 - **改提示消息**：写入只调 `internal/view/notices.go` 的 `notify` / `notifyDone` / `notifyWarn` / `notifyErr`，
   不要直接在 view 里 `c.AddToast`（绕过了账本、去重与历史）；浮层与铃铛也在这个文件（`bellButton` /
   `noticePanel` / `noticeRow` / `noticeBadgeText` / `noticeTime`）。账本自己的行为（落盘、上限、未读）改
@@ -224,8 +225,10 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
   在 WebView 模式下让 `Cmd+F` 一律搜正文（搜文件用 `Shift+Cmd+F`），这是写进 README 的约定，不要改成猜。
 - **mygo 的快捷键要求修饰键完全相等**：`c.Shortcut(ui.Cmd, ui.KeyF)` 在按住 Shift 时**不会**匹配
   （`routeKey` 比的是 `mods == k.mods`），带 Shift 的组合必须单独注册一次（`ui.Cmd|ui.Shift`）。
-  已知遗漏：`find.go` 的 `Shift+Cmd+G`（上一个匹配）还是`Shortcut(ui.Cmd, ui.KeyG)` + 看 `Modifiers()` 的老写法，
-  所以那个组合目前不生效；要修就照 `searchShortcuts` 的样子单独注册。（不在树的搜索那一期里改。）
+  `Shift+Cmd+G`（上一个匹配，`find.go`）曾经因为写成 `Shortcut(ui.Cmd, ui.KeyG)` + 看 `Modifiers()` 而不生效，
+  已改成 `Cmd|Shift` / `Cmd` 两次注册；以后加带 Shift 的组合照这个写。
+- **占位文字（Placeholder）不能用 `tt.Texts()` 断言**：它是画出来的，不是文本节点；要断言就读无障碍信息：
+  `tt.Access("<字段的无障碍名>").Placeholder`（两个搜索框的中文占位就是这么钉的）。
 - **搜索框拿键盘要一直要到它真的拿到**：`ui.Tree` 本身是个焦点组，树搜索打开的那一帧会把键盘抢走（那时没有别的东西持焦点），
   单次 `AutoFocus` 会输掉这场竞争，字段就收不到敲字。用 `s.treeSearch.needFocus` 每帧 `Focus()`，`= !field.Focused()` 才停。
 - **搜索框上的 `↑` / `↓` 用窗口级 `Shortcut` 接**：`Element.HandleInput` 挂在 `SearchField` 外层拿不到按键——焦点在它里面

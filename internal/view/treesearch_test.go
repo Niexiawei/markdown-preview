@@ -548,3 +548,28 @@ func TestCmdFInTheWebViewSearchesTheDocument(t *testing.T) {
 		t.Error("the tree's search opened, want the document's")
 	}
 }
+
+// TestTheSearchFieldsSpeakChinese pins what an empty field shows: a Chinese
+// placeholder in both searches, rather than the framework's own "Search".
+// The placeholder is painted, not a text of its own, so assistive technology is
+// where a test reads it.
+func TestTheSearchFieldsSpeakChinese(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", "# A 正文")
+	s.Refresh()
+	s.selectDoc("a.md")
+
+	tt := newTester(s)
+	tt.Key(ui.Cmd|ui.Shift, ui.KeyF)
+	tt.Frame()
+	if a, ok := tt.Access("在项目树中查找"); !ok || a.Placeholder != "搜索文件名" {
+		t.Errorf("tree search placeholder = %q (found %v), want 搜索文件名", a.Placeholder, ok)
+	}
+	tt.ClickAt(700, 400)
+	tt.Frame()
+	tt.Key(ui.Cmd, ui.KeyF)
+	tt.Frame()
+	if a, ok := tt.Access("在文档中查找"); !ok || a.Placeholder != "在文档中查找" {
+		t.Errorf("document search placeholder = %q (found %v), want 在文档中查找", a.Placeholder, ok)
+	}
+}

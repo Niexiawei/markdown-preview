@@ -296,6 +296,7 @@ func (s *State) fileTree(c *ui.Context) {
 				item := ui.TreeItem(c, tr.project.Name, s.openOf("project:"+tr.project.ID), func() {
 					s.treeItems(c, tr)
 				})
+				s.projectActions(c, item, tr)
 				s.projectMenu(c, item, tr)
 			}
 		})
@@ -320,6 +321,24 @@ func (s *State) treeItems(c *ui.Context, tr projectTree) {
 		}
 		s.nodeMenu(c, item, tr, child)
 	}
+}
+
+// projectActions adds a project node's two bulk actions after its name: the
+// directories of that project alone, unfolded or folded, without the other
+// projects'. They are compact because the row is, and their names carry the
+// project so that a screen reader and a test can tell two of them apart.
+func (s *State) projectActions(c *ui.Context, item ui.Element, tr projectTree) {
+	item.Children(func() {
+		ui.Spacer(c)
+		if components.IconButton(c, lucide.UnfoldVertical(), "展开项目 "+tr.project.Name+" 的全部目录",
+			components.IconButtonCompact).Clicked() {
+			s.setTreeOpen(tr.project.ID, true)
+		}
+		if components.IconButton(c, lucide.FoldVertical(), "折叠项目 "+tr.project.Name+" 的全部目录",
+			components.IconButtonCompact).Clicked() {
+			s.setTreeOpen(tr.project.ID, false)
+		}
+	})
 }
 
 // projectMenu gives a project node its right click: folding and unfolding every

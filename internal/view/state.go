@@ -341,15 +341,17 @@ func (s *State) setOpen(key string, open bool) {
 }
 
 // setTreeOpen folds or unfolds every directory of the open projects, or of the
-// project with projectID alone ("" for all of them): the project nodes the tree
-// puts on top of several projects, and every directory under them.
+// project with projectID alone ("" for all of them). Folding closes the
+// directories and leaves the project nodes as the user left them — a folded
+// project still shows its top level, as a window of one project does; unfolding
+// opens the nodes too, so that nothing stays hidden after it.
 func (s *State) setTreeOpen(projectID string, open bool) {
 	for _, tr := range s.trees {
 		if projectID != "" && tr.project.ID != projectID {
 			continue
 		}
-		if len(s.trees) > 1 {
-			s.setOpen("project:"+tr.project.ID, open)
+		if open && len(s.trees) > 1 {
+			s.setOpen("project:"+tr.project.ID, true)
 		}
 		var walk func(n *workspace.Node)
 		walk = func(n *workspace.Node) {

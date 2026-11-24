@@ -528,3 +528,28 @@ git commit -m "docs: 项目树批量折叠与文件名搜索的规格与计划�
   过滤后的树给每一行都问一次「它是不是候选」，线性扫是 `文件数 × 候选数`：3000 个文件的项目里每帧
   约 9M 次比较（`BenchmarkCandidateLookup` 实测 11.2 ms/帧，敲字会卡）。改成 map 之后 0.077 ms/帧，
   行为不变（`TestCandidateIndexFindsEveryCandidate` 钉住每个候选都查得到、非候选查不到）。
+
+### 第二轮：用户验收反馈（2026-11-24）
+
+验收时用户提了三件事，都在本分支内补完（各自一个提交）：
+
+1. **项目行的展开/折叠按钮没实现**（用户原话「项目 后增加 全部展开/全部折叠 功能未实现」）：第一轮只做了
+   右键菜单，用户要的是**项目名后面直接可见的按钮**。实现：`view.go` 的 `projectActions`，挂在项目节点那一行上
+   （`ui.TreeItem(...)` 之后 `.Children(...)` 追加 `Spacer` + 两个 `IconButtonCompact`），label 带项目名；
+   测试 `TestTheProjectRowFoldsOnlyItsOwnProject`（按钮在项目名右边、点折叠只有这个项目收起）。
+   第一轮只写「右键 / 面板」是理解偏了：截图红框标的是项目名**右边那块空白**。
+2. **搜索框要中文**（截图里框内是 `Search`）：`SearchField` 的默认占位是 mygo 的 `Search`，改用 `.Placeholder(...)`：
+   树搜索 `搜索文件名`、正文查找 `在文档中查找`。测试 `TestTheSearchFieldsSpeakChinese` 读的是无障碍信息
+   （`tt.Access(...).Placeholder`）——占位文字是画出来的，`tt.Texts()` 里没有。
+3. **`Shift+Cmd+G`（上一个匹配）本期修掉**：第一轮记成「已知遗漏」，用户要求这期改。`find.go` 里改成
+   `ui.Cmd|ui.Shift` / `ui.Cmd` 两次注册，补 `TestShiftCmdGGoesToThePreviousMatch`。
+
+### 工具上的教训（写给自己）
+
+`internal/view/find.go` 里有一行 `strings.TrimSuffix(lines[n-1], "\r")`，那个 `\r` 是**转义**。用 Python/编辑器
+**文本模式**整文件读写会把源码里的控制字符与换行规范化（一次把 `\r` 变成真换行、一次把整文件 LF 变成 CRLF），
+结果是一个 1200 行的假 diff。改 Go 源文件请用定点编辑（`edit` 工具或按字节替换），别整文件文本重写。
+4. **折叠的范围改了**：第一轮 `setTreeOpen` 连项目节点一起关；做行内按钮时发现，项目里只有根目录文件时
+   「折叠」看起来毫无反应（没有目录可收），且项目节点一关就像把项目关了。改成：**折叠只收目录、项目节点不动；
+   展开把项目节点一起展开**。`TestTheProjectRowFoldsOnlyItsOwnProject` / `TestTheProjectMenuFoldsOneProjectOnly`
+   都断言折叠后项目自己的顶层目录还在。
