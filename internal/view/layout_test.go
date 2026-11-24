@@ -405,3 +405,16 @@ func TestZoomButtonsSitWithTheOutline(t *testing.T) {
 		t.Errorf("zoom = %d%%, want 110%%", got)
 	}
 }
+
+// TestContentAppliesPostedChanges pins that the page the shell builds drains
+// what other goroutines posted: the file watcher reaches the window through it.
+// It posts a plain state change, so that the test outlives the message work of
+// the next tasks (which replace the status field with a book).
+func TestContentAppliesPostedChanges(t *testing.T) {
+	s, _ := newState(t)
+	s.Post(func() { s.zoom = 1.5 })
+	ui.NewTester(s.Content, 800, 600)
+	if s.zoom != 1.5 {
+		t.Errorf("zoom = %v, want the posted change applied", s.zoom)
+	}
+}

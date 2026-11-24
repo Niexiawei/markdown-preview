@@ -68,9 +68,9 @@ func (s *State) ContentTitle(c *ui.Context) {
 	s.tabBarAt(c, titleInsetWanted-titleInsetGap)
 }
 
-// Content is the shell's page: the outline and the body, with the status bar
-// under them.
+// Content is the shell's page: the outline and the body, filling the page.
 func (s *State) Content(c *ui.Context) {
+	s.drain()
 	s.handleShortcuts(c)
 	ui.Column(c).Fill().Children(func() {
 		// The header, which holds the tabs, floats over the top of the page.
