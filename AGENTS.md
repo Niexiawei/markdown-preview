@@ -34,7 +34,7 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
 | `internal/workspace` | 扫描 / 读取 / 解析缓存 / 标题缓存 / TOC 与 slug / 搜索 / 正文内查找（`find.go` 的 `FindIn`）；`Index` 接口 |
 | `internal/watch` | `mygo.WatchFiles` → `ChangeSet`（新增 / 删除 / 重命名 / 写入） |
 | `internal/mcp` | `POST /mcp` JSON-RPC 2.0，四个只读工具 |
-| `internal/view` | Onevra 主题（`theme.go`）与外壳各区域：侧栏顶栏（项目面板 + 右键菜单）、树、侧栏工具栏、标签栏（`tabs.go`，占 shell 的标题槽位）、页面第一行的路径与渲染开关（`titleRow`）、预览、状态栏、MCP 设置面板；`find.go` 是悬浮搜索（三块浮岛 + 可拖拽的匹配列表高度 `findDivider`）与跳转，`native.go` 是原生正文与跳转（`jumpToBlock` / `jumpMarker`），`zoom.go` 是正文缩放；`system.go` 是桌面动作接口 |
+| `internal/view` | Onevra 主题（`theme.go`）与外壳各区域：侧栏顶栏（项目面板 + 右键菜单）、树、侧栏工具栏、标签栏（`tabs.go`，占 shell 的标题槽位）、页面第一行的路径与渲染开关（`titleRow`）、预览、状态栏、MCP 设置面板；`find.go` 是悬浮搜索（三块浮岛 + 两块数据岛各自的可拖拽高度 `findGripBand`）与跳转，`native.go` 是原生正文与跳转（`jumpToBlock` / `jumpMarker`），`zoom.go` 是正文缩放；`system.go` 是桌面动作接口 |
 | `internal/tray` | 托盘：图标与两条菜单（打开主页面 / 退出）、关闭窗口即隐藏、`Show`（托盘与第二次启动共用）、窗口/任务栏图标。图片在 `assets/`，用 `go:embed` 打包；纯逻辑（菜单项、关闭决策、图标尺寸）无窗口可测 |
 | `.github/workflows/build.yml` | CI：gofmt / vet / 测试（Ubuntu，带 Pango），再在 macOS / Ubuntu 上交叉编译三平台安装包；推 `v*` 标签时把产物挂到 Release |
 
@@ -91,10 +91,12 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
 - **改正文内查找**：匹配规则只改 `workspace.FindIn`（字面子串、忽略大小写、上限 500），补 `TestFindIn*`；
   面板与跳转在 `view/find.go`（三块浮岛 `findIsland` / 匹配列表 / 上下文预览 / `Cmd+F` 与 `Cmd+G`）；
   命中跳转只调 `jumpToBlock`，与目录、链接共用同一条路（见「已知的坑」里的 `State.jump`）。
-- **改搜索面板的尺寸**：高度常量全在 `find.go` 顶部（`findListHeight` 默认 132 / `findListMin` 72 /
-  `findListMax` 320 / `findGrip` 拖拽带 10），可拖拽的是 `findDivider`，读取一律经 `findListHeightOf()`
-  （钳制只在那里做一次）；补 `TestDragging*`、`TestDoubleClickingTheDividerPutsTheHeightBack` 与
-  `TestFindIslandsKeepTheirGaps`。
+- **改搜索面板的尺寸**：高度常量全在 `find.go` 顶部（列表默认 132 / 最小 72 / 最大 320，上下文默认 148 /
+  最小 96 / 最大 420，拖拽带 `findGrip` 10），可拖拽的是 `findGripBand(c, which)`；读取一律经
+  `findHeightOf(which)`（自己的上下限只在那里钳制一次），窗口给的余量由 `findRoom` / `findHeightMaxOf` 管，
+  每帧的 `fitFindHeights` 决定真正显示多高（`shownList` / `shownPreview`）；补 `TestDragging*`、
+  `TestDoubleClickingABandPutsTheHeightBack`、`TestTheBandsMoveWithTheArrowKeys`、
+  `TestThePanelNeverGrowsPastTheWindow` 与 `TestFindIslandsKeepTheirGaps`。
 - **改标签栏**：`view/tabs.go` 的 `openTab` / `closeTab` / `visibleTabs` / `tabBar`，补 `TestTabBar*` 与 `TestClosingTabs`。
 - **加桌面动作（打开目录、复制、确认）**：扩 `view.System`（`system.go`）并在测试里扩 `fakeSystem`，
   不要在 view 里直接调 `mygo.Dialog` / `mygo.Shell` / `mygo.Clipboard`：`LeftHeader` 在侧栏收起时不构建，
@@ -167,20 +169,30 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
   它必须**在构建滚动容器之前**
   设 `tabScroll.X`（容器构建后再设会被忽略），并且首帧（`Bounds` 为 0 / `MaxX` 为 0）不要记 `tabShown`，否则永远不滚。
 - **搜索面板是三块浮岛**（`findIsland`：输入框 / 匹配行 / 上下文），外层只给位置，**没有背景**，
-  也**没有 `Gap`**：间距由「匹配列表岛的 6 DIP 上外边距」+「一条 `findGrip`（10 DIP）高的拖拽带」构成，
-  改间距要三处一起改，否则会出现「带子占位 + 间距」的双份留白。
+  也**没有 `Gap`**：间距由「匹配列表岛的 6 DIP 上外边距」+「两条 `findGrip`（10 DIP）高的拖拽带
+  （列表下、上下文下各一条）」构成，改间距要三处一起改，否则会出现「带子占位 + 间距」的双份留白。
   别再把它塞回一个带 Surface 的整块卡片里：那样列表最后一行和上下文第一行会读成一列。
   三块岛都给读屏名（`搜索输入` / `匹配行` / `命中上下文`，也是测试里 `tt.Find` 取岛矩形的唯一办法），
-  上下文岛顶上那行 `第 N 行上下文` 是给人分清的。岛内宽度用 `findPaneInner`，别再用 `findPaneWidth - 2*Space(1)`。
+  两条带子也有（`调整匹配列表高度` / `调整命中上下文高度`）。上下文岛顶上那行 `第 N 行上下文` 是给人分清的。
+  岛内宽度用 `findPaneInner`，别再用 `findPaneWidth - 2*Space(1)`。
 - **拖拽带的高度算法**：`Dragged()` 返回的是**上一帧读到之后的增量**（`ui/runtime.go` 的 `forgetInput`
   每帧把 `dragX/dragY` 清零），所以每帧是把 `dy` 加到当前高度上；写成「从按下起的累计位移」会指数放大，
   一拖就撞上限。mygo 的 `ui.Split` 是同一套语义。
-- **拖到极限要保留过冲**（`findState.dragOver`）：`want = 高度 + dy + dragOver`，`dragOver = want - 钳制后`，
-  松手时归零。没有它，「拖过头再拖回来」要等指针先回到边界才开始变化，手感是粘住的；
+  另外 **`dy == 0` 的按下不能写高度**（`switch { case !held: …; case dy != 0: … }`）：否则点一下带子就会把
+  「用户想要的高度」改写成「窗口现在能显示的高度」，窗口变高后不再恢复。
+- **拖到极限要保留过冲**（`findState.listOver` / `previewOver`）：`want = 高度 + dy + 过冲`，
+  `过冲 = want - 钳制后`，松手时归零。没有它，「拖过头再拖回来」要等指针先回到边界才开始变化，手感是粘住的；
   `ui/split.go` 的 `splitOvershoot` 解决的是同一个问题。
-- **面板里的 `Height` 量的是滚动容器**：`Height(findListHeightOf())` 加在 `ScrollBoth` 上，岛的外框还要加
-  `2*findIslandPad + 2`（实测 132 → 146）。所以测试断言都走 `findListHeightOf()` 或「两个计数的高度相同」，
-  不要写死岛的矩形高。
+- **岛高量在岛上，不是滚动容器上**：`findList` / `findPreview` 给 `findIsland(...)` 设 `Height(shown*)`，
+  里面的 `ScrollBoth` 用 `Grow(1)` 吃掉剩下的空间；这样 `岛.Y + 岛.H` 才等于下一条带子的位置（测试靠它）。
+- **面板高度受窗口约束**：`findRoom` = 窗口高 − 面板顶部的 header/标题行 − 底部留白 − 输入岛高（`fieldH` 由上一帧
+  `Bounds()` 量出）− 两条带子；`findHeightMaxOf` 让每条岛的上限再减去另一条岛的高度；`fitFindHeights`
+  每帧兜底（窗口变矮时**上下文先让出高度**，再轮到列表），只改 `shown*`，不改用户要的 `listH` / `previewH`，
+  所以窗口变高会自己恢复。窗口高来自 `State.SetContentHeight`（`main.go` 用 `win.ContentSize()` 接），
+  测试里不设就用默认 700。
+- **拖拽带能拿键盘**：`Focusable()` + 按下时 `Focus()` + `HandleInput` 里接 `InputKeyDown` 的 `↑`/`↓`
+  （步长 `t.Space(2.5)`），与 `ui.Split` 的分隔条一致。`HandleInput` 在**下一帧构建之前**跑，
+  那里**不能**用 `*ui.Context`（主题、shell 都拿不到），所以余量在构建期算好、闭包只捕数字（曾经的 panic 就在这里）。
 - **「全部已打开文件」列表给滚动条留了右边距**（`Padding(0, Space(3), 0, 0)`）：列表的竖向滚动条压在最右边，
   不给留出来时关标签的 ✕ 会被它盖住（用户报过点不到）。
 - **标签条的滚动条只有 2 DIP**：`ScrollbarStyle{ThumbWidth: 2, TrackWidth: 2}`。默认是 `拇指 + 6` 的命中区，

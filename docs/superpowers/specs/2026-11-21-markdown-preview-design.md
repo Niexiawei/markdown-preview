@@ -275,15 +275,20 @@ type Index interface {
 
 ### 搜索面板的可调高度（新增，2026-11-23）
 
-- **匹配列表岛不再随内容塌缩**：高度由 `findState.listH` 决定，读取经 `findListHeightOf()` 钳制在
-  `[findListMin=72, findListMax=320]`（约 3~13 行），没拖过时是 `findListHeight=132`（约 5 行）。
-  以前是 `MaxHeight(132)`，只有一条命中时岛会塌成一行 + 横向滚动条。
-- **拖拽**：两块数据岛之间是一条 `findGrip=10` DIP 的带子（`findDivider`，`CursorResizeNS`、`RoleSplitter`、
-  读屏名「调整匹配列表高度」），拖动改列表高度、**双击复位**到 132；指针离开或松手后带子不画东西
-  （hover/拖动时在带子正中画 1 DIP 主色线），面板仍是三块浮岛而不是一张带分隔线的卡片。
-  带子按「上一帧的增量」累加（`Dragged()`），并保留拖过极限后的过冲（`dragOver`），所以拖回来立刻响应。
-- **布局**：面板列不再用 `Gap`——输入↔列表仍是 6 DIP（列表岛的 `Margin`），列表↔上下文是带子的 10 DIP。
+- **两块数据岛各自可调，且各有自己的高度**：匹配列表岛（默认 `findListHeight=132`，`findListMin=72`、
+  `findListMax=320`）与上下文预览岛（默认 `findPreviewHeight=148`，`findPreviewMin=96`、`findPreviewMax=420`）。
+  以前列表是 `MaxHeight(132)`（只有一条命中时塌成一行 + 横向滚动条），上下文是 `MaxHeight(148)`、内容自适应。
+- **拖拽**：每块岛**下面**各一条 `findGrip=10` DIP 的带子（`findGripBand`，`CursorResizeNS`、`RoleSplitter`、
+  读屏名「调整匹配列表高度」/「调整命中上下文高度」），拖动改上方岛的高度；**双击复位**；指针离开或松手后
+  带子不画东西（hover/拖动时在带子正中画 1 DIP 主色线），面板仍是三块浮岛而不是一张带分隔线的卡片。
+  带子按「上一帧的增量」累加（`Dragged()`），保留拖过极限后的过冲（`listOver`/`previewOver`），
+  且 `dy == 0` 的按下不写高度（否则会把「用户要的高度」改成「窗口能显示的高度」）。
+- **键盘**：带子可聚焦（按一下就拿到焦点），`↑`/`↓` 以 `t.Space(2.5)` 为步长移动它，与 `ui.Split` 的分隔条一致。
+- **总高度不超窗口**：`findRoom` 扣掉面板顶部的 header 与标题行、底部留白、输入岛与两条带子；每条岛的上限
+  再减去另一条岛的高度（`findHeightMaxOf`）；`fitFindHeights` 每帧兜底——窗口变矮时**上下文先让出高度**、
+  再轮到列表，只改显示高度（`shownList`/`shownPreview`），用户拖出来的值保留，窗口变高会自己恢复。
+  窗口高度来自 `State.SetContentHeight`（`main.go` 用 `win.ContentSize()` 接），测试不设时用 700。
+- **布局**：面板列不再用 `Gap`——输入↔列表 6 DIP（列表岛的 `Margin`），列表↔上下文、上下文↔面板底各是带子的 10 DIP。
 - **高度只在本次运行内记住**（与正文缩放 `zoom` 一致，不写 `config.json`）；换文档、关面板都不重置。
-  上下文预览岛不参与拖拽，仍是内容自适应 + `MaxHeight(148)`。
 - **正文高亮不在本期**：原生模式下搜索仍不高亮正文（见「已知限制」）。走 mygo 引擎侧的
   `Options.Mark` 区间方案，见 `docs/superpowers/plans/2026-11-23-mygo-mark-ranges.md`。

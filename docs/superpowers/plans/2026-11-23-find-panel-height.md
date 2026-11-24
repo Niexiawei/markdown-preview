@@ -548,3 +548,27 @@ PR 合并、我们升级依赖之后，另写一份本仓库的计划：`refresh
    hover/拖动才画 1 DIP 主色线、高度不落盘、上下文岛不参与拖拽——均按计划 D1~D11 实现。
 7. **手工验收未做**（本会话没有图形界面）：自动化 `go vet ./... && gofmt -l . && go test ./...` 全绿；
    计划「任务 4」里的手工项（真实窗口里的拖动、光标形状、双击复位、深浅主题下的线色）留给用户确认。
+
+### 追加需求（2026-11-23，用户看过第一期后追加）
+
+用户在看过第一期效果后追加三条，并要求把「延后的 Minor」一起修完：
+
+1. **上下文预览岛也要能拖**（原计划只有列表）。`findDivider` 于是变成 `findGripBand(c, which)`：
+   两条带子（列表下、上下文下各一条），各有默认/最小/最大高度——上下文 148 / 96 / 420。
+   上下文岛因此从「内容自适应 + `MaxHeight(148)`」变成显式高度，内部滚动用 `Grow(1)` 吃掉剩下的空间。
+2. **输入框 + 列表 + 上下文的总高度不能超过窗口**：新增 `State.SetContentHeight`
+   （`main.go` 用 `win.ContentSize()` 接）+ `findRoom` + `findHeightMaxOf` + 每帧的 `fitFindHeights`。
+   窗口变矮时**上下文先让出高度**、再轮到列表，只改显示高度（`shownList`/`shownPreview`），
+   用户拖出来的值保留，窗口变高会自己恢复。`TestThePanelNeverGrowsPastTheWindow` 用 520 高的窗口
+   把两个岛都拖到底，断言上下文岛的下边不出窗口。
+3. **延后的两件 Minor 一起修**：带子可聚焦、`↑`/`↓` 调整（`TestTheBandsMoveWithTheArrowKeys`）；
+   最大高度的窗口自适应（就是第 2 条）。
+4. **两处实现上的教训**（已写进 AGENTS 的坑）：
+   - `HandleInput` 在下一帧构建之前跑，那里**拿不到 `*ui.Context`**（主题、shell 都没有）：余量必须在构建期算好、
+     闭包只捕数字；直接在闭包里用 `c.Theme()` 会 panic。
+   - **`dy == 0` 的按下不能写高度**，否则点一下带子就把「用户想要的高度」改写成「窗口现在能显示的高度」，
+     窗口变高后不恢复（`TestDoubleClickingABandPutsTheHeightBack` 抓到过）。
+5. **高度量在岛上了**（`Height(shown*)` + 内层 `Grow(1)`）：`岛.Y + 岛.H` 因此等于下一条带子的位置，
+   `dragBand` / `TestFindIslandsKeepTheirGaps` 都靠它。这条推翻了上一轮「`Height` 量在滚动容器上」的说法。
+6. 仍然**没有**做的：高度不落盘（会话内，与 `zoom` 一致）；带子只响应鼠标拖动与 `↑`/`↓`，
+   没有 Home/End/PageUp 之类的跳跃。
