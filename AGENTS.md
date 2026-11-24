@@ -82,6 +82,11 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
   同时更新 README 的表格。
 - **改忽略规则**：只改 `workspace.Ignored`（扫描与监听共用它），并补 `TestIgnoredRules`。
 - **改 TOC 缩进/交互**：`view/native.go` 的 `buildTOC` + `tocItems`。
+  **滚动条在窗格边缘，不在内边距里**：`toc` 的列不再加 `Padding`（只有表头那一行加），
+  内边距给了滚动容器里的列（`Padding(0, tocPadding, tocPadding, tocPadding)`）。两个后果：
+  （1）`MinWidth` 是**含内边距的边框盒**，所以那里写的是 `s.tocW`（整个窗格宽）而不是
+  `s.tocW-2*tocPadding`——写小了会让行缩到 232 以内，`TestTOCRowsFillThePane`（点窗格右缘选标题）就红；
+  （2）滚动容器带无障碍名「目录列表」，这是测试量它位置（`X==0`、`W==窗格宽`）的唯一办法。
 - **改跳转落点（顶部/居中/是否平滑）**：只改 `view/native.go` 的 `jumpMarker`（`ScrollIntoViewOptions`）与
   `view/webview.go` 的 `headingScrollJS`，两边要一致；不要在调用处各写一套滚动。
 - **改渲染样式**：原生在 `markdown.Options`（`loadDoc` 里装配）；webview 在 `webview.go` 的 `docCSS`。

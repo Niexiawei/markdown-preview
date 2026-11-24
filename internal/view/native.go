@@ -229,8 +229,13 @@ func (s *State) setTOC(open bool) {
 // pane, so that a click on one lands wherever on it the pointer is.
 func (s *State) toc(c *ui.Context) {
 	t := c.Theme()
-	ui.Column(c).Fill().Padding(tocPadding).Children(func() {
-		ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
+	ui.Column(c).Fill().Children(func() {
+		// The header keeps the room around the outline; the scroll below does
+		// not, so that its scrollbars lie against the pane's edges: a press
+		// there drags the outline instead of landing on a heading under the
+		// thumb, which the padding used to put in the way.
+		ui.Row(c).FillWidth().Padding(tocPadding, tocPadding, t.Space(0.5), tocPadding).
+			AlignItems(ui.Center).Children(func() {
 			components.Text(c, "目录").FontSize(13).TextColor(t.TextMuted)
 			ui.Spacer(c)
 			s.tocActions(c)
@@ -240,10 +245,14 @@ func (s *State) toc(c *ui.Context) {
 		}
 		// Both ways: an outline deeper than the pane scrolls down, and a
 		// heading wider than it scrolls sideways instead of being cut. The
-		// column takes at least the pane's own width, so that a short
-		// heading's row still stretches across it.
-		ui.ScrollBoth(c).Grow(1).TrackScroll(&s.tocScroll).Children(func() {
-			ui.Column(c).MinWidth(max(0, s.tocW-2*tocPadding)).Gap(t.Space(0.25)).Children(func() {
+		// rows keep the padding and take at least the room it leaves, so that
+		// a short heading's row still stretches across, clear of both bars.
+		ui.ScrollBoth(c).Grow(1).TrackScroll(&s.tocScroll).Label("目录列表").Children(func() {
+			// The pane's own width, padding included: the rows then span the
+			// whole pane, clear of the bars, as they did when the padding was
+			// outside the scroll.
+			ui.Column(c).MinWidth(max(0, s.tocW)).Gap(t.Space(0.25)).
+				Padding(0, tocPadding, tocPadding, tocPadding).Children(func() {
 				ui.Tree(c, func() {
 					s.tocItems(c, buildTOC(s.headings))
 				})

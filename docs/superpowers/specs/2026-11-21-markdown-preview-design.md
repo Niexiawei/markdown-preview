@@ -320,3 +320,12 @@ type Index interface {
 - **顺带修掉的前置 bug**：shell 用的构建路径（`Content`）一直没有应用其它 goroutine 投递的变更
   （`drain`），外部改动实时跟随与 watcher 消息都因此失效；现在每帧先应用再构建。
 - **不设条数上限**是用户 2026-11-24 的决定：历史会一直累积，浮层的「清空全部」/ 单条删除是唯一收缩手段。
+
+### 目录树的滚动条位置（新增，2026-11-24）
+
+- **滚动条贴着窗格边缘，不在内边距里**：`toc` 的外层列不再统一加 `tocPadding`，只有表头那一行加；
+  滚动容器铺满窗格，内边距移到滚动内容上（`Padding(0, tocPadding, tocPadding, tocPadding)`）。
+  用户原话：「preview 目录树 滚动条能否放在 padding 层之外 目前在 padding 层里面 容易误触」——
+  原来的布局让竖滚动条压住标题文字、窗格边缘又正好是滚动条的命中区。
+- 行仍然铺满窗格（`MinWidth` 是**含内边距的边框盒**，所以写 `s.tocW`），点窗格右缘照样能选到标题
+  （`TestTOCRowsFillThePane`）；滚动容器的位置由 `TestTheOutlineScrollsAtThePanesEdge` 钉住。

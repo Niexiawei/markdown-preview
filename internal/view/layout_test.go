@@ -426,3 +426,34 @@ func TestTheStatusLineHasLeftTheWindow(t *testing.T) {
 		t.Error("the message is gone from the state too, want it kept for the bell")
 	}
 }
+
+// TestTheOutlineScrollsAtThePanesEdge pins where the outline's scrollbars sit:
+// at the edges of the pane rather than inside its padding, so that a press near
+// the edge drags the outline instead of landing on a heading under the thumb.
+// The rows keep their own padding: the scroll moved out, the text did not.
+func TestTheOutlineScrollsAtThePanesEdge(t *testing.T) {
+	s, root := newState(t)
+	var b strings.Builder
+	for i := range 30 {
+		fmt.Fprintf(&b, "## 小节 %02d\n\n正文\n", i)
+	}
+	writeDoc(t, root, "a.md", b.String())
+	s.Refresh()
+	s.selectDoc("a.md")
+
+	tt := ui.NewTester(func(c *ui.Context) { s.toc(c) }, 240, 300)
+	list, ok := tt.Find("目录列表")
+	if !ok {
+		t.Fatalf("texts = %q, want the outline's list", tt.Texts())
+	}
+	if list.X != 0 || list.W != 240 {
+		t.Errorf("outline list = %+v, want it against the pane's edges", list)
+	}
+	row, ok := tt.Find("小节 00")
+	if !ok {
+		t.Fatalf("texts = %q, want the first heading", tt.Texts())
+	}
+	if row.X <= tocPadding {
+		t.Errorf("first row at x = %v, want the text to keep its room inside the scroll", row.X)
+	}
+}
