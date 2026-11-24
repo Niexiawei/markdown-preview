@@ -425,3 +425,52 @@ func TestFindPanelWithoutMatchesKeepsOneIsland(t *testing.T) {
 		}
 	}
 }
+
+// findListRect opens the search panel on a document and returns the box of the
+// matches' island, as the last frame laid it out.
+func findListRect(t *testing.T, body string) ui.Rect {
+	t.Helper()
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", body)
+	s.Refresh()
+	s.selectDoc("a.md")
+	openFindOn(s, "目标")
+	tt := ui.NewTester(func(c *ui.Context) { s.findPanel(c) }, 900, 700)
+	tt.Frame()
+	r, ok := tt.Find("匹配行")
+	if !ok {
+		t.Fatalf("texts = %q, want the matches' island", tt.Texts())
+	}
+	return r
+}
+
+// TestFindListKeepsItsHeightWhateverTheCount pins the floor: one match must not
+// leave the panel a single row tall, as MaxHeight let it. The island takes the
+// height asked for, not the height its rows happen to need.
+func TestFindListKeepsItsHeightWhateverTheCount(t *testing.T) {
+	one := findListRect(t, "甲\n乙 目标\n丙\n")
+	many := findListRect(t, strings.Repeat("甲 目标\n", 30))
+	if one.H != many.H {
+		t.Errorf("one match H = %v, thirty = %v: the island still follows its rows", one.H, many.H)
+	}
+	if one.H < findListMin {
+		t.Errorf("H = %v, want at least the floor %v", one.H, findListMin)
+	}
+}
+
+// TestFindListHeightIsClampedToThePanel pins what the height may be: never
+// asked, the default; dragged, within what the panel allows.
+func TestFindListHeightIsClampedToThePanel(t *testing.T) {
+	s := newStateWith(config.Config{Version: config.Version})
+	if got := s.findListHeightOf(); got != findListHeight {
+		t.Errorf("not dragged → %v, want the default %v", got, findListHeight)
+	}
+	s.find.listH = 10
+	if got := s.findListHeightOf(); got != findListMin {
+		t.Errorf("10 → %v, want the minimum %v", got, findListMin)
+	}
+	s.find.listH = 9999
+	if got := s.findListHeightOf(); got != findListMax {
+		t.Errorf("9999 → %v, want the maximum %v", got, findListMax)
+	}
+}

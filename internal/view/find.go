@@ -18,8 +18,17 @@ import (
 // The floating panel's size, in DIPs, and how many lines of context its preview
 // shows on either side of a match.
 const (
-	findPaneWidth   float32 = 420
-	findListHeight  float32 = 132
+	findPaneWidth float32 = 420
+	// findListHeight is how tall the matches' island is until the divider is
+	// dragged; findListMin and findListMax are how short and how tall a drag
+	// may leave it.
+	findListHeight float32 = 132
+	findListMin    float32 = 72
+	findListMax    float32 = 320
+	// findGrip is the band between the matches and the preview that drags the
+	// matches' island taller or shorter, in DIPs. It is wider than the room
+	// between the islands was, since it has to be caught with a pointer.
+	findGrip        float32 = 10
 	findPreviewSize float32 = 148
 	findContext     int     = 2
 	// findIslandPad is the room inside each pane of the panel, in DIPs.
@@ -38,6 +47,10 @@ type findState struct {
 	matches   []workspace.Match
 	current   int // 0-based into matches
 	truncated bool
+	// listH is how tall the matches' island is, as the user dragged it: 0
+	// until then, and for as long as the window lives (findListHeightOf
+	// reads it, within what the panel allows).
+	listH float32
 	// lines are the source's lines, kept from the last load: the preview
 	// reads them every frame, and splitting the source per frame is the kind
 	// of work the window's thread must not do.
@@ -46,6 +59,16 @@ type findState struct {
 
 // findable reports whether there is a document to search.
 func (s *State) findable() bool { return !s.sel.empty() && s.src != "" }
+
+// findListHeightOf returns how tall the matches' island is: the height the user
+// dragged it to, within what the panel allows, and the default until the divider
+// is dragged.
+func (s *State) findListHeightOf() float32 {
+	if s.find.listH == 0 {
+		return findListHeight
+	}
+	return min(max(s.find.listH, findListMin), findListMax)
+}
 
 // openFind shows the panel over the document shown, over what was searched for
 // before: searching for the same phrase again is the common case.
@@ -266,7 +289,7 @@ func (s *State) findList(c *ui.Context) {
 		return
 	}
 	findIsland(c).Label("匹配行").Children(func() {
-		ui.ScrollBoth(c).MaxHeight(findListHeight).Children(func() {
+		ui.ScrollBoth(c).Height(s.findListHeightOf()).Children(func() {
 			ui.Column(c).MinWidth(findPaneInner).Gap(t.Space(0.25)).Children(func() {
 				for i, m := range s.find.matches {
 					i, m := i, m
