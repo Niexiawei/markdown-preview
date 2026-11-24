@@ -1,6 +1,8 @@
 package view
 
 import (
+	"time"
+
 	"github.com/egoist/mygo/ui"
 	"github.com/oneo-me/onevra/source/components"
 	"github.com/oneo-me/onevra/source/icons/lucide"
@@ -20,9 +22,13 @@ func (s *State) View(c *ui.Context) {
 	s.openURL = func(url string) { c.Services().OpenURL(url) }
 	t := c.Theme()
 	ui.Row(c).Fill().Background(t.Background).Children(func() {
-		ui.Column(c).Width(300).Background(t.Surface).Children(func() {
+		ui.Column(c).Width(300).FillHeight().Background(t.Surface).Children(func() {
 			s.leftHeader(c)
-			ui.Scroll(c).Grow(1).Children(func() { s.fileTree(c) })
+			if s.treeSearch.open {
+				s.treeSearchRow(c)
+			}
+			ui.Scroll(c).Grow(1).Label("项目树").TrackScroll(&s.treeScroll).
+				Children(func() { s.fileTree(c) })
 			s.leftToolbar(c)
 		})
 		ui.Column(c).Grow(1).MinWidth(0).FillHeight().Clip().Children(func() {
@@ -40,7 +46,11 @@ func (s *State) View(c *ui.Context) {
 func (s *State) Left(c *ui.Context) {
 	t := c.Theme()
 	ui.Column(c).Fill().Padding(sidebar.HeaderHeight(c), t.Space(1), 0, t.Space(1)).Children(func() {
-		ui.Scroll(c).Grow(1).Children(func() { s.fileTree(c) })
+		if s.treeSearch.open {
+			s.treeSearchRow(c)
+		}
+		ui.Scroll(c).Grow(1).Label("项目树").TrackScroll(&s.treeScroll).
+			Children(func() { s.fileTree(c) })
 	})
 }
 
@@ -250,9 +260,15 @@ func (s *State) modeToggle(c *ui.Context) {
 
 // fileTree builds the markdown tree, or what to do when there is nothing to
 // show. With one project open its entries are the top level; with more, each
-// project gets a node of its own name.
+// project gets a node of its own name. While the search is open it shows what
+// the phrase matches instead, and the tree is the list of candidates.
 func (s *State) fileTree(c *ui.Context) {
 	t := c.Theme()
+	if s.treeSearch.reveal && !s.treeSearch.revealSeen.IsZero() && !s.treeSearch.revealSeen.Equal(c.Now()) {
+		// The frame that asked the tree to slide is over: what it asked for is
+		// on its way, or done.
+		s.treeSearch.reveal, s.treeSearch.revealSeen = false, time.Time{}
+	}
 	ui.Column(c).Fill().Padding(t.Space(0.5)).Gap(t.Space(0.25)).Children(func() {
 		if len(s.trees) == 0 {
 			components.Text(c, "打开一个目录作为项目").FontSize(12).TextColor(t.TextMuted)
@@ -262,7 +278,15 @@ func (s *State) fileTree(c *ui.Context) {
 			components.Text(c, "这个目录下没有 markdown 文件").FontSize(12).TextColor(t.TextMuted)
 			return
 		}
+		if s.searching() && len(s.treeSearch.candidates) == 0 {
+			components.Text(c, "没有匹配的文件").FontSize(12).TextColor(t.TextMuted)
+			return
+		}
 		ui.Tree(c, func() {
+			if s.searching() {
+				s.treeMatched(c)
+				return
+			}
 			if len(s.trees) == 1 {
 				s.treeItems(c, s.trees[0])
 				return
