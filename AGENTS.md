@@ -93,10 +93,13 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
   不要直接在 view 里 `c.AddToast`（绕过了账本、去重与历史）；浮层与铃铛也在这个文件（`bellButton` /
   `noticePanel` / `noticeRow` / `noticeBadgeText` / `noticeTime`）。账本自己的行为（落盘、上限、未读）改
   `internal/notices`，并补 `TestMessagesSurviveARestart` 一类的测试；view 侧补 `TestTheHistory*`、`TestTheBadge*`。
-  **浮层的三个高度常量在 `notices.go` 顶上**（`noticePanelWidth` 360 / `noticePanelMin` 180 /
-  `noticePanelHeight` 320，后者是列表滑动上限）：最小高度靠 `MinHeight` 压在面板列上，
-  空历史与有消息时是同一张卡片；面板列带无障碍名「消息历史」，这是测试量它高度的唯一办法。
-  改这个数值时 `TestTheHistoryKeepsItsRoom` 里的 180 是**字面量**，不要改成引用常量（否则改常量就不再失败）。
+  **浮层的尺寸常量在 `notices.go` 顶上**：宽度 `noticePanelWidth` 360 DIP，高度是**窗口内容高度的比例**
+  （`noticePanelMinShare` 0.5 与 `noticePanelMaxShare` 0.7，靠 `MinHeight` / `MaxHeight` 压在面板列上，
+  列表用 `Grow(1)` 吃剩下的，超过上限就内部滚动）。比例而不是 DIP，就是为了 resize 时跟着变；
+  面板列带无障碍名「消息历史」，这是测试量它高度的唯一办法。
+  两个测试陷阱：（1）`TestTheHistory*` 里的 400/560 是**字面量**，不要改成引用常量，否则改常量就不再失败；
+  （2）量高度要**直接建 `s.noticePanel`**，不要通过 `s.View` 量：测试用的并排布局里侧栏不一定撑满高度，
+  弹层的可用空间会小于真实壳层，量出来的高度会被弹层位置钳住（曾经量到 401 而不是 560）。
 - **改正文内查找**：匹配规则只改 `workspace.FindIn`（字面子串、忽略大小写、上限 500），补 `TestFindIn*`；
   面板与跳转在 `view/find.go`（三块浮岛 `findIsland` / 匹配列表 / 上下文预览 / `Cmd+F` 与 `Cmd+G`）；
   命中跳转只调 `jumpToBlock`，与目录、链接共用同一条路（见「已知的坑」里的 `State.jump`）。

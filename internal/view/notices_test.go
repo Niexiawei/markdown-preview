@@ -3,6 +3,7 @@ package view
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -435,37 +436,89 @@ func TestAMessageArrivingInTheOpenHistoryIsRead(t *testing.T) {
 	}
 }
 
-// TestTheHistoryKeepsItsRoom pins the panel's fixed minimum height: an empty
-// history shows the same card as one holding a message, rather than a sliver
-// that grows as messages arrive.
-func TestTheHistoryKeepsItsRoom(t *testing.T) {
-	// The number the panel keeps, in DIPs. It is written here rather than taken
-	// from the constant, so that a constant lowered to nothing still fails.
-	const want float32 = 180
-	heights := make([]float32, 0, 2)
-	for _, c := range []struct {
-		name string
-		msgs []string
-	}{
-		{"empty", nil},
-		{"one message", []string{"一"}},
-	} {
-		s, _ := newState(t)
-		for _, text := range c.msgs {
-			s.notify(text)
-		}
-		s.noticeOpen = true
-		tt := newTester(s)
-		panel, ok := tt.Find("消息历史")
-		if !ok {
-			t.Fatalf("%s: no panel labelled 消息历史", c.name)
-		}
-		if panel.H < want {
-			t.Errorf("%s: panel height = %v, want at least %v", c.name, panel.H, want)
-		}
-		heights = append(heights, panel.H)
+// panelHeight builds the history on its own and returns the height of the panel
+// the bell opens, in DIPs. It leaves the popover out: where the panel is placed
+// is MyGo's business, and a test window may leave less room above the anchor
+// than a real one does.
+func panelHeight(t *testing.T, window float32, msgs []string) float32 {
+	t.Helper()
+	s, _ := newState(t)
+	s.contentHeight = func() float32 { return window }
+	for _, text := range msgs {
+		s.notify(text)
 	}
-	if heights[0] != heights[1] {
-		t.Errorf("heights = %v, want the empty history to keep the room of a full one", heights)
+	tt := ui.NewTester(s.noticePanel, 400, int(window))
+	panel, ok := tt.Find("消息历史")
+	if !ok {
+		t.Fatal("no panel labelled 消息历史")
+	}
+	return panel.H
+}
+
+// manyMessages is a history longer than any panel shows at once.
+func manyMessages() []string {
+	msgs := make([]string, 0, 40)
+	for i := range 40 {
+		msgs = append(msgs, "消息 "+strconv.Itoa(i))
+	}
+	return msgs
+}
+
+// TestTheHistoryFillsHalfTheWindow pins the room the history takes: half of the
+// window's content height for a history that fits, so the panel reads as a panel
+// rather than a sliver that grows as messages arrive.
+func TestTheHistoryFillsHalfTheWindow(t *testing.T) {
+	// The shares are written here rather than taken from the constants, so that
+	// a constant lowered to nothing still fails.
+	const want float32 = 400 // half of 800
+	if got := panelHeight(t, 800, nil); got != want {
+		t.Errorf("empty: panel height = %v, want %v", got, want)
+	}
+	if got := panelHeight(t, 800, []string{"一"}); got != want {
+		t.Errorf("one message: panel height = %v, want %v", got, want)
+	}
+}
+
+// TestTheHistoryStopsAtSeventyPercent pins the most it takes: a long history
+// scrolls inside a panel of seven tenths of the window, never more.
+func TestTheHistoryStopsAtSeventyPercent(t *testing.T) {
+	if got, want := panelHeight(t, 800, manyMessages()), float32(560); got != want {
+		t.Errorf("panel height = %v, want %v", got, want)
+	}
+}
+
+// TestTheHistoryFollowsTheWindow pins that both the room and the cap are shares
+// of the window: made smaller, the panel shrinks with it.
+func TestTheHistoryFollowsTheWindow(t *testing.T) {
+	if got, want := panelHeight(t, 400, nil), float32(200); got != want {
+		t.Errorf("half of 400: panel height = %v, want %v", got, want)
+	}
+	if got, want := panelHeight(t, 400, manyMessages()), float32(280); got != want {
+		t.Errorf("seven tenths of 400: panel height = %v, want %v", got, want)
+	}
+}
+
+// TestTheHistoryRowsAreCards pins that the rows keep each other apart: a card of
+// its own for every message, with room above and below its text.
+func TestTheHistoryRowsAreCards(t *testing.T) {
+	s, _ := newState(t)
+	s.contentHeight = func() float32 { return 800 }
+	s.notify("一")
+	s.notify("二")
+	s.noticeOpen = true
+	tt := ui.NewTester(s.View, 1000, 800)
+	one, ok := tt.Find("删除消息：一")
+	if !ok {
+		t.Fatal("no row for the first message")
+	}
+	two, ok := tt.Find("删除消息：二")
+	if !ok {
+		t.Fatal("no row for the second message")
+	}
+	// A row's text is two lines, of 12 and 11 point text: stacked bare, they
+	// put one row about 34 DIPs from the next. A card adds its own padding and
+	// the gap between the cards to that.
+	if distance := one.Y - two.Y; distance < 40 {
+		t.Errorf("rows %v DIPs apart, want each message in a card of its own", distance)
 	}
 }

@@ -78,13 +78,15 @@ func (s *State) updateToasts(c *ui.Context) {
 
 // The history the bell opens, and the badge over it.
 const (
-	// noticePanelWidth and noticePanelHeight size the panel the history shows
-	// in, and the room its list scrolls within; noticePanelMin is the room it
-	// keeps whether it holds any message or none, so that it reads as one panel
-	// and does not grow under the pointer as messages arrive.
-	noticePanelWidth  float32 = 360
-	noticePanelMin    float32 = 180
-	noticePanelHeight float32 = 320
+	// noticePanelWidth is how wide the panel the history shows in is.
+	noticePanelWidth float32 = 360
+	// noticePanelMinShare and noticePanelMaxShare are how much of the window's
+	// content height the panel takes: at least half, so that it reads as a panel
+	// rather than a sliver growing under the pointer as messages arrive, and at
+	// most seven tenths, past which its list scrolls inside it. Both are shares,
+	// so a window made shorter takes the panel down with it.
+	noticePanelMinShare float32 = 0.5
+	noticePanelMaxShare float32 = 0.7
 	// noticeBadgeMax is the most the badge counts: past it, it says "99+",
 	// which stays a pill of two digits wide.
 	noticeBadgeMax = 99
@@ -161,7 +163,7 @@ func noticeBadgeText(unread int) string {
 func (s *State) noticePanel(c *ui.Context) {
 	t := c.Theme()
 	msgs := append([]notices.Message(nil), s.Messages()...)
-	ui.Column(c).Width(noticePanelWidth).MinHeight(noticePanelMin).
+	ui.Column(c).Width(noticePanelWidth).MinHeight(s.noticePanelMin()).MaxHeight(s.noticePanelMax()).
 		Label("消息历史").Padding(t.Space(1.5)).Gap(t.Space(1)).Children(func() {
 		ui.Row(c).AlignItems(ui.Center).Gap(t.Space(2)).Children(func() {
 			components.Text(c, "消息").FontSize(13).Bold().Grow(1)
@@ -174,11 +176,15 @@ func (s *State) noticePanel(c *ui.Context) {
 		})
 		ui.Divider(c)
 		if len(msgs) == 0 {
-			components.Text(c, "暂无消息").FontSize(12).TextColor(t.TextMuted)
+			// The panel keeps its room whether it holds anything or not, so
+			// the line sits in the middle of the space a message would take.
+			ui.Row(c).Grow(1).Center().Children(func() {
+				components.Text(c, "暂无消息").FontSize(12).TextColor(t.TextMuted)
+			})
 			return
 		}
-		ui.Scroll(c).MaxHeight(noticePanelHeight).Children(func() {
-			ui.Column(c).Gap(t.Space(0.5)).Children(func() {
+		ui.Scroll(c).Grow(1).Children(func() {
+			ui.Column(c).Gap(t.Space(1)).Children(func() {
 				for _, m := range msgs {
 					s.noticeRow(c, m)
 				}
@@ -187,11 +193,27 @@ func (s *State) noticePanel(c *ui.Context) {
 	})
 }
 
-// noticeRow builds one message of the history: what kind it is, what it says,
-// when the window said it, and its own ✕.
+// noticePanelMin is the shortest the history shows: half the window's content
+// height, whatever it holds.
+func (s *State) noticePanelMin() float32 { return s.windowHeight() * noticePanelMinShare }
+
+// noticePanelMax is the tallest: seven tenths of it, past which the list scrolls
+// inside the panel. Both follow the window as it is resized.
+func (s *State) noticePanelMax() float32 {
+	return max(s.noticePanelMin(), s.windowHeight()*noticePanelMaxShare)
+}
+
+// noticeRow builds one message of the history as a card of its own: what kind
+// it is, what it says, when the window said it, and its own ✕.
 func (s *State) noticeRow(c *ui.Context, m notices.Message) {
 	t := c.Theme()
-	ui.Row(c).AlignItems(ui.Center).Gap(t.Space(1)).Children(func() {
+	row := ui.Row(c).AlignItems(ui.Center).Gap(t.Space(1)).
+		Padding(t.Space(1), t.Space(1.5)).Radius(t.Radius+2).
+		Background(t.Surface).Border(1, t.Border)
+	if row.Hovered() {
+		row.Background(t.SurfaceHover)
+	}
+	row.Children(func() {
 		components.Icon(c, noticeIcon(m.Kind)).Size(t.Rem(.875), t.Rem(.875)).TextColor(noticeTint(t, m.Kind))
 		ui.Column(c).Grow(1).MinWidth(0).Gap(t.Space(.25)).Children(func() {
 			components.Text(c, m.Text).FontSize(12)
