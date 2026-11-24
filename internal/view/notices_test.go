@@ -410,3 +410,11 @@ func TestMessageTimesReadAcrossDays(t *testing.T) {
 		}
 	}
 }
+
+// TestToastsSitAtTheBottomEnd pins where a message pops up: the bottom right
+// corner, out of the way of the outline and of the body's first lines.
+func TestToastsSitAtTheBottomEnd(t *testing.T) {
+	if got := ToastOptions().Placement; got != components.ToastBottomEnd {
+		t.Errorf("placement = %v, want the bottom right", got)
+	}
+}

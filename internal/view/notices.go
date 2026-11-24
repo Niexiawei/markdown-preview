@@ -234,3 +234,10 @@ func noticeTint(t *ui.Theme, kind string) ui.Color {
 	}
 	return t.Accent
 }
+
+// ToastOptions is where the window shows a message in the Onevra look: the
+// bottom right corner, where the old status bar ran out, out of the way of the
+// body's first lines.
+func ToastOptions() components.ToastOptions {
+	return components.ToastOptions{Placement: components.ToastBottomEnd}
+}

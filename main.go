@@ -55,6 +55,7 @@ func main() {
 			LeftToolbar:  state.LeftToolbar,
 			ContentTitle: state.ContentTitle,
 			Content:      state.Content,
+			Toasts:       view.ToastOptions(),
 			Theme:        view.AppTheme,
 		})
 		win := shell.Window()
