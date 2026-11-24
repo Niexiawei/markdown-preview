@@ -304,7 +304,7 @@ func blockAt(d *parser.Document, at int) int {
 // searches share, and searchShortcuts routes it.
 func (s *State) findShortcuts(c *ui.Context) {
 	switch {
-	case s.find.open && c.Shortcut(0, ui.KeyEscape):
+	case s.find.open && !s.treeSearch.open && c.Shortcut(0, ui.KeyEscape):
 		if s.find.query != "" {
 			s.find.query = ""
 			s.refreshMatches()

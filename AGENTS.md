@@ -112,6 +112,11 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
 - **改正文内查找**：匹配规则只改 `workspace.FindIn`（字面子串、忽略大小写、上限 500），补 `TestFindIn*`；
   面板与跳转在 `view/find.go`（三块浮岛 `findIsland` / 匹配列表 / 上下文预览 / `Cmd+F` 与 `Cmd+G`）；
   命中跳转只调 `jumpToBlock`，与目录、链接共用同一条路（见「已知的坑」里的 `State.jump`）。
+- **改文件名搜索**：匹配规则只改 `workspace.FuzzyMatch`（子序列、大小写不敏感、空白查询=不匹配、**不编译正则**），
+  补 `TestFuzzyMatch*`；候选集合只改 `treesearch.go` 的 `refreshCandidates`（树序、不扫盘、在 `reloadTree` 后重算），
+  补 `TestCandidates*`；过滤视图、两种底色、定位在 `treeMatched` / `treeRowFill` / `matchedFile`，
+  颜色常量在 `theme.go` 的 `candidateRowTint` / `currentCandidateTint`；快捷键路由与 `Esc` / `↑` / `↓`
+  在 `searchShortcuts`，补 `TestCmdF*`、`TestShiftCmdF*`、`TestArrows*`、`TestEscape*`。
 - **改搜索面板的尺寸**：高度常量全在 `find.go` 顶部（列表默认 132 / 最小 72 / 最大 320，上下文默认 148 /
   最小 96 / 最大 420，拖拽带 `findGrip` 10），可拖拽的是 `findGripBand(c, which)`；读取一律经
   `findHeightOf(which)`（自己的上下限只在那里钳制一次），窗口给的余量由 `findRoom` / `findHeightMaxOf` 管，
@@ -218,6 +223,11 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
   （`routeKey` 比的是 `mods == k.mods`），带 Shift 的组合必须单独注册一次（`ui.Cmd|ui.Shift`）。
   已知遗漏：`find.go` 的 `Shift+Cmd+G`（上一个匹配）还是`Shortcut(ui.Cmd, ui.KeyG)` + 看 `Modifiers()` 的老写法，
   所以那个组合目前不生效；要修就照 `searchShortcuts` 的样子单独注册。（不在树的搜索那一期里改。）
+- **搜索框拿键盘要一直要到它真的拿到**：`ui.Tree` 本身是个焦点组，树搜索打开的那一帧会把键盘抢走（那时没有别的东西持焦点），
+  单次 `AutoFocus` 会输掉这场竞争，字段就收不到敲字。用 `s.treeSearch.needFocus` 每帧 `Focus()`，`= !field.Focused()` 才停。
+- **搜索框上的 `↑` / `↓` 用窗口级 `Shortcut` 接**：`Element.HandleInput` 挂在 `SearchField` 外层拿不到按键——焦点在它里面
+  那个输入框节点上，`focusHandler` 只看焦点节点自己。所以在 `searchShortcuts` 里用 `c.Shortcut(0, ui.KeyUp/KeyDown)`；
+  树行自己有 `Shortcut`，行上有焦点时它先拿到（那是树自己的焦点移动），这是有意的。
 - **`View` 的侧栏列要 `FillHeight()`**：`View` 是测试用的并排近似布局，侧栏列不给高度时 `Grow(1)` 不生效，
   树的滚动容器被内容撑高，`s.treeScroll.MaxY` 恒为 0（定位与滚动类断言全假）。真实 shell 的 `Left` 槽位是有界的，
   这个漏洞只出现在测试路径上。

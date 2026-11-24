@@ -123,6 +123,24 @@ func (s *State) searchShortcuts(c *ui.Context) {
 		}
 		s.openFind()
 		return
+	case s.treeSearch.open && c.Shortcut(0, ui.KeyUp):
+		// The arrows walk the candidates rather than the field's caret: the
+		// window's shortcut takes them before the field's editor does, while the
+		// field holds the keyboard.
+		s.moveCandidate(-1)
+		return
+	case s.treeSearch.open && c.Shortcut(0, ui.KeyDown):
+		s.moveCandidate(1)
+		return
+	case s.treeSearch.open && c.Shortcut(0, ui.KeyEscape):
+		// The phrase first, as the document's search does: clearing it shows the
+		// whole tree again, and the row itself goes on the next press.
+		if s.treeSearch.query != "" {
+			s.setTreeQuery("")
+			return
+		}
+		s.closeTreeSearch()
+		return
 	}
 	s.findShortcuts(c)
 }
@@ -206,13 +224,17 @@ func (s *State) treeSearchRow(c *ui.Context) {
 		field := ui.SearchField(c, &s.treeSearch.query).Label("在项目树中查找")
 		field.Grow(1).FontSize(12)
 		if s.treeSearch.needFocus {
-			// AutoFocus gives the focus once, where Focus would take it back
-			// every frame from the buttons beside the field.
-			field.AutoFocus()
-			s.treeSearch.needFocus = false
+			// Asked for until the field has it: the tree below is a focus group
+			// of its own, and takes the keyboard on the frame the search opens
+			// when nothing else holds it, so a single AutoFocus loses the race.
+			field.Focus()
+			s.treeSearch.needFocus = !field.Focused()
 		}
-		if field.Changed() {
+		switch {
+		case field.Changed():
 			s.setTreeQuery(s.treeSearch.query)
+		case field.Submitted():
+			s.openCandidate()
 		}
 		components.Text(c, s.treeSearchCount()).FontSize(11).TextColor(t.TextMuted)
 		if components.IconButton(c, lucide.X(), "关闭树搜索", components.IconButtonCompact).Clicked() {
@@ -315,4 +337,15 @@ func (s *State) bodyPress(ev ui.InputEvent) bool {
 		s.treeFocused = false
 	}
 	return false
+}
+
+// moveCandidate makes the candidate n places on the one the keyboard is on, round
+// the ends, and asks the tree to bring it into view. It opens nothing: the
+// documents are stepped through, and Enter or a click shows one.
+func (s *State) moveCandidate(n int) {
+	total := len(s.treeSearch.candidates)
+	if total == 0 {
+		return
+	}
+	s.gotoCandidate(((s.treeSearch.current+n)%total + total) % total)
 }

@@ -363,3 +363,135 @@ func TestOpeningOnePanelClosesTheOther(t *testing.T) {
 		t.Error("the tree's search is still open beside the document's")
 	}
 }
+
+// typeTreeSearch opens the tree's search with the shortcut and types query into
+// it, as a user does: the field takes the keyboard as the search opens.
+func typeTreeSearch(t *testing.T, tt *ui.Tester, query string) {
+	t.Helper()
+	tt.Key(ui.Cmd|ui.Shift, ui.KeyF)
+	tt.Frame()
+	tt.Type(query)
+	tt.Frame()
+}
+
+// searchableTree is a project of three files a phrase matches, and one it does
+// not, with the window built.
+func searchableTree(t *testing.T) (*State, *ui.Tester) {
+	t.Helper()
+	s, root := newState(t)
+	for _, name := range []string{"a_plan.md", "b_plan.md", "c_plan.md", "other.md"} {
+		writeDoc(t, root, name, "# "+name+"\n")
+	}
+	s.Refresh()
+	return s, newTester(s)
+}
+
+// TestArrowsStepTheCandidatesAndOpenNothing pins the keys that walk the
+// candidates: the arrows move the one the tree marks as current, and nothing
+// opens until it is asked for.
+func TestArrowsStepTheCandidatesAndOpenNothing(t *testing.T) {
+	s, tt := searchableTree(t)
+	typeTreeSearch(t, tt, "plan")
+
+	before := s.Selected()
+	tt.Key(0, ui.KeyDown)
+	tt.Frame()
+	tt.Key(0, ui.KeyDown)
+	tt.Frame()
+	if s.treeSearch.current != 2 {
+		t.Errorf("current = %d, want 2 after two downs", s.treeSearch.current)
+	}
+	if got := s.Selected(); got != before {
+		t.Errorf("Selected = %q, want %q: stepping must not open a document", got, before)
+	}
+	tt.Key(0, ui.KeyUp)
+	tt.Frame()
+	if s.treeSearch.current != 1 {
+		t.Errorf("current = %d, want 1 after an up", s.treeSearch.current)
+	}
+}
+
+// TestEnterOpensTheCurrentCandidate pins the key that opens: Enter shows the
+// candidate the arrows are on, and leaves the search open to walk further.
+func TestEnterOpensTheCurrentCandidate(t *testing.T) {
+	s, tt := searchableTree(t)
+	typeTreeSearch(t, tt, "plan")
+
+	tt.Key(0, ui.KeyDown)
+	tt.Frame()
+	tt.Key(0, ui.KeyEnter)
+	tt.Frame()
+	if got := s.Selected(); got != "b_plan.md" {
+		t.Errorf("Selected = %q, want b_plan.md", got)
+	}
+	if !s.treeSearch.open {
+		t.Error("the tree's search closed, want it left open")
+	}
+}
+
+// TestEnterWithNoCandidatesDoesNothing pins the guarded Enter: a phrase that
+// matches nothing opens nothing, and reads nothing past the end of the list.
+func TestEnterWithNoCandidatesDoesNothing(t *testing.T) {
+	s, tt := searchableTree(t)
+	s.selectDoc("other.md")
+	typeTreeSearch(t, tt, "zzz")
+	if len(s.treeSearch.candidates) != 0 {
+		t.Fatalf("candidates = %v, want none", s.treeSearch.candidates)
+	}
+
+	tt.Key(0, ui.KeyEnter)
+	tt.Frame()
+	if got := s.Selected(); got != "other.md" {
+		t.Errorf("Selected = %q, want other.md still shown", got)
+	}
+}
+
+// TestEscapeClearsTheQueryThenClosesTheTreeSearch pins the order Escape goes in:
+// the phrase first, so that the tree shows everything again, and the search row
+// itself on the second press.
+func TestEscapeClearsTheQueryThenClosesTheTreeSearch(t *testing.T) {
+	s, tt := searchableTree(t)
+	typeTreeSearch(t, tt, "plan")
+	if !s.treeSearch.open {
+		t.Fatalf("the tree's search is not open")
+	}
+
+	tt.Key(0, ui.KeyEscape)
+	tt.Frame()
+	if !s.treeSearch.open {
+		t.Fatal("the first Escape closed the search, want the phrase cleared first")
+	}
+	if s.treeSearch.query != "" || s.searching() {
+		t.Errorf("query = %q, want it cleared", s.treeSearch.query)
+	}
+	if !tt.HasText("other.md") {
+		t.Errorf("texts = %q, want the whole tree back", tt.Texts())
+	}
+	tt.Key(0, ui.KeyEscape)
+	tt.Frame()
+	if s.treeSearch.open {
+		t.Error("the second Escape left the search open")
+	}
+}
+
+// TestEscapeClosesOnlyTheTreeSearch pins that Escape belongs to one search at a
+// time: the document's phrase is left alone while the tree's is open.
+func TestEscapeClosesOnlyTheTreeSearch(t *testing.T) {
+	s, tt := searchableTree(t)
+	s.selectDoc("a_plan.md")
+	typeTreeSearch(t, tt, "plan")
+	// The document's search is shut while the tree's is open: put it back, as a
+	// frame that opened it before the routing changed it would leave it, so that
+	// Escape has both panels to choose between.
+	s.find.open, s.find.query = true, "plan"
+	s.refreshMatches()
+
+	tt.Key(0, ui.KeyEscape)
+	tt.Frame()
+	if s.find.query != "plan" {
+		t.Errorf("find.query = %q, want the document's phrase kept", s.find.query)
+	}
+	if s.treeSearch.query != "" {
+		t.Errorf("tree query = %q, want it cleared", s.treeSearch.query)
+	}
+}
