@@ -90,6 +90,14 @@ type State struct {
 	// find is the search over the document shown, which the floating panel
 	// shows.
 	find findState
+	// treeSearch is the search over the tree's file names, which the sidebar
+	// shows in place of the whole tree. treeFocused says the last press or key
+	// was the sidebar's: Cmd+F searches files when it was, and the document when
+	// it was not.
+	treeSearch  treeSearchState
+	treeFocused bool
+	// treeScroll is how far the tree scrolls.
+	treeScroll ui.ScrollState
 
 	// The document shown: its source, its parse, the outline built from it,
 	// and what the native markdown view shows it with.
@@ -476,6 +484,11 @@ func (s *State) reloadTree() {
 		s.dropTabsOf(p.ID)
 		s.ws.SetConfig(s.cfg)
 		s.save()
+	}
+	if s.treeSearch.open {
+		// The tree the search walks is the one just read: a file added or
+		// renamed behind the window's back changes what it offers.
+		s.refreshCandidates()
 	}
 	if s.sel.empty() {
 		return
