@@ -186,7 +186,8 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
 - **岛高量在岛上，不是滚动容器上**：`findList` / `findPreview` 给 `findIsland(...)` 设 `Height(shown*)`，
   里面的 `ScrollBoth` 用 `Grow(1)` 吃掉剩下的空间；这样 `岛.Y + 岛.H` 才等于下一条带子的位置（测试靠它）。
 - **面板高度受窗口约束**：`findRoom` = 窗口高 − 面板顶部的 header/标题行 − 底部留白 − 输入岛高（`fieldH` 由上一帧
-  `Bounds()` 量出）− 两条带子；`findHeightMaxOf` 让每条岛的上限再减去另一条岛的高度；`fitFindHeights`
+  `Bounds()` 量出）− 两条带子；`findHeightMaxOf` 让每条岛的上限再减去另一条岛**实际显示**的高度（`shown*`，
+  不是它要的高度——否则窗口一矮，拖其中一条会把另一条直接压到地板）；`fitFindHeights`
   每帧兜底（窗口变矮时**上下文先让出高度**，再轮到列表），只改 `shown*`，不改用户要的 `listH` / `previewH`，
   所以窗口变高会自己恢复。窗口高来自 `State.SetContentHeight`（`main.go` 用 `win.ContentSize()` 接），
   测试里不设就用默认 700。
