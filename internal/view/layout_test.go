@@ -64,21 +64,6 @@ func TestModeToggleSitsWithTheDocumentName(t *testing.T) {
 	}
 }
 
-// TestStatusBarDropsTheModeSwitch pins that the rendering switch left the
-// bottom bar, so the body keeps that room.
-func TestStatusBarDropsTheModeSwitch(t *testing.T) {
-	s, root := newState(t)
-	writeDoc(t, root, "a.md", "# A\n")
-	s.Refresh()
-	s.selectDoc("a.md")
-	tt := ui.NewTester(func(c *ui.Context) { s.statusBar(c) }, 600, 24)
-	for _, unwanted := range []string{"原生", "WebView"} {
-		if tt.HasText(unwanted) {
-			t.Errorf("status bar texts = %q, want no %q", tt.Texts(), unwanted)
-		}
-	}
-}
-
 // TestTOCScrollsBothWays pins that the outline scrolls both ways: a document
 // with many headings and one long heading is cut neither at the bottom nor at
 // the right edge.
@@ -403,5 +388,72 @@ func TestZoomButtonsSitWithTheOutline(t *testing.T) {
 	}
 	if got := s.zoomPercent(); got != 110 {
 		t.Errorf("zoom = %d%%, want 110%%", got)
+	}
+}
+
+// TestContentAppliesPostedChanges pins that the page the shell builds drains
+// what other goroutines posted: the file watcher reaches the window through it.
+// It posts a plain state change, so that the test outlives the message work of
+// the next tasks (which replace the status field with a book).
+func TestContentAppliesPostedChanges(t *testing.T) {
+	s, _ := newState(t)
+	s.Post(func() { s.zoom = 1.5 })
+	ui.NewTester(s.Content, 800, 600)
+	if s.zoom != 1.5 {
+		t.Errorf("zoom = %v, want the posted change applied", s.zoom)
+	}
+}
+
+// TestTheStatusLineHasLeftTheWindow pins that the bottom bar is gone: a message
+// reaches the user through the toast and the bell alone. The toasts are the
+// shell's overlay, drawn by the engine after the page builds, so the test closes
+// them before the frame is over: what it asks is that the page itself holds no
+// line to report them in.
+func TestTheStatusLineHasLeftTheWindow(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", "# A\n")
+	s.Refresh()
+	s.selectDoc("a.md")
+	s.notify("已复制文件路径：/tmp/a.md")
+	tt := ui.NewTester(func(c *ui.Context) {
+		s.View(c)
+		c.CloseToast("")
+	}, 1000, 700)
+	if tt.HasText("已复制文件路径：/tmp/a.md") {
+		t.Errorf("texts = %q, want no status line in the page", tt.Texts())
+	}
+	if s.Status() == "" {
+		t.Error("the message is gone from the state too, want it kept for the bell")
+	}
+}
+
+// TestTheOutlineScrollsAtThePanesEdge pins where the outline's scrollbars sit:
+// at the edges of the pane rather than inside its padding, so that a press near
+// the edge drags the outline instead of landing on a heading under the thumb.
+// The rows keep their own padding: the scroll moved out, the text did not.
+func TestTheOutlineScrollsAtThePanesEdge(t *testing.T) {
+	s, root := newState(t)
+	var b strings.Builder
+	for i := range 30 {
+		fmt.Fprintf(&b, "## 小节 %02d\n\n正文\n", i)
+	}
+	writeDoc(t, root, "a.md", b.String())
+	s.Refresh()
+	s.selectDoc("a.md")
+
+	tt := ui.NewTester(func(c *ui.Context) { s.toc(c) }, 240, 300)
+	list, ok := tt.Find("目录列表")
+	if !ok {
+		t.Fatalf("texts = %q, want the outline's list", tt.Texts())
+	}
+	if list.X != 0 || list.W != 240 {
+		t.Errorf("outline list = %+v, want it against the pane's edges", list)
+	}
+	row, ok := tt.Find("小节 00")
+	if !ok {
+		t.Fatalf("texts = %q, want the first heading", tt.Texts())
+	}
+	if row.X <= tocPadding {
+		t.Errorf("first row at x = %v, want the text to keep its room inside the scroll", row.X)
 	}
 }

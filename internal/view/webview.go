@@ -258,7 +258,7 @@ func (s *State) ensureWebView() bool {
 	wv, err := s.win.NewWebView(mygo.WebViewOptions{URL: s.docURL()})
 	if err != nil {
 		s.webOK = false
-		s.status = "WebView 不可用：" + err.Error()
+		s.notifyErr("WebView 不可用：" + err.Error())
 		return false
 	}
 	s.wv = wv
@@ -314,7 +314,7 @@ func (s *State) scrollWebTo(slug string) {
 		return
 	}
 	if _, err := s.wv.Page().Eval(headingScrollJS(slug)); err != nil {
-		s.status = "无法在页面中滚动：" + err.Error()
+		s.notifyErr("无法在页面中滚动：" + err.Error())
 	}
 }
 

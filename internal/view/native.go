@@ -30,13 +30,13 @@ func (s *State) loadDoc() {
 	doc, headings, err := s.ws.Parse(p.ID, s.sel.path)
 	if err != nil {
 		s.docErr = err
-		s.status = err.Error()
+		s.notifyErr(err.Error())
 		return
 	}
 	src, err := s.ws.ReadMarkdown(p.ID, s.sel.path)
 	if err != nil {
 		s.docErr = err
-		s.status = err.Error()
+		s.notifyErr(err.Error())
 		return
 	}
 	s.doc, s.headings, s.src = doc, headings, src
@@ -165,7 +165,7 @@ func (s *State) followLink(url string) {
 		return
 	}
 	if _, err := s.ws.Stat(p.ID, target); err != nil {
-		s.status = "链接的文档不存在：" + target
+		s.notifyWarn("链接的文档不存在：" + target)
 		return
 	}
 	s.selectDoc(target)
@@ -229,8 +229,13 @@ func (s *State) setTOC(open bool) {
 // pane, so that a click on one lands wherever on it the pointer is.
 func (s *State) toc(c *ui.Context) {
 	t := c.Theme()
-	ui.Column(c).Fill().Padding(tocPadding).Children(func() {
-		ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
+	ui.Column(c).Fill().Children(func() {
+		// The header keeps the room around the outline; the scroll below does
+		// not, so that its scrollbars lie against the pane's edges: a press
+		// there drags the outline instead of landing on a heading under the
+		// thumb, which the padding used to put in the way.
+		ui.Row(c).FillWidth().Padding(tocPadding, tocPadding, t.Space(0.5), tocPadding).
+			AlignItems(ui.Center).Children(func() {
 			components.Text(c, "目录").FontSize(13).TextColor(t.TextMuted)
 			ui.Spacer(c)
 			s.tocActions(c)
@@ -240,10 +245,14 @@ func (s *State) toc(c *ui.Context) {
 		}
 		// Both ways: an outline deeper than the pane scrolls down, and a
 		// heading wider than it scrolls sideways instead of being cut. The
-		// column takes at least the pane's own width, so that a short
-		// heading's row still stretches across it.
-		ui.ScrollBoth(c).Grow(1).TrackScroll(&s.tocScroll).Children(func() {
-			ui.Column(c).MinWidth(max(0, s.tocW-2*tocPadding)).Gap(t.Space(0.25)).Children(func() {
+		// rows keep the padding and take at least the room it leaves, so that
+		// a short heading's row still stretches across, clear of both bars.
+		ui.ScrollBoth(c).Grow(1).TrackScroll(&s.tocScroll).Label("目录列表").Children(func() {
+			// The pane's own width, padding included: the rows then span the
+			// whole pane, clear of the bars, as they did when the padding was
+			// outside the scroll.
+			ui.Column(c).MinWidth(max(0, s.tocW)).Gap(t.Space(0.25)).
+				Padding(0, tocPadding, tocPadding, tocPadding).Children(func() {
 				ui.Tree(c, func() {
 					s.tocItems(c, buildTOC(s.headings))
 				})
@@ -335,13 +344,18 @@ func (s *State) nativePreview(c *ui.Context) {
 	// with the hook, and the block would slide up out of the pane as the jump
 	// landed: the room is measured and spent in the same layout.
 	s.md.Block = s.jumpMarker
+	// The scroll fills the pane; the room around the text is the column's own,
+	// inside it, so that both bars lie against the pane's edges rather than
+	// inside its padding, where a reader pressing near the edge would drag a
+	// bar while aiming at the text, or miss the bar while aiming at it.
 	ui.ScrollBoth(c).TrackScroll(s.docScroll()).Fill().
-		Padding(bodyPadding-bodyJumpGap, bodyPadding, bodyPadding, bodyPadding).
 		BorderWidth(bodyJumpGap, 0, 0, 0).BorderColor(ui.Transparent).
 		Children(func() {
-			ui.Column(c).Width(max(200, s.bodyPaneWidth()-2*bodyPadding-2)).Gap(12).Children(func() {
-				ui.Text(c, s.sel.path).FontSize(11).TextColor(t.TextMuted)
-				markdown.View(c, s.src, &s.md)
-			})
+			ui.Column(c).Width(max(200, s.bodyPaneWidth()-2)).Gap(12).
+				Padding(bodyPadding-bodyJumpGap, bodyPadding, bodyPadding, bodyPadding).
+				Children(func() {
+					ui.Text(c, s.sel.path).FontSize(11).TextColor(t.TextMuted)
+					markdown.View(c, s.src, &s.md)
+				})
 		})
 }

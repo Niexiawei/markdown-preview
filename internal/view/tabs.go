@@ -29,7 +29,6 @@ func (s *State) openTab(sel docSel) {
 // activateTab makes sel the document shown, without adding a tab.
 func (s *State) activateTab(sel docSel) {
 	s.sel = sel
-	s.status = ""
 	// Another document's outline starts at its top, not where the last
 	// one's scroll was left, and no heading of it is the one last jumped
 	// to. A reload of the same document keeps both.
@@ -70,7 +69,6 @@ func (s *State) closeTab(sel docSel) {
 		s.activateTab(s.tabs[i-1])
 	default:
 		s.sel = docSel{}
-		s.status = ""
 		s.onDocChanged()
 	}
 }
@@ -98,7 +96,6 @@ func (s *State) dropTabsOf(projectID string) {
 	s.tabs = kept
 	if s.sel.project == projectID {
 		s.sel = docSel{}
-		s.status = ""
 		s.onDocChanged()
 	}
 }

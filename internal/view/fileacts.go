@@ -20,11 +20,11 @@ func (s *State) copyDocPath() {
 	}
 	abs, err := s.ws.AbsOf(p.ID, s.sel.path)
 	if err != nil {
-		s.status = "无法复制文件路径：" + err.Error()
+		s.notifyErr("无法复制文件路径：" + err.Error())
 		return
 	}
 	s.sys.CopyText(abs)
-	s.status = "已复制文件路径：" + abs
+	s.notifyDone("已复制文件路径：" + abs)
 }
 
 // copyNodeFile puts a tree entry itself on the clipboard, as the file manager
@@ -35,18 +35,18 @@ func (s *State) copyNodeFile(tr projectTree, n *workspace.Node) {
 	}
 	abs, err := s.absOf(tr, n)
 	if err != nil {
-		s.status = "无法复制：" + err.Error()
+		s.notifyErr("无法复制：" + err.Error())
 		return
 	}
 	if err := s.sys.CopyFiles(abs); err != nil {
-		s.status = "无法复制：" + err.Error()
+		s.notifyErr("无法复制：" + err.Error())
 		return
 	}
 	if n.IsDir {
-		s.status = "已复制文件夹：" + abs
+		s.notifyDone("已复制文件夹：" + abs)
 		return
 	}
-	s.status = "已复制文件：" + abs
+	s.notifyDone("已复制文件：" + abs)
 }
 
 // copyNodeName puts a tree entry's name in the clipboard.
@@ -55,7 +55,7 @@ func (s *State) copyNodeName(n *workspace.Node) {
 		return
 	}
 	s.sys.CopyText(n.Name)
-	s.status = "已复制文件名称：" + n.Name
+	s.notifyDone("已复制文件名称：" + n.Name)
 }
 
 // copyNodePath puts a tree entry's absolute path in the clipboard.
@@ -65,11 +65,11 @@ func (s *State) copyNodePath(tr projectTree, n *workspace.Node) {
 	}
 	abs, err := s.absOf(tr, n)
 	if err != nil {
-		s.status = "无法复制文件路径：" + err.Error()
+		s.notifyErr("无法复制文件路径：" + err.Error())
 		return
 	}
 	s.sys.CopyText(abs)
-	s.status = "已复制文件路径：" + abs
+	s.notifyDone("已复制文件路径：" + abs)
 }
 
 // revealNode shows a directory of the tree in the file manager.
@@ -79,14 +79,14 @@ func (s *State) revealNode(tr projectTree, n *workspace.Node) {
 	}
 	abs, err := s.absOf(tr, n)
 	if err != nil {
-		s.status = "无法打开文件管理器：" + err.Error()
+		s.notifyErr("无法打开文件管理器：" + err.Error())
 		return
 	}
 	if err := s.sys.Reveal(abs); err != nil {
-		s.status = "无法打开文件管理器：" + err.Error()
+		s.notifyErr("无法打开文件管理器：" + err.Error())
 		return
 	}
-	s.status = "已在文件管理器中打开：" + abs
+	s.notify("已在文件管理器中打开：" + abs)
 }
 
 // absOf is a tree entry's absolute path on disk.

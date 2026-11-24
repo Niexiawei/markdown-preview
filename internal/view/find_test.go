@@ -280,8 +280,8 @@ func TestFindJumpWithoutAWebViewOnlyMovesTheList(t *testing.T) {
 	if s.wv != nil {
 		t.Fatal("a web view was made without a window")
 	}
-	if !strings.Contains(s.status, "WebView") {
-		t.Errorf("status = %q, want the web view's absence reported", s.status)
+	if !strings.Contains(s.Status(), "WebView") {
+		t.Errorf("status = %q, want the web view's absence reported", s.Status())
 	}
 }
 
@@ -763,5 +763,37 @@ func TestABandInAShortWindowLeavesTheOtherIslandAlone(t *testing.T) {
 	if s.find.shownList != list || s.find.shownPreview != preview {
 		t.Errorf("shown = %v/%v, want %v/%v: a drag of the list moved the preview",
 			s.find.shownList, s.find.shownPreview, list, preview)
+	}
+}
+
+// TestTheFindPanesScrollAtTheIslandsEdges pins where the panel's scrollbars sit:
+// against the islands' borders rather than inside their padding, so that a press
+// near an island's edge drags the list instead of landing on a row under the
+// thumb. The rows keep the room they had.
+func TestTheFindPanesScrollAtTheIslandsEdges(t *testing.T) {
+	_, tt := newFindPanel(t, "甲 目标\n乙 目标\n丙\n")
+	for _, c := range []struct {
+		island, scroll, row string
+	}{
+		{"匹配行", "匹配行列表", ""},
+		{"命中上下文", "命中上下文列表", "第 1 行上下文"},
+	} {
+		c := c
+		island, ok := tt.Find(c.island)
+		if !ok {
+			t.Fatalf("texts = %q, want the pane named %q", tt.Texts(), c.island)
+		}
+		scroll, ok := tt.Find(c.scroll)
+		if !ok {
+			t.Fatalf("texts = %q, want the scroll of %q", tt.Texts(), c.island)
+		}
+		// The scroll takes the face of the island, padding included: it is
+		// wider than the room the rows have, and starts inside that room.
+		if scroll.W <= island.W-2*findIslandPad {
+			t.Errorf("%s scroll = %v, want it across the island's face at %v", c.island, scroll, island)
+		}
+		if scroll.X >= island.X+findIslandPad {
+			t.Errorf("%s scroll starts at %v, want it inside the island's padding of %v", c.island, scroll.X, island.X)
+		}
 	}
 }

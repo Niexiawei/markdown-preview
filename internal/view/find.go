@@ -265,17 +265,17 @@ func (s *State) gotoMatch(i int) {
 // whichever of the two runs out first.
 func (s *State) findInWeb() {
 	if s.wv == nil {
-		s.status = "WebView 不可用，未在页面内高亮"
+		s.notifyErr("WebView 不可用，未在页面内高亮")
 		return
 	}
 	res, err := s.wv.Page().FindInPage(s.find.query, mygo.FindOptions{})
 	if err != nil {
-		s.status = "无法在页面中查找：" + err.Error()
+		s.notifyErr("无法在页面中查找：" + err.Error())
 		return
 	}
 	for n := 1; n <= min(s.find.current, res.Matches-1); n++ {
 		if _, err := s.wv.Page().FindInPage(s.find.query, mygo.FindOptions{FindNext: true}); err != nil {
-			s.status = "无法在页面中查找：" + err.Error()
+			s.notifyErr("无法在页面中查找：" + err.Error())
 			return
 		}
 	}
@@ -348,13 +348,25 @@ func (s *State) findPanel(c *ui.Context) {
 }
 
 // findIsland fills one pane of the search panel: a face of its own, rounded,
-// bordered and lifted off the page, with findIslandPad of room inside.
+// bordered and lifted off the page. The room inside is the content's own, so
+// that a pane whose content scrolls keeps the padding for its rows and leaves
+// the face to the bars (findScrollPane).
 func findIsland(c *ui.Context) ui.Element {
 	t := c.Theme()
 	return ui.Column(c).FillWidth().Radius(t.Radius*1.5).
 		Background(t.Surface).Border(1, t.Border).
-		Shadow(0, t.Space(0.5), t.Space(1.5), 0, t.Text.Alpha(0.10)).
-		Padding(findIslandPad)
+		Shadow(0, t.Space(0.5), t.Space(1.5), 0, t.Text.Alpha(0.10))
+}
+
+// findScrollPane fills an island with a scroll whose bars lie against the
+// island's border rather than inside its padding: a press near the edge drags
+// the bar instead of landing on a row under the thumb. The padding is the
+// rows' own, inside the scroll, so what they show is what they showed.
+func findScrollPane(c *ui.Context, label string, build func()) {
+	ui.ScrollBoth(c).Grow(1).Label(label).Children(func() {
+		ui.Column(c).MinWidth(findPaneInner + 2*findIslandPad).Gap(c.Theme().Space(0.25)).
+			Padding(findIslandPad).Children(build)
+	})
 }
 
 // findCaption names what a pane of the panel holds.
@@ -366,7 +378,7 @@ func findCaption(c *ui.Context, text string) {
 // walking the matches or closing the panel.
 func (s *State) findField(c *ui.Context) {
 	t := c.Theme()
-	island := findIsland(c).Label("搜索输入")
+	island := findIsland(c).Label("搜索输入").Padding(findIslandPad)
 	island.Children(func() {
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(t.Space(0.5)).Children(func() {
 			field := ui.SearchField(c, &s.find.query).Label("在文档中查找")
@@ -426,25 +438,23 @@ func (s *State) findList(c *ui.Context) {
 		return
 	}
 	findIsland(c).Label("匹配行").Height(s.find.shownList).Margin(t.Space(1.5), 0, 0, 0).Children(func() {
-		ui.ScrollBoth(c).Grow(1).Children(func() {
-			ui.Column(c).MinWidth(findPaneInner).Gap(t.Space(0.25)).Children(func() {
-				for i, m := range s.find.matches {
-					i, m := i, m
-					row := ui.Row(c).Radius(t.Radius).AlignItems(ui.Center).
-						Padding(t.Space(0.25), t.Space(0.5)).Gap(t.Space(0.75))
-					if i == s.find.current {
-						row.Background(selectedRowTint(t))
-					}
-					row.Children(func() {
-						components.Text(c, strconv.Itoa(m.Line)).FontSize(10).
-							TextColor(t.TextMuted).Width(t.Rem(2.5))
-						components.Text(c, trimEllipsis(m.Text, 120)).FontSize(11).SingleLine()
-					})
-					if row.Clicked() {
-						s.gotoMatch(i)
-					}
+		findScrollPane(c, "匹配行列表", func() {
+			for i, m := range s.find.matches {
+				i, m := i, m
+				row := ui.Row(c).Radius(t.Radius).AlignItems(ui.Center).
+					Padding(t.Space(0.25), t.Space(0.5)).Gap(t.Space(0.75))
+				if i == s.find.current {
+					row.Background(selectedRowTint(t))
 				}
-			})
+				row.Children(func() {
+					components.Text(c, strconv.Itoa(m.Line)).FontSize(10).
+						TextColor(t.TextMuted).Width(t.Rem(2.5))
+					components.Text(c, trimEllipsis(m.Text, 120)).FontSize(11).SingleLine()
+				})
+				if row.Clicked() {
+					s.gotoMatch(i)
+				}
+			}
 		})
 	})
 }
@@ -533,22 +543,22 @@ func (s *State) findPreview(c *ui.Context) {
 	from := max(1, m.Line-findContext)
 	to := min(len(lines), m.Line+findContext)
 	findIsland(c).Label("命中上下文").Height(s.find.shownPreview).Children(func() {
-		findCaption(c, "第 "+strconv.Itoa(m.Line)+" 行上下文")
-		ui.ScrollBoth(c).Grow(1).Children(func() {
-			ui.Column(c).MinWidth(findPaneInner).Gap(t.Space(0.25)).Children(func() {
-				for n := from; n <= to; n++ {
-					text := strings.TrimSuffix(lines[n-1], "")
-					row := ui.Row(c).AlignItems(ui.Center).Gap(t.Space(0.75))
-					if n == m.Line {
-						row.Background(t.Accent.Alpha(0.08))
-					}
-					row.Children(func() {
-						components.Text(c, strconv.Itoa(n)).FontSize(10).
-							TextColor(t.TextMuted).Width(t.Rem(2.5))
-						s.markedLine(c, text, n == m.Line)
-					})
+		ui.Row(c).Padding(findIslandPad, findIslandPad, t.Space(0.25), findIslandPad).Children(func() {
+			findCaption(c, "第 "+strconv.Itoa(m.Line)+" 行上下文")
+		})
+		findScrollPane(c, "命中上下文列表", func() {
+			for n := from; n <= to; n++ {
+				text := strings.TrimSuffix(lines[n-1], "")
+				row := ui.Row(c).AlignItems(ui.Center).Gap(t.Space(0.75))
+				if n == m.Line {
+					row.Background(t.Accent.Alpha(0.08))
 				}
-			})
+				row.Children(func() {
+					components.Text(c, strconv.Itoa(n)).FontSize(10).
+						TextColor(t.TextMuted).Width(t.Rem(2.5))
+					s.markedLine(c, text, n == m.Line)
+				})
+			}
 		})
 	})
 }

@@ -34,11 +34,12 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
 | `internal/workspace` | 扫描 / 读取 / 解析缓存 / 标题缓存 / TOC 与 slug / 搜索 / 正文内查找（`find.go` 的 `FindIn`）；`Index` 接口 |
 | `internal/watch` | `mygo.WatchFiles` → `ChangeSet`（新增 / 删除 / 重命名 / 写入） |
 | `internal/mcp` | `POST /mcp` JSON-RPC 2.0，四个只读工具 |
-| `internal/view` | Onevra 主题（`theme.go`）与外壳各区域：侧栏顶栏（项目面板 + 右键菜单）、树、侧栏工具栏、标签栏（`tabs.go`，占 shell 的标题槽位）、页面第一行的路径与渲染开关（`titleRow`）、预览、状态栏、MCP 设置面板；`find.go` 是悬浮搜索（三块浮岛 + 两块数据岛各自的可拖拽高度 `findGripBand`）与跳转，`native.go` 是原生正文与跳转（`jumpToBlock` / `jumpMarker`），`zoom.go` 是正文缩放；`system.go` 是桌面动作接口 |
+| `internal/notices` | 消息账本与 `notices.json`（最新在前、无上限、未读标记）；原子写，**不 import ui**，可无窗口测试 |
+| `internal/view` | Onevra 主题（`theme.go`）与外壳各区域：侧栏顶栏（项目面板 + 右键菜单）、树、侧栏工具栏（含铃铛）、标签栏（`tabs.go`，占 shell 的标题槽位）、页面第一行的路径与渲染开关（`titleRow`）、预览、消息历史浮层（`notices.go`）、MCP 设置面板；`find.go` 是悬浮搜索（三块浮岛 + 两块数据岛各自的可拖拽高度 `findGripBand`）与跳转，`native.go` 是原生正文与跳转（`jumpToBlock` / `jumpMarker`），`zoom.go` 是正文缩放；`system.go` 是桌面动作接口 |
 | `internal/tray` | 托盘：图标与两条菜单（打开主页面 / 退出）、关闭窗口即隐藏、`Show`（托盘与第二次启动共用）、窗口/任务栏图标。图片在 `assets/`，用 `go:embed` 打包；纯逻辑（菜单项、关闭决策、图标尺寸）无窗口可测 |
 | `.github/workflows/build.yml` | CI：gofmt / vet / 测试（Ubuntu，带 Pango），再在 macOS / Ubuntu 上交叉编译三平台安装包；推 `v*` 标签时把产物挂到 Release |
 
-依赖方向：`view → workspace`、`mcp → workspace`、`workspace → config`。
+依赖方向：`view → workspace`、`view → notices`、`mcp → workspace`、`workspace → config`。
 
 ## 硬规则
 
@@ -81,13 +82,29 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
   同时更新 README 的表格。
 - **改忽略规则**：只改 `workspace.Ignored`（扫描与监听共用它），并补 `TestIgnoredRules`。
 - **改 TOC 缩进/交互**：`view/native.go` 的 `buildTOC` + `tocItems`。
+  **滚动条在窗格边缘，不在内边距里**：`toc` 的列不再加 `Padding`（只有表头那一行加），
+  内边距给了滚动容器里的列（`Padding(0, tocPadding, tocPadding, tocPadding)`）。两个后果：
+  （1）`MinWidth` 是**含内边距的边框盒**，所以那里写的是 `s.tocW`（整个窗格宽）而不是
+  `s.tocW-2*tocPadding`——写小了会让行缩到 232 以内，`TestTOCRowsFillThePane`（点窗格右缘选标题）就红；
+  （2）滚动容器带无障碍名「目录列表」，这是测试量它位置（`X==0`、`W==窗格宽`）的唯一办法。
 - **改跳转落点（顶部/居中/是否平滑）**：只改 `view/native.go` 的 `jumpMarker`（`ScrollIntoViewOptions`）与
   `view/webview.go` 的 `headingScrollJS`，两边要一致；不要在调用处各写一套滚动。
 - **改渲染样式**：原生在 `markdown.Options`（`loadDoc` 里装配）；webview 在 `webview.go` 的 `docCSS`。
 - **改标签栏/标题行/侧栏**：`tabs.go` 的 `tabBarAt`（标签、⌄ 列表）挂在 shell 的 `ContentTitle` 槽位；
   `view.go` 的 `titleRow` → `contentTitle`（路径 + 复制 + `modeToggle`）是 `Content` 的第一行；
-  `leftHeader`（项目面板：点一行开/关、右键打开/复制/移除）、`leftToolbar`（动作图标）、`statusBar` 各就各位。
+  `leftHeader`（项目面板：点一行开/关、右键打开/复制/移除）、`leftToolbar`（动作图标 + 铃铛）各就各位。
   改布局时 `View` 与 `Content` 两条拼装路径要一起改（`TestShellSlotsBuild`、`TestTabsSitAboveTheTitle`）。
+- **改提示消息**：写入只调 `internal/view/notices.go` 的 `notify` / `notifyDone` / `notifyWarn` / `notifyErr`，
+  不要直接在 view 里 `c.AddToast`（绕过了账本、去重与历史）；浮层与铃铛也在这个文件（`bellButton` /
+  `noticePanel` / `noticeRow` / `noticeBadgeText` / `noticeTime`）。账本自己的行为（落盘、上限、未读）改
+  `internal/notices`，并补 `TestMessagesSurviveARestart` 一类的测试；view 侧补 `TestTheHistory*`、`TestTheBadge*`。
+  **浮层的尺寸常量在 `notices.go` 顶上**：宽度 `noticePanelWidth` 360 DIP，高度是**窗口内容高度的比例**
+  （`noticePanelMinShare` 0.5 与 `noticePanelMaxShare` 0.7，靠 `MinHeight` / `MaxHeight` 压在面板列上，
+  列表用 `Grow(1)` 吃剩下的，超过上限就内部滚动）。比例而不是 DIP，就是为了 resize 时跟着变；
+  面板列带无障碍名「消息历史」，这是测试量它高度的唯一办法。
+  两个测试陷阱：（1）`TestTheHistory*` 里的 400/560 是**字面量**，不要改成引用常量，否则改常量就不再失败；
+  （2）量高度要**直接建 `s.noticePanel`**，不要通过 `s.View` 量：测试用的并排布局里侧栏不一定撑满高度，
+  弹层的可用空间会小于真实壳层，量出来的高度会被弹层位置钳住（曾经量到 401 而不是 560）。
 - **改正文内查找**：匹配规则只改 `workspace.FindIn`（字面子串、忽略大小写、上限 500），补 `TestFindIn*`；
   面板与跳转在 `view/find.go`（三块浮岛 `findIsland` / 匹配列表 / 上下文预览 / `Cmd+F` 与 `Cmd+G`）；
   命中跳转只调 `jumpToBlock`，与目录、链接共用同一条路（见「已知的坑」里的 `State.jump`）。
@@ -127,8 +144,11 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
   `os.Symlink` 需要管理员权限，相关用例会 `t.Skip`。
 - **webview 重载丢滚动位置**（原生模式保留），已写进 README「已知限制」。
 - **`App.SetName` 会改配置目录**：`Path(PathUserData)` 是 `UserConfigDir/<App.Name()>`，名字一变，
-  `config.json` / `mcp.json` 就跑到新目录，看起来像「配置丢了」。要改显示名就改 `mygo.json`（打包名）或
-  shell 的 `Title`，不要在 `main.go` 里 `SetName`。
+  `config.json` / `notices.json` / `window-state.json` / `mcp.json` 就跑到新目录，看起来像「配置丢了」。
+  要改显示名就改 `mygo.json`（打包名）或 shell 的 `Title`，不要在 `main.go` 里 `SetName`。
+- **未打包时目录名就是 exe 文件名**：`App.Name()` 没有 bundle 名时取可执行文件名，所以
+  `go build -o mdpreview.exe .` 用 `…\AppData\Roaming\mdpreview\`，而本文件推荐过的 `go build -o mp.exe .`
+  会另起一个空的 `…\Roaming\mp\`（本机两者都存在过）。调试时记住自己用的是哪个名字，否则会以为历史/配置没写盘。
 - **「退出」退不掉 / 托盘留幽灵图标**：前者是 `keep.quitting` 没接上（见硬规则）；后者是漏了
   `App.OnWillQuit` 里的 `tray.Destroy()`，Windows 会把图标留到鼠标划过才消失。
 - **`IconIsTemplate` 只认不透明像素**：托盘图必须是「实心剪影 + 透明底」；带底色方块或半透明渐变，
@@ -150,7 +170,18 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
 - **文档身份是 `docSel{project, path}`**：树、正文、渲染模式表、监听都以它为准；只有一个 `path` 时两个项目里的
   `docs/a.md` 会互相串。目录折叠键是 `项目ID + ":" + 路径`，项目节点的键是 `"project:" + 项目ID`。
 - **树只在打开项目数 ≥ 2 时多一层项目名**：`fileTree` 里按 `len(s.trees)` 分叉，改布局时别让单项目也长出这层。
-- **状态栏只放提示文字**（`statusBar`，高 24）：渲染开关、路径都不在这里，它们在标签栏下面那一行（`titleRow`）。
+- **没有底部状态栏**：提示一律走 `notify*` → `internal/notices` 的账本 → 构建期 `updateToasts` 弹右下角 Toast /
+  铃铛浮层看历史。不要在 view 里直接 `c.AddToast`（会绕过账本、去重与历史）；改 Toast 落位只改
+  `view.ToastOptions()`。
+- **浮层开着 = 已读**：`bellButton` 在开头就把未读标掉（`MarkSeen` 没有变化时不写盘），所以新消息到达时
+  不会在正显示着的列表上冒出角标。
+- **Toast 按 `noticeShown` 水位线去重**：一次点击会建两遍视图（同下面那条坑），不去重会弹两个、读屏还会念两遍。
+  `New` 里把水位线对到账本最新一条，否则重启会把上次的旧消息全部重播一遍（历史要留，Toast 不要）。
+- **`Content` 必须 `drain()`**：shell 只有它这一条构建路径，漏了它，`Post` 投递的 watcher 变更在真实窗口里
+  永不生效（历史 bug，2026-11-24 修）。`View`（测试用）与 `Content` 的 `drain` → `handleShortcuts` →
+  `updateToasts` 三步顺序要一致。
+- **`view.New(…, "")` 表示无用户数据目录**：账本只在内存里，`Save` 是 no-op。`dir` 非空时是 `notices.json`
+  所在目录（与 `config.json` 同目录）。测试一律传 `t.TempDir()`，不要在仓库根目录写出文件。
 - **标题槽的 24 DIP 首部间距是 onevra 写死的**（`shells/sidebar/shell.go` 里 `titleInset = 24`，`ShellOptions`
   没有对应字段）。本项目要 12，所以 `ContentTitle` 调 `tabBarAt(c, -12)`，只把**标签条**（不含 ⌄ 按钮）往左拉，
   ⌄ 留在标题槽自带的右侧内边距上——整行平移会让右边多出 16 的空档（用户报过「移动太过头」）。
@@ -168,13 +199,23 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
   （否则会差一个标签、选中的那个永远切着边）；用户滚轮一动就清掉 `tabPending`，让位给用户。
   它必须**在构建滚动容器之前**
   设 `tabScroll.X`（容器构建后再设会被忽略），并且首帧（`Bounds` 为 0 / `MaxX` 为 0）不要记 `tabShown`，否则永远不滚。
+- **滚动条一律贴窗格/岛的边缘，不放在内边距里**（用户两次提的同一个问题）：目录树、正文、搜索面板两块数据岛
+  都是「外层不加 padding，滚动容器铺满，内边距给滚动内容」：目录树的 `toc` 自己拼，正文看 `nativePreview`
+  （padding 在内容列上，`bodyJumpGap` 的透明上边框仍在滚动容器上），搜索面板用 `findScrollPane`。
+  原因是滚动条的命中区在滚动容器的内边距盒里：padding 在外层时滚动条会压在文字上，窗格边缘又正好是命中区。
+  两个量尺寸的坑：`MinWidth`/`Width` 是**含内边距的边框盒**（目录树写 `s.tocW`，正文列写 `bodyPaneWidth-2`，
+  搜索面板写 `findPaneInner+2*findIslandPad`）；滚动容器要带读屏名（`目录列表` / `匹配行列表` /
+  `命中上下文列表`）才能在测试里量到它的位置。正文那处改不了 Tester 里可断言的量（滚动条不是带名字的节点，
+  文本几何也没变），靠 `TestBodyColumnFollowsPaneWidth` 保证不退化。
 - **搜索面板是三块浮岛**（`findIsland`：输入框 / 匹配行 / 上下文），外层只给位置，**没有背景**，
   也**没有 `Gap`**：间距由「匹配列表岛的 6 DIP 上外边距」+「两条 `findGrip`（10 DIP）高的拖拽带
   （列表下、上下文下各一条）」构成，改间距要三处一起改，否则会出现「带子占位 + 间距」的双份留白。
   别再把它塞回一个带 Surface 的整块卡片里：那样列表最后一行和上下文第一行会读成一列。
   三块岛都给读屏名（`搜索输入` / `匹配行` / `命中上下文`，也是测试里 `tt.Find` 取岛矩形的唯一办法），
-  两条带子也有（`调整匹配列表高度` / `调整命中上下文高度`）。上下文岛顶上那行 `第 N 行上下文` 是给人分清的。
-  岛内宽度用 `findPaneInner`，别再用 `findPaneWidth - 2*Space(1)`。
+  两条带子也有（`调整匹配列表高度` / `调整命中上下文高度`）；两块数据岛的滚动容器另各有名字
+  （`匹配行列表` / `命中上下文列表`）。上下文岛顶上那行 `第 N 行上下文` 是给人分清的。
+  岛内宽度用 `findPaneInner`，别再用 `findPaneWidth - 2*Space(1)`；滚动内容的列（`findScrollPane`）
+  自己带 padding，`MinWidth` 要写成 `findPaneInner+2*findIslandPad`（边框盒含 padding）。
 - **拖拽带的高度算法**：`Dragged()` 返回的是**上一帧读到之后的增量**（`ui/runtime.go` 的 `forgetInput`
   每帧把 `dragX/dragY` 清零），所以每帧是把 `dy` 加到当前高度上；写成「从按下起的累计位移」会指数放大，
   一拖就撞上限。mygo 的 `ui.Split` 是同一套语义。
@@ -212,7 +253,8 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
   滚动容器的顶边、平滑过渡、并钳制在 `MaxY`。**不要再给 `md.Anchor` / `AnchorVersion` 赋值**：那是
   `ScrollNearest` + 无动画（一帧跳过去，且只保证"露一点"）。`find:` 锚点前缀已删。
 - **跳转在顶上留 16 DIP**（`bodyJumpGap`）：`ScrollIntoView` 对齐的是滚动容器的**边框**、不算内边距，
-  所以这 16 是正文滚动容器的**透明上边框**（内边距相应减去 16，静止时的样子不变）。要改这个数就改
+  所以这 16 是正文滚动容器的**透明上边框**（内容列的上内边距相应减去 16，静止时的样子不变；
+  注意内边距在**内容列**上，不在滚动容器上，见上面那条）。要改这个数就改
   `native.go` 的 `bodyJumpGap`，并把 webview 的 `scroll-margin-top`（`docCSS`）一起改，两个后端才一致。
 - **"近末尾落到底部"是 reveal 钳制出来的**，不是算出来的：`ScrollStart` 会要一个超过 `MaxY` 的位置，
   容器把它夹到 `MaxY`。不要自己读 `MaxY` 再 `ScrollTo`，那会与钳制、与用户滚动抢。

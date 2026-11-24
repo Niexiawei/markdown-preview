@@ -16,6 +16,7 @@ import (
 func (s *State) View(c *ui.Context) {
 	s.drain()
 	s.handleShortcuts(c)
+	s.updateToasts(c)
 	s.openURL = func(url string) { c.Services().OpenURL(url) }
 	t := c.Theme()
 	ui.Row(c).Fill().Background(t.Background).Children(func() {
@@ -30,7 +31,6 @@ func (s *State) View(c *ui.Context) {
 			ui.Row(c).Height(sidebar.HeaderHeight(c)).Children(func() { s.ContentTitle(c) })
 			s.titleRow(c)
 			s.preview(c)
-			s.statusBar(c)
 		})
 	})
 }
@@ -68,18 +68,16 @@ func (s *State) ContentTitle(c *ui.Context) {
 	s.tabBarAt(c, titleInsetWanted-titleInsetGap)
 }
 
-// Content is the shell's page: the outline and the body, with the status bar
-// under them.
+// Content is the shell's page: the outline and the body, filling the page.
 func (s *State) Content(c *ui.Context) {
+	s.drain()
 	s.handleShortcuts(c)
+	s.updateToasts(c)
 	ui.Column(c).Fill().Children(func() {
 		// The header, which holds the tabs, floats over the top of the page.
 		ui.Row(c).Height(sidebar.HeaderHeight(c))
 		s.titleRow(c)
-		ui.Column(c).Grow(1).Children(func() {
-			s.preview(c)
-			s.statusBar(c)
-		})
+		s.preview(c)
 	})
 }
 
@@ -168,6 +166,7 @@ func (s *State) leftToolbar(c *ui.Context) {
 			s.Refresh()
 		}
 		ui.Spacer(c)
+		s.bellButton(c)
 		s.mcpSettings(c)
 	})
 }
@@ -299,14 +298,4 @@ func (s *State) nodeMenu(c *ui.Context, item ui.Element, tr projectTree, n *work
 // opens its directories.
 func (tr projectTree) childOf(node *workspace.Node) projectTree {
 	return projectTree{project: tr.project, root: node}
-}
-
-// statusBar builds the row at the bottom: the rendering mode of the document
-// shown, and what the window is doing.
-func (s *State) statusBar(c *ui.Context) {
-	t := c.Theme()
-	ui.Row(c).Height(24).PaddingX(t.Space(1)).AlignItems(ui.Center).Gap(t.Space(1)).Children(func() {
-		components.Text(c, trimEllipsis(s.status, 140)).FontSize(11).TextColor(t.TextMuted).SingleLine()
-		ui.Spacer(c)
-	})
 }
