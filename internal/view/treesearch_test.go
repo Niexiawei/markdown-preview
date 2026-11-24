@@ -495,3 +495,26 @@ func TestEscapeClosesOnlyTheTreeSearch(t *testing.T) {
 		t.Errorf("tree query = %q, want it cleared", s.treeSearch.query)
 	}
 }
+
+// TestCandidateIndexFindsEveryCandidate pins the lookup the filtered tree asks
+// for on every row it builds: each candidate is found where the list has it, and
+// nothing else is a candidate.
+func TestCandidateIndexFindsEveryCandidate(t *testing.T) {
+	s, root := newState(t)
+	for i := range 30 {
+		writeDoc(t, root, "plan_"+strconv.Itoa(i)+".md", "# P\n")
+	}
+	writeDoc(t, root, "other.md", "# O\n")
+	s.Refresh()
+	openTreeSearchOn(s, "plan")
+
+	id := s.Projects()[0].ID
+	for i, cell := range s.treeSearch.candidates {
+		if got := s.candidateIndex(cell.project, cell.path); got != i {
+			t.Errorf("candidateIndex(%q) = %d, want %d", cell.path, got, i)
+		}
+	}
+	if got := s.candidateIndex(id, "other.md"); got != -1 {
+		t.Errorf("candidateIndex(other.md) = %d, want -1", got)
+	}
+}

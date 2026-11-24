@@ -22,8 +22,10 @@ type treeSearchState struct {
 	needFocus bool
 	query     string
 	// candidates are the files the phrase matches, in the order the tree
-	// shows them.
+	// shows them, and index names where each of them sits: the tree asks about
+	// every file it builds, so the lookup cannot be a walk of the candidates.
 	candidates []docSel
+	index      map[docSel]int
 	// dirs names the directories holding a candidate, by "projectID:path": a
 	// search shows those, the candidates, and the project nodes above them.
 	dirs map[string]bool
@@ -57,7 +59,7 @@ func (s *State) setTreeQuery(q string) {
 // frame, and never with a scan of the disk.
 func (s *State) refreshCandidates() {
 	t := &s.treeSearch
-	t.candidates, t.dirs = nil, map[string]bool{}
+	t.candidates, t.dirs, t.index = nil, map[string]bool{}, map[docSel]int{}
 	if !s.searching() {
 		t.current = 0
 		return
@@ -86,8 +88,9 @@ func (s *State) matchTree(tr projectTree, n *workspace.Node) bool {
 		if !workspace.FuzzyMatch(child.Name, s.treeSearch.query) {
 			continue
 		}
-		s.treeSearch.candidates = append(s.treeSearch.candidates,
-			docSel{project: tr.project.ID, path: child.Path})
+		cell := docSel{project: tr.project.ID, path: child.Path}
+		s.treeSearch.index[cell] = len(s.treeSearch.candidates)
+		s.treeSearch.candidates = append(s.treeSearch.candidates, cell)
 		found = true
 	}
 	return found
@@ -152,10 +155,8 @@ func (s *State) closeTreeSearch() { s.treeSearch.open = false }
 // candidateIndex is where a file of the tree sits among the candidates, or -1
 // when the search does not offer it.
 func (s *State) candidateIndex(projectID, path string) int {
-	for i, c := range s.treeSearch.candidates {
-		if c.project == projectID && c.path == path {
-			return i
-		}
+	if i, ok := s.treeSearch.index[docSel{project: projectID, path: path}]; ok {
+		return i
 	}
 	return -1
 }

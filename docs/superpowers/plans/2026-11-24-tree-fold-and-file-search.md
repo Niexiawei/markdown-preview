@@ -520,4 +520,11 @@ git commit -m "docs: 项目树批量折叠与文件名搜索的规格与计划�
   树滚动容器的 `Label`/`TrackScroll`/`HandleInput`、`View` 侧栏 `FillHeight`）、`theme.go`（两种底色）、
   `find.go`（`openFind` 收起树搜索并清焦点、交出 `Cmd+F`、`Esc` 加守卫）、`fileacts.go`（改调 `searchShortcuts`）、
   `native.go` / `webview.go`（正文滚动容器清焦点）。
-- 文档：README（用法 + 快捷键）、CHANGELOG（新增两条）、AGENTS（结构表、改动指引、6 条新坑）、规格末节。
+- 文档：README（用法 + 快捷键）、CHANGELOG（新增两条）、AGENTS（结构表、一条改动指引、5 条新坑）、规格末节。
+
+### 审查后的修复
+
+- **候选查找从线性扫改成索引**：`treeSearchState` 新增 `index map[docSel]int`（`refreshCandidates` 里建）。
+  过滤后的树给每一行都问一次「它是不是候选」，线性扫是 `文件数 × 候选数`：3000 个文件的项目里每帧
+  约 9M 次比较（`BenchmarkCandidateLookup` 实测 11.2 ms/帧，敲字会卡）。改成 map 之后 0.077 ms/帧，
+  行为不变（`TestCandidateIndexFindsEveryCandidate` 钉住每个候选都查得到、非候选查不到）。
