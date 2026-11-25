@@ -289,17 +289,8 @@ func (s *State) fileTree(c *ui.Context) {
 			components.Text(c, "这个目录下没有 markdown 文件").FontSize(12).TextColor(t.TextMuted)
 			return
 		}
-		if s.searching() {
-			if len(s.treeSearch.candidates) == 0 {
-				components.Text(c, "没有匹配的文件").FontSize(12).TextColor(t.TextMuted)
-				return
-			}
-			// The search shows the candidates as the tree's own list still:
-			// the outline takes it over once it can show a filtered tree.
-			ui.Scroll(c).Grow(1).Label("项目树").TrackScroll(&s.treeScroll).
-				HandleInput(s.treePress).Children(func() {
-				ui.Tree(c, func() { s.treeMatched(c) })
-			})
+		if s.searching() && len(s.treeSearch.candidates) == 0 {
+			components.Text(c, "没有匹配的文件").FontSize(12).TextColor(t.TextMuted)
 			return
 		}
 		s.treeBody(c)

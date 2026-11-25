@@ -103,8 +103,6 @@ type State struct {
 	// it was not.
 	treeSearch  treeSearchState
 	treeFocused bool
-	// treeScroll is how far the tree scrolls.
-	treeScroll ui.ScrollState
 
 	// The document shown: its source, its parse, the outline built from it,
 	// and what the native markdown view shows it with.

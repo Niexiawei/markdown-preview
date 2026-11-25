@@ -21,8 +21,25 @@ type treeKey struct {
 // Outline, so the window builds only the rows it shows, however many entries
 // the projects have.
 func (s *State) treeBody(c *ui.Context) {
+	if s.searching() && s.treeSearch.reveal {
+		s.revealCandidate(c)
+	}
 	ui.Outline(c, &s.treeOpen, s.roots(), s.children, func(k treeKey) { s.treeRow(c, k) }).
 		Grow(1).Label("项目树").ObserveInput(func(ev ui.InputEvent) { s.treePress(ev) })
+}
+
+// revealCandidate slides the tree to the candidate the keyboard is on, for the
+// rest of the frame that asked: a click builds the view twice, and the ask must
+// outlive the first build (as State.jump does).
+func (s *State) revealCandidate(c *ui.Context) {
+	if len(s.treeSearch.candidates) == 0 {
+		return
+	}
+	cell := s.treeSearch.candidates[min(s.treeSearch.current, len(s.treeSearch.candidates)-1)]
+	if row := s.rowOf(s.roots(), treeKey{project: cell.project, path: cell.path}); row >= 0 {
+		s.treeOpen.List.ScrollIntoView(row)
+		s.treeSearch.revealSeen = c.Now()
+	}
 }
 
 // roots are the tree's top level: the entries of the window's one project, or
@@ -33,6 +50,10 @@ func (s *State) roots() []treeKey {
 	}
 	roots := make([]treeKey, 0, len(s.trees))
 	for _, tr := range s.trees {
+		if s.searching() && !s.projectHasCandidate(tr.project.ID) {
+			// The phrase reaches nothing in this project: no empty node.
+			continue
+		}
 		roots = append(roots, treeKey{project: tr.project.ID})
 	}
 	return roots
@@ -47,7 +68,19 @@ func (s *State) children(k treeKey) []treeKey {
 	}
 	kids := make([]treeKey, 0, len(n.Children))
 	for _, child := range n.Children {
-		kids = append(kids, treeKey{project: k.project, path: child.Path})
+		key := treeKey{project: k.project, path: child.Path}
+		if s.searching() {
+			// The search shows what it matches, and the directories above
+			// what it matches.
+			if child.IsDir {
+				if !s.treeSearch.dirs[key] {
+					continue
+				}
+			} else if s.candidateIndex(k.project, child.Path) < 0 {
+				continue
+			}
+		}
+		kids = append(kids, key)
 	}
 	return kids
 }
@@ -130,7 +163,18 @@ func (s *State) treeRow(c *ui.Context, k treeKey) {
 	}
 	row := ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(t.Space(0.75)).
 		Padding(t.Space(0.5), t.Space(1))
-	if k.path != "" && k.project == s.sel.project && k.path == s.sel.path {
+	switch fill := s.treeRowFill(k.project, k.path); {
+	case k.path == "":
+	case s.searching():
+		// The tree already shows nothing but matches: the candidate the
+		// keyboard is on reads stronger than the rest.
+		switch fill {
+		case rowCurrent:
+			row.Background(currentCandidateTint(t))
+		case rowCandidate:
+			row.Background(candidateRowTint(t))
+		}
+	case k.project == s.sel.project && k.path == s.sel.path:
 		row.Background(selectedRowTint(t))
 	}
 	if k.path == "" {
@@ -149,7 +193,12 @@ func (s *State) treeRow(c *ui.Context, k treeKey) {
 		row.OnClick(func() { s.toggleTreeKey(k) })
 		return
 	}
-	row.OnClick(func() { s.selectDocIn(k.project, k.path) })
+	row.OnClick(func() {
+		if i := s.candidateIndex(k.project, k.path); i >= 0 {
+			s.gotoCandidate(i)
+		}
+		s.selectDocIn(k.project, k.path)
+	})
 }
 
 // setTreeKeyOpen opens or closes the children of a row, as a click on its arrow

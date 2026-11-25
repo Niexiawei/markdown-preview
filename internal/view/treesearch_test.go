@@ -56,7 +56,7 @@ func TestCandidatesMarkTheirDirectories(t *testing.T) {
 	want := []string{id + ":docs", id + ":docs/deep"}
 	got := make([]string, 0, len(s.treeSearch.dirs))
 	for key := range s.treeSearch.dirs {
-		got = append(got, key)
+		got = append(got, key.project+":"+key.path)
 	}
 	slices.Sort(got)
 	if !slices.Equal(got, want) {
@@ -220,8 +220,62 @@ func TestSteppingTheCurrentCandidateScrollsTheTree(t *testing.T) {
 	tt := ui.NewTester(s.View, 1000, 300)
 	tt.Frame()
 	tt.Frame()
-	if s.treeScroll.Y <= 0 {
-		t.Errorf("treeScroll.Y = %v, want the tree scrolled to the candidate", s.treeScroll.Y)
+	first, last := s.treeOpen.List.Visible()
+	if want := s.rowOf(s.roots(), treeKey{project: s.Trees()[0].project.ID, path: "plan_39.md"}); want < first || want > last {
+		t.Errorf("rows %d..%d visible, want row %d: the tree slid to the candidate", first, last, want)
+	}
+}
+
+// TestTheSearchShowsOnlyWhatMatchesInTheOutline pins the filtered tree: the
+// directories holding a match unfold for the length of the search, and closing
+// it shows the tree as the user folded it.
+func TestTheSearchShowsOnlyWhatMatchesInTheOutline(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "docs/plan.md", "# P\n")
+	writeDoc(t, root, "docs/other.md", "# O\n")
+	writeDoc(t, root, "top.md", "# T\n")
+	s.Refresh()
+	id := s.Trees()[0].project.ID
+	s.setTreeKeyOpen(treeKey{project: id, path: "docs"}, false)
+	openTreeSearchOn(s, "plan")
+	tt := newTester(s)
+	if tt.HasText("other.md") {
+		t.Errorf("texts = %q, want only what the phrase matches", tt.Texts())
+	}
+	if !tt.HasText("plan.md") {
+		t.Errorf("texts = %q, want the match under the directory it sits in", tt.Texts())
+	}
+	s.closeTreeSearch()
+	tt = newTester(s)
+	if tt.HasText("plan.md") {
+		t.Errorf("texts = %q, want the directory as the user folded it", tt.Texts())
+	}
+	if !tt.HasText("top.md") {
+		t.Errorf("texts = %q, want the rest of the tree back", tt.Texts())
+	}
+}
+
+// TestTheSearchRevealsTheCurrentCandidate pins the slide to the candidate the
+// keyboard is on, of a list longer than the pane.
+func TestTheSearchRevealsTheCurrentCandidate(t *testing.T) {
+	s, root := newState(t)
+	for i := range 60 {
+		writeDoc(t, root, "docs/a"+strconv.Itoa(100 + i)[1:]+".md", "# A\n")
+	}
+	s.Refresh()
+	openTreeSearchOn(s, "a")
+	if got := len(s.treeSearch.candidates); got != 60 {
+		t.Fatalf("candidates = %d, want 60", got)
+	}
+	s.moveCandidate(40)
+	tt := ui.NewTester(s.View, 1000, 300)
+	tt.Frame()
+	tt.Frame()
+	cell := s.treeSearch.candidates[40]
+	want := s.rowOf(s.roots(), treeKey{project: cell.project, path: cell.path})
+	first, last := s.treeOpen.List.Visible()
+	if want < first || want > last {
+		t.Errorf("rows %d..%d visible, want row %d (%s)", first, last, want, cell.path)
 	}
 }
 

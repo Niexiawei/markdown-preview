@@ -27,9 +27,12 @@ type treeSearchState struct {
 	// every file it builds, so the lookup cannot be a walk of the candidates.
 	candidates []docSel
 	index      map[docSel]int
-	// dirs names the directories holding a candidate, by "projectID:path": a
-	// search shows those, the candidates, and the project nodes above them.
-	dirs map[string]bool
+	// dirs names the directories holding a candidate: a search shows those,
+	// the candidates, and the project nodes above them.
+	dirs map[treeKey]bool
+	// opened are the rows the search opened to show its candidates, so that
+	// closing it shows the tree as the user folded it.
+	opened []treeKey
 	// current is the index into candidates of the one the keyboard is on.
 	current int
 	// reveal asks the next build to bring the current candidate into view, and
@@ -60,15 +63,17 @@ func (s *State) setTreeQuery(q string) {
 // frame, and never with a scan of the disk.
 func (s *State) refreshCandidates() {
 	t := &s.treeSearch
-	t.candidates, t.dirs, t.index = nil, map[string]bool{}, map[docSel]int{}
+	t.candidates, t.dirs, t.index = nil, map[treeKey]bool{}, map[docSel]int{}
 	if !s.searching() {
 		t.current = 0
+		s.closeSearchOpen()
 		return
 	}
 	for _, tr := range s.trees {
 		s.matchTree(tr, tr.root)
 	}
 	t.current = min(t.current, max(0, len(t.candidates)-1))
+	s.openSearchDirs()
 }
 
 // matchTree appends the candidates under n, and reports whether it found any,
@@ -81,7 +86,7 @@ func (s *State) matchTree(tr projectTree, n *workspace.Node) bool {
 	for _, child := range n.Children {
 		if child.IsDir {
 			if s.matchTree(tr, child) {
-				s.treeSearch.dirs[tr.project.ID+":"+child.Path] = true
+				s.treeSearch.dirs[treeKey{project: tr.project.ID, path: child.Path}] = true
 				found = true
 			}
 			continue
@@ -154,7 +159,42 @@ func (s *State) searchShortcuts(c *ui.Context) {
 
 // closeTreeSearch hides the tree's search, and shows every file again. The
 // phrase is kept, as the document's search keeps its own.
-func (s *State) closeTreeSearch() { s.treeSearch.open = false }
+func (s *State) closeTreeSearch() {
+	s.treeSearch.open = false
+	s.closeSearchOpen()
+}
+
+// openSearchDirs unfolds the rows holding a candidate, for the length of the
+// search: what it unfolds is remembered, so that closing it folds them back.
+func (s *State) openSearchDirs() {
+	for k := range s.treeSearch.dirs {
+		if !s.treeOpen.Open.Has(k) {
+			s.treeSearch.opened = append(s.treeSearch.opened, k)
+		}
+		s.treeOpen.Open.Add(k)
+	}
+	switch {
+	case len(s.trees) > 1:
+		for _, tr := range s.trees {
+			if s.projectHasCandidate(tr.project.ID) {
+				s.treeOpen.Open.Add(treeKey{project: tr.project.ID})
+			}
+		}
+	}
+	s.treeOpen.Generation++
+}
+
+// closeSearchOpen folds back the rows the search unfolded.
+func (s *State) closeSearchOpen() {
+	if len(s.treeSearch.opened) == 0 {
+		return
+	}
+	for _, k := range s.treeSearch.opened {
+		s.treeOpen.Open.Remove(k)
+	}
+	s.treeSearch.opened = nil
+	s.treeOpen.Generation++
+}
 
 // candidateIndex is where a file of the tree sits among the candidates, or -1
 // when the search does not offer it.
@@ -163,6 +203,17 @@ func (s *State) candidateIndex(projectID, path string) int {
 		return i
 	}
 	return -1
+}
+
+// projectHasCandidate reports whether any candidate belongs to projectID, so
+// that a project the phrase does not reach leaves no empty node behind.
+func (s *State) projectHasCandidate(projectID string) bool {
+	for _, cell := range s.treeSearch.candidates {
+		if cell.project == projectID {
+			return true
+		}
+	}
+	return false
 }
 
 // treeRowFill is how a row of the tree reads while the search is open.
@@ -246,84 +297,6 @@ func (s *State) treeSearchRow(c *ui.Context) {
 			s.closeTreeSearch()
 		}
 	})
-}
-
-// treeMatched builds the tree while the phrase is typed: the project nodes, the
-// directories holding a candidate, and the candidates themselves.
-func (s *State) treeMatched(c *ui.Context) {
-	multi := len(s.trees) > 1
-	for _, tr := range s.trees {
-		tr := tr
-		if !s.projectHasCandidate(tr.project.ID) {
-			continue
-		}
-		if !multi {
-			s.matchedItems(c, tr, tr.root)
-			continue
-		}
-		open := true
-		ui.TreeItem(c, tr.project.Name, &open, func() { s.matchedItems(c, tr, tr.root) })
-	}
-}
-
-// projectHasCandidate reports whether any candidate belongs to projectID, so
-// that a project the phrase does not reach leaves no empty node behind.
-func (s *State) projectHasCandidate(projectID string) bool {
-	for _, cell := range s.treeSearch.candidates {
-		if cell.project == projectID {
-			return true
-		}
-	}
-	return false
-}
-
-// matchedItems builds the directories of n that hold a candidate and the
-// candidates themselves. The directories are unfolded for the length of the
-// search with a flag of this build alone, never with s.open: closing the search
-// must show the tree as the user folded it.
-func (s *State) matchedItems(c *ui.Context, tr projectTree, n *workspace.Node) {
-	if n == nil {
-		return
-	}
-	for _, child := range n.Children {
-		child := child
-		if child.IsDir {
-			if !s.treeSearch.dirs[tr.project.ID+":"+child.Path] {
-				continue
-			}
-			open := true
-			ui.TreeItem(c, child.Name, &open, func() { s.matchedItems(c, tr, child) })
-			continue
-		}
-		if i := s.candidateIndex(tr.project.ID, child.Path); i >= 0 {
-			s.matchedFile(c, tr, child, i)
-		}
-	}
-}
-
-// matchedFile builds one candidate: the fill saying the phrase matched it, the
-// stronger one when it is the candidate the keyboard is on, which the tree also
-// slides to when the search asks. A click opens it.
-func (s *State) matchedFile(c *ui.Context, tr projectTree, n *workspace.Node, i int) {
-	t := c.Theme()
-	fill := s.treeRowFill(tr.project.ID, n.Path)
-	item := ui.TreeItem(c, n.Name, nil, nil)
-	switch fill {
-	case rowCurrent:
-		item.Background(currentCandidateTint(t))
-	case rowCandidate:
-		item.Background(candidateRowTint(t))
-	}
-	if fill == rowCurrent && s.treeSearch.reveal {
-		// Kept for the rest of this frame, dropped on the next one: a click
-		// builds the view twice, and the request must outlive the first build.
-		s.treeSearch.revealSeen = c.Now()
-		item.ScrollIntoView()
-	}
-	if item.Clicked() {
-		s.gotoCandidate(i)
-		s.openCandidate()
-	}
 }
 
 // treePress is the sidebar's pane seeing the pointer: a press there is what
