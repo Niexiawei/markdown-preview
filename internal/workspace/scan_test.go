@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"testing"
 	"time"
 
@@ -209,5 +210,34 @@ func TestParseEmptyAndCodeOnly(t *testing.T) {
 		if len(headings) != 0 {
 			t.Errorf("parseSource(%q) headings = %v, want none", src, headings)
 		}
+	}
+}
+
+// TestTooManyEntriesStopsTheScan pins the ceiling: a directory with more entries
+// than the limit is refused rather than read whole.
+func TestTooManyEntriesStopsTheScan(t *testing.T) {
+	root := t.TempDir()
+	for i := range 10 {
+		write(t, root, "d"+strconv.Itoa(i%3)+"/f"+strconv.Itoa(i)+".md")
+	}
+	if _, err := listDocs(root, 5); !errors.Is(err, ErrTreeTooLarge) {
+		t.Fatalf("err = %v, want ErrTreeTooLarge", err)
+	}
+	if _, err := listDocs(root, 1000); err != nil {
+		t.Fatalf("err = %v, want the tree read under the limit", err)
+	}
+	// The refused directories do not count: a tree of ignored files stays
+	// under a limit of nothing.
+	ignored := t.TempDir()
+	write(t, ignored, "node_modules/a.md")
+	if docs, err := listDocs(ignored, 1); err != nil || len(docs) != 0 {
+		t.Errorf("listDocs(ignored) = %v, %v, want no documents and no error", docs, err)
+	}
+}
+
+// TestTheEntryLimitIsAMillion pins the number the app refuses a project over.
+func TestTheEntryLimitIsAMillion(t *testing.T) {
+	if MaxEntries != 1_000_000 {
+		t.Errorf("MaxEntries = %d, want 1000000", MaxEntries)
 	}
 }
