@@ -132,14 +132,22 @@ func (s *State) treeBulkActions(c *ui.Context) {
 // and the list of every project the window knows.
 func (s *State) projectSwitcher(c *ui.Context) {
 	t := c.Theme()
-	label := "项目"
+	label, reading := "项目", ""
 	if p, ok := s.ActiveProject(); ok {
 		label = trimEllipsis(p.Name, 18)
+		if s.scanning[p.ID] {
+			// The tree below still shows what the window read last time: the
+			// name says that it is being read again.
+			reading = p.Name
+		}
 	}
 	button := components.Button(c, "", components.ButtonGhost).Label("切换项目")
-	button.Grow(1).Gap(t.Space(0.75)).Children(func() {
+	button.Grow(1).Gap(t.Space(0.75)).Busy(reading != "").Children(func() {
 		components.Icon(c, lucide.Folder()).Size(t.Rem(1), t.Rem(1)).TextColor(t.TextMuted)
 		components.Text(c, label).SingleLine().Grow(1)
+		if reading != "" {
+			components.Spinner(c, components.SpinnerSpokes).Label("正在扫描 " + reading)
+		}
 		components.Icon(c, lucide.ChevronsUpDown()).Size(t.Rem(0.875), t.Rem(0.875)).TextColor(t.TextMuted)
 	})
 	if button.Clicked() {
@@ -271,7 +279,11 @@ func (s *State) fileTree(c *ui.Context) {
 	}
 	ui.Column(c).Fill().Padding(t.Space(0.5)).Gap(t.Space(0.25)).Children(func() {
 		if len(s.trees) == 0 {
-			components.Text(c, "打开一个目录作为项目").FontSize(12).TextColor(t.TextMuted)
+			if name := s.scanningName(); name != "" {
+				components.Text(c, "正在扫描 "+name+"…").FontSize(12).TextColor(t.TextMuted)
+				return
+			}
+			components.Text(c, "打开一个目录或 Markdown 文件").FontSize(12).TextColor(t.TextMuted)
 			return
 		}
 		if !s.hasDocs() {

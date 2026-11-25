@@ -135,6 +135,19 @@ type State struct {
 	// project found gone is dropped once and not every frame.
 	gone map[string]bool
 
+	// scan reads a project's tree: on a goroutine unless syncScan, which the
+	// tests set so that a tree they write is there in the frame that asks.
+	// scanning says which projects are being read now, scanAgain which were
+	// asked for again while they were, and scanGen the scan whose result
+	// counts. tooLarge are the projects the window refused to read, until a
+	// reload asks again.
+	scan      func(workspace.Project) (*workspace.Node, error)
+	syncScan  bool
+	scanning  map[string]bool
+	scanAgain map[string]bool
+	scanGen   map[string]int
+	tooLarge  map[string]bool
+
 	// watchReady is set once the app runs, when the projects can be
 	// watched; watches holds each project's cancel function.
 	watchReady bool
@@ -181,6 +194,11 @@ func New(ws *workspace.Workspace, cfg config.Config, dir string) *State {
 		scrolls:    map[docSel]*ui.ScrollState{},
 		gone:       map[string]bool{},
 		watches:    map[string]context.CancelFunc{},
+		scan:       readTree,
+		scanning:   map[string]bool{},
+		scanAgain:  map[string]bool{},
+		scanGen:    map[string]int{},
+		tooLarge:   map[string]bool{},
 		renderMode: map[docSel]config.RenderMode{},
 		notes:      book,
 		// The messages the last run left are history, not news: they show in
@@ -372,6 +390,16 @@ func (s *State) setTreeOpen(projectID string, open bool) {
 // Trees returns the trees of the open projects, in the order they were added.
 func (s *State) Trees() []projectTree { return s.trees }
 
+// treeOf returns the tree of the project with id, if the window has read it.
+func (s *State) treeOf(id string) (projectTree, bool) {
+	for _, tr := range s.trees {
+		if tr.project.ID == id {
+			return tr, true
+		}
+	}
+	return projectTree{}, false
+}
+
 // hasDocs reports whether any open project has a markdown document.
 func (s *State) hasDocs() bool {
 	for _, tr := range s.trees {
@@ -455,9 +483,16 @@ func (s *State) removeProject(id string) {
 	s.reloadTree()
 }
 
-// Refresh reloads the file tree and the document shown.
+// Refresh reloads the file tree and the document shown. It is the user's ask,
+// so it reads again what the window refused as too large, and watches again a
+// project whose watch stopped at the entry limit.
 func (s *State) Refresh() {
-	s.reloadTree()
+	s.tooLarge = map[string]bool{}
+	for _, p := range s.cfg.OpenProjects() {
+		s.startWatch(p.ID, p.Root)
+		s.loadTree(p)
+	}
+	s.afterTreesChanged()
 	s.onDocChanged()
 }
 
@@ -465,51 +500,34 @@ func (s *State) save() {
 	_ = s.cfg.Save(s.cfgDir)
 }
 
-// reloadTree reads the trees of the open projects, dropping the projects whose
-// directory is gone and the document that is no longer one of them.
+// reloadTree lines the trees up with the open projects: the trees of the ones
+// the window no longer shows go, and the ones it shows but has not read yet are
+// read. What a scan makes of a project is applyTree's business.
 func (s *State) reloadTree() {
-	s.trees = s.trees[:0]
-	for _, p := range s.cfg.OpenProjects() {
-		tree, err := workspace.BuildTree(p.Root)
-		if err == nil {
-			s.trees = append(s.trees, projectTree{project: p, root: tree})
+	open := s.cfg.OpenProjects()
+	rank := make(map[string]bool, len(open))
+	for _, p := range open {
+		rank[p.ID] = true
+	}
+	kept := s.trees[:0]
+	for _, tr := range s.trees {
+		if rank[tr.project.ID] {
+			kept = append(kept, tr)
+		}
+	}
+	s.trees = kept
+	for _, p := range open {
+		if s.tooLarge[p.ID] {
+			// The window refused this one: the user's reload reads it again,
+			// not every frame that lines the trees up.
 			continue
 		}
-		if s.gone[p.ID] {
-			s.notifyErr("项目目录不可用：" + p.Root)
+		if _, ok := s.treeOf(p.ID); ok {
 			continue
 		}
-		s.gone[p.ID] = true
-		s.notifyErr("项目目录不可用：" + p.Root)
-		s.cfg.RemoveProject(p.ID)
-		s.activeID = s.cfg.ActiveID
-		s.dropTabsOf(p.ID)
-		s.ws.SetConfig(s.cfg)
-		s.save()
+		s.loadTree(p)
 	}
-	if s.treeSearch.open {
-		// The tree the search walks is the one just read: a file added or
-		// renamed behind the window's back changes what it offers.
-		s.refreshCandidates()
-	}
-	if s.sel.empty() {
-		return
-	}
-	// A tab pointing at a file that is no longer there shows nothing: drop
-	// those the window does not show first, then the one it does, so that its
-	// neighbour in the bar takes over.
-	for _, tab := range append([]docSel(nil), s.tabs...) {
-		if tab == s.sel {
-			continue
-		}
-		if _, err := s.ws.Stat(tab.project, tab.path); err != nil {
-			s.dropTab(tab)
-		}
-	}
-	if _, err := s.ws.Stat(s.sel.project, s.sel.path); err != nil {
-		s.closeTab(s.sel)
-		s.notifyWarn("文件已被删除")
-	}
+	s.afterTreesChanged()
 }
 
 // selectDoc shows a document of the active project.

@@ -20,12 +20,16 @@ func newState(t *testing.T) (*State, string) {
 	var cfg config.Config
 	p, _ := cfg.AddProject(root, "alpha")
 	cfg.ActiveID = p.ID
-	return New(workspace.New(cfg), cfg, t.TempDir()), root
+	s := New(workspace.New(cfg), cfg, t.TempDir())
+	s.SetSyncScan()
+	return s, root
 }
 
 // newStateWith returns a window showing the projects of cfg.
 func newStateWith(cfg config.Config) *State {
-	return New(workspace.New(cfg), cfg, "")
+	s := New(workspace.New(cfg), cfg, "")
+	s.SetSyncScan()
+	return s
 }
 
 // newTester builds the window in memory, without a window.
@@ -45,7 +49,7 @@ func writeDoc(t *testing.T, root, rel, body string) {
 func TestViewShowsEmptyState(t *testing.T) {
 	s := newStateWith(config.Config{Version: config.Version})
 	tt := ui.NewTester(s.View, 1000, 700)
-	if !tt.HasText("打开一个目录开始预览 markdown") {
+	if !tt.HasText("打开一个目录或 Markdown 文件开始预览") {
 		t.Errorf("texts = %q, want the empty state", tt.Texts())
 	}
 	if !tt.HasText("打开项目") {
@@ -218,7 +222,9 @@ func twoProjects(t *testing.T) (*State, string, string) {
 			t.Fatal(err)
 		}
 	}
-	return New(workspace.New(cfg), cfg, t.TempDir()), alphaRoot, betaRoot
+	s := New(workspace.New(cfg), cfg, t.TempDir())
+	s.SetSyncScan()
+	return s, alphaRoot, betaRoot
 }
 
 func TestTreeGroupsByProjectWhenSeveralAreOpen(t *testing.T) {
@@ -269,7 +275,7 @@ func TestNoOpenProjectShowsTheEmptyState(t *testing.T) {
 	}
 	s := newStateWith(cfg)
 	tt := newTester(s)
-	if !tt.HasText("打开一个目录开始预览 markdown") {
+	if !tt.HasText("打开一个目录或 Markdown 文件开始预览") {
 		t.Errorf("texts = %q, want the empty state", tt.Texts())
 	}
 	if got := s.Selected(); got != "" {

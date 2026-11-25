@@ -35,7 +35,9 @@ func (s *State) startWatch(id, root string) {
 	src, err := watch.Watch(ctx, root)
 	if err != nil {
 		cancel()
-		s.notifyErr("无法监听这个项目：" + err.Error())
+		if p, ok := s.project(id); ok {
+			s.notifyErr(watchFailure(p, err))
+		}
 		return
 	}
 	s.watches[id] = cancel
@@ -89,6 +91,6 @@ func (s *State) applyChanges(id string, set watch.ChangeSet) {
 		}
 	}
 	if set.TreeDirty {
-		s.reloadTree()
+		s.rescanTree(id)
 	}
 }

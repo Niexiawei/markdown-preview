@@ -11,7 +11,7 @@ import (
 func (s *State) preview(c *ui.Context) {
 	switch {
 	case len(s.trees) == 0:
-		s.empty(c, "打开一个目录开始预览 markdown")
+		s.empty(c, "打开一个目录或 Markdown 文件开始预览")
 		return
 	case s.sel.empty() && s.hasDocs():
 		s.empty(c, "在左侧选择一个文档")
