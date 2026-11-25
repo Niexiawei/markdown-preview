@@ -24,7 +24,11 @@ func (s *State) View(c *ui.Context) {
 	t := c.Theme()
 	ui.Row(c).Fill().Background(t.Background).Children(func() {
 		ui.Column(c).Width(300).FillHeight().Background(t.Surface).Children(func() {
-			s.leftHeader(c)
+			if s.panelDown {
+				s.panelRow(c)
+			} else {
+				s.leftHeader(c)
+			}
 			if s.treeSearch.open {
 				s.treeSearchRow(c)
 			}
@@ -46,6 +50,9 @@ func (s *State) View(c *ui.Context) {
 func (s *State) Left(c *ui.Context) {
 	t := c.Theme()
 	ui.Column(c).Fill().Padding(sidebar.HeaderHeight(c), t.Space(1), 0, t.Space(1)).Children(func() {
+		if s.panelDown {
+			s.panelRow(c)
+		}
 		if s.treeSearch.open {
 			s.treeSearchRow(c)
 		}
@@ -54,8 +61,15 @@ func (s *State) Left(c *ui.Context) {
 }
 
 // LeftHeader is the shell's sidebar header, beside its collapse control: the
-// project the tree belongs to.
+// project the tree belongs to. On macOS the panel sinks into the sidebar's
+// body instead and this slot builds nothing.
 func (s *State) LeftHeader(c *ui.Context) { s.leftHeader(c) }
+
+// PanelDown reports whether the project panel sinks into the sidebar's body
+// with the collapse toggle trailing in the header: the macOS arrangement.
+// main.go uses it for the shell's LeftToggleTrailing, so the two move as one;
+// MDPREVIEW_PANEL_DOWN=1 previews it on any machine.
+func (s *State) PanelDown() bool { return s.panelDown }
 
 // LeftToolbar is the shell's fixed footer of the sidebar: the actions that
 // open, reload and serve documents.
@@ -101,15 +115,35 @@ func (s *State) titleRow(c *ui.Context) {
 	ui.Divider(c)
 }
 
-// leftHeader builds the project panel: the tree's bulk actions, then the active
-// project's name, and under it every project the window knows, checked when
-// open. A click opens or closes one; the right click has the project's actions.
+// leftHeader builds the project panel in the shell's header slot: the tree's
+// bulk actions, then the active project's name, and under it every project the
+// window knows, checked when open. A click opens or closes one; the right
+// click has the project's actions. On macOS the panel lives in the sidebar's
+// body instead (panelRow) and this builds nothing.
 func (s *State) leftHeader(c *ui.Context) {
+	if s.panelDown {
+		return
+	}
 	t := c.Theme()
-	ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(t.Space(0.5)).Children(func() {
-		s.treeBulkActions(c)
-		s.projectSwitcher(c)
-	})
+	ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(t.Space(0.5)).Children(func() { s.panelItems(c) })
+}
+
+// panelItems are the project panel's controls, shared by both arrangements:
+// the sunk row and the header slot must never drift apart.
+func (s *State) panelItems(c *ui.Context) {
+	s.treeBulkActions(c)
+	s.projectSwitcher(c)
+}
+
+// panelRowHeight is the height of the panel's row in the sidebar's body, in
+// DIPs: the bulk actions are 24, and the row breathes around them.
+const panelRowHeight float32 = 40
+
+// panelRow builds the project panel as the sidebar body's first row: the
+// macOS arrangement, where the header keeps only the collapse toggle.
+func (s *State) panelRow(c *ui.Context) {
+	t := c.Theme()
+	ui.Row(c).FillWidth().Height(panelRowHeight).AlignItems(ui.Center).Gap(t.Space(0.5)).Children(func() { s.panelItems(c) })
 }
 
 // treeBulkSize is the square of the tree's bulk actions: a dense row above the
