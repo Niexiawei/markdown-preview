@@ -47,10 +47,17 @@ type State struct {
 	// trees are the trees of the open projects, in the order they were added:
 	// with more than one project the sidebar puts a node of each on top.
 	trees []projectTree
-	// open is the open state of each directory of the trees, by the key
-	// "projectID:path": directories start open, and a click on one's arrow
-	// writes here, so that a reloaded tree shows what the user left open.
+	// open is the open state of each heading of the document's outline, by the
+	// key its title makes: the outline's directories start open, and a click on
+	// one's arrow writes here, so that a reloaded outline shows what the user
+	// left open.
 	open map[string]*bool
+	// treeOpen is the sidebar's tree: which of its rows are open, and how it
+	// lays them out. Its keys are the entries' paths, so that a tree read again
+	// keeps what the user folded; treeSeen are the directories the window has
+	// shown, so that a new one opens by itself and a folded one stays folded.
+	treeOpen ui.OutlineState[treeKey]
+	treeSeen map[treeKey]bool
 	// tabs are the documents the window has open, in the order they were
 	// opened: the tab bar shows them, and sel is always one of them.
 	tabs []docSel
@@ -191,6 +198,8 @@ func New(ws *workspace.Workspace, cfg config.Config, dir string) *State {
 		cfg:        cfg,
 		activeID:   cfg.ActiveID,
 		open:       map[string]*bool{},
+		treeOpen:   ui.OutlineState[treeKey]{Generation: 1},
+		treeSeen:   map[treeKey]bool{},
 		scrolls:    map[docSel]*ui.ScrollState{},
 		gone:       map[string]bool{},
 		watches:    map[string]context.CancelFunc{},
@@ -344,47 +353,6 @@ func (s *State) openOf(path string) *bool {
 	b := true
 	s.open[path] = &b
 	return &b
-}
-
-// setOpen asks for the directory, or the project node, at key to be open or
-// folded. An entry that is there is written through its pointer, which is the
-// one the tree's items hold: replacing it would leave a tree item reading a
-// state that this frame no longer writes.
-func (s *State) setOpen(key string, open bool) {
-	if p, ok := s.open[key]; ok {
-		*p = open
-		return
-	}
-	s.open[key] = &open
-}
-
-// setTreeOpen folds or unfolds every directory of the open projects, or of the
-// project with projectID alone ("" for all of them). Folding closes the
-// directories and leaves the project nodes as the user left them — a folded
-// project still shows its top level, as a window of one project does; unfolding
-// opens the nodes too, so that nothing stays hidden after it.
-func (s *State) setTreeOpen(projectID string, open bool) {
-	for _, tr := range s.trees {
-		if projectID != "" && tr.project.ID != projectID {
-			continue
-		}
-		if open && len(s.trees) > 1 {
-			s.setOpen("project:"+tr.project.ID, true)
-		}
-		var walk func(n *workspace.Node)
-		walk = func(n *workspace.Node) {
-			for _, child := range n.Children {
-				if !child.IsDir {
-					continue
-				}
-				s.setOpen(tr.project.ID+":"+child.Path, open)
-				walk(child)
-			}
-		}
-		if tr.root != nil {
-			walk(tr.root)
-		}
-	}
 }
 
 // Trees returns the trees of the open projects, in the order they were added.

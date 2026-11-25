@@ -79,7 +79,7 @@ func TestTreeKeepsOpenStateAcrossRefresh(t *testing.T) {
 		t.Fatalf("texts = %q, want a.md before collapsing", tt.Texts())
 	}
 
-	*s.openOf(s.Trees()[0].project.ID + ":notes") = false
+	s.setTreeKeyOpen(treeKeyOf(s.Trees()[0].project.ID, "notes"), false)
 	tt = ui.NewTester(s.View, 1000, 700)
 	if tt.HasText("a.md") {
 		t.Errorf("texts = %q, want notes collapsed", tt.Texts())
@@ -344,7 +344,7 @@ func TestDirectoriesOfTwoProjectsOpenApart(t *testing.T) {
 	if len(trees) != 2 {
 		t.Fatalf("Trees = %d, want 2", len(trees))
 	}
-	*s.openOf(trees[0].project.ID + ":docs") = false
+	s.setTreeKeyOpen(treeKeyOf(trees[0].project.ID, "docs"), false)
 	tt := newTester(s)
 	if tt.HasText("a.md") {
 		t.Errorf("texts = %q, want alpha's docs collapsed", tt.Texts())

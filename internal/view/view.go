@@ -27,8 +27,7 @@ func (s *State) View(c *ui.Context) {
 			if s.treeSearch.open {
 				s.treeSearchRow(c)
 			}
-			ui.Scroll(c).Grow(1).Label("项目树").TrackScroll(&s.treeScroll).
-				HandleInput(s.treePress).Children(func() { s.fileTree(c) })
+			s.fileTree(c)
 			s.leftToolbar(c)
 		})
 		ui.Column(c).Grow(1).MinWidth(0).FillHeight().Clip().Children(func() {
@@ -49,8 +48,7 @@ func (s *State) Left(c *ui.Context) {
 		if s.treeSearch.open {
 			s.treeSearchRow(c)
 		}
-		ui.Scroll(c).Grow(1).Label("项目树").TrackScroll(&s.treeScroll).
-			HandleInput(s.treePress).Children(func() { s.fileTree(c) })
+		s.fileTree(c)
 	})
 }
 
@@ -277,7 +275,8 @@ func (s *State) fileTree(c *ui.Context) {
 		// on its way, or done.
 		s.treeSearch.reveal, s.treeSearch.revealSeen = false, time.Time{}
 	}
-	ui.Column(c).Fill().Padding(t.Space(0.5)).Gap(t.Space(0.25)).Children(func() {
+	ui.Column(c).Grow(1).FillWidth().Padding(t.Space(0.5), 0, t.Space(0.5), 0).
+		Gap(t.Space(0.25)).Children(func() {
 		if len(s.trees) == 0 {
 			if name := s.scanningName(); name != "" {
 				components.Text(c, "正在扫描 "+name+"…").FontSize(12).TextColor(t.TextMuted)
@@ -290,49 +289,21 @@ func (s *State) fileTree(c *ui.Context) {
 			components.Text(c, "这个目录下没有 markdown 文件").FontSize(12).TextColor(t.TextMuted)
 			return
 		}
-		if s.searching() && len(s.treeSearch.candidates) == 0 {
-			components.Text(c, "没有匹配的文件").FontSize(12).TextColor(t.TextMuted)
+		if s.searching() {
+			if len(s.treeSearch.candidates) == 0 {
+				components.Text(c, "没有匹配的文件").FontSize(12).TextColor(t.TextMuted)
+				return
+			}
+			// The search shows the candidates as the tree's own list still:
+			// the outline takes it over once it can show a filtered tree.
+			ui.Scroll(c).Grow(1).Label("项目树").TrackScroll(&s.treeScroll).
+				HandleInput(s.treePress).Children(func() {
+				ui.Tree(c, func() { s.treeMatched(c) })
+			})
 			return
 		}
-		ui.Tree(c, func() {
-			if s.searching() {
-				s.treeMatched(c)
-				return
-			}
-			if len(s.trees) == 1 {
-				s.treeItems(c, s.trees[0])
-				return
-			}
-			for _, tr := range s.trees {
-				tr := tr
-				item := ui.TreeItem(c, tr.project.Name, s.openOf("project:"+tr.project.ID), func() {
-					s.treeItems(c, tr)
-				})
-				s.projectActions(c, item, tr)
-				s.projectMenu(c, item, tr)
-			}
-		})
+		s.treeBody(c)
 	})
-}
-
-// treeItems builds one project's entries, and its directories' in turn.
-func (s *State) treeItems(c *ui.Context, tr projectTree) {
-	for _, child := range tr.root.Children {
-		child := child
-		if child.IsDir {
-			item := ui.TreeItem(c, child.Name, s.openOf(tr.project.ID+":"+child.Path), func() {
-				s.treeItems(c, tr.childOf(child))
-			})
-			s.nodeMenu(c, item, tr, child)
-			continue
-		}
-		selected := s.sel.project == tr.project.ID && child.Path == s.sel.path
-		item := ui.TreeItem(c, child.Name, nil, nil).Selected(selected)
-		if item.Clicked() {
-			s.selectDocIn(tr.project.ID, child.Path)
-		}
-		s.nodeMenu(c, item, tr, child)
-	}
 }
 
 // projectActions adds a project node's two bulk actions after its name: the
@@ -394,10 +365,4 @@ func (s *State) nodeMenu(c *ui.Context, item ui.Element, tr projectTree, n *work
 			s.revealNode(tr, n)
 		}
 	})
-}
-
-// childOf is the tree of tr from node down, which the tree builds as the user
-// opens its directories.
-func (tr projectTree) childOf(node *workspace.Node) projectTree {
-	return projectTree{project: tr.project, root: node}
 }

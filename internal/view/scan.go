@@ -135,6 +135,11 @@ func (s *State) dropTree(id string) {
 		}
 	}
 	s.trees = kept
+	for k := range s.treeSeen {
+		if k.project == id {
+			delete(s.treeSeen, k)
+		}
+	}
 }
 
 // sortTrees keeps the trees in the order of the configuration's open projects,
@@ -153,6 +158,11 @@ func (s *State) sortTrees() {
 // offers is read again. The view of a tree is a function of the tree, so a
 // patched one shows without anything else being done here.
 func (s *State) bumpTree() {
+	// A patch can add a directory, which the window shows open, as a read tree
+	// does; the outline then walks its open items again, told its children
+	// changed.
+	s.noteNewDirectories()
+	s.treeOpen.Generation++
 	if s.treeSearch.open {
 		s.refreshCandidates()
 	}
@@ -161,6 +171,7 @@ func (s *State) bumpTree() {
 // afterTreesChanged tells the search and the tabs what the new trees mean: the
 // candidates are what the trees hold now, and a tab whose file is gone goes.
 func (s *State) afterTreesChanged() {
+	s.noteNewDirectories()
 	if s.treeSearch.open {
 		// The tree the search walks is the one just read: a file added or
 		// renamed behind the window's back changes what it offers.

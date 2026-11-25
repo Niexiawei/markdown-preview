@@ -1,0 +1,229 @@
+package view
+
+import (
+	"strings"
+
+	"github.com/egoist/mygo/ui"
+	"github.com/oneo-me/onevra/source/components"
+
+	"mdpreview/internal/workspace"
+)
+
+// treeKey names a row of the sidebar's tree: the project, and the path in it.
+// The path is "" for a project's own node.
+type treeKey struct {
+	project string
+	path    string
+}
+
+// treeBody builds the tree itself: the entries of the window's one project, or
+// a node of each when it shows several, and under them what is open. It is an
+// Outline, so the window builds only the rows it shows, however many entries
+// the projects have.
+func (s *State) treeBody(c *ui.Context) {
+	ui.Outline(c, &s.treeOpen, s.roots(), s.children, func(k treeKey) { s.treeRow(c, k) }).
+		Grow(1).Label("项目树").ObserveInput(func(ev ui.InputEvent) { s.treePress(ev) })
+}
+
+// roots are the tree's top level: the entries of the window's one project, or
+// a node of each when it shows several.
+func (s *State) roots() []treeKey {
+	if len(s.trees) == 1 {
+		return s.children(treeKey{project: s.trees[0].project.ID})
+	}
+	roots := make([]treeKey, 0, len(s.trees))
+	for _, tr := range s.trees {
+		roots = append(roots, treeKey{project: tr.project.ID})
+	}
+	return roots
+}
+
+// children are the entries of an item of the tree, a project's or a
+// directory's: nil for a document, and for an item the tree does not have.
+func (s *State) children(k treeKey) []treeKey {
+	n, ok := s.treeNode(k)
+	if !ok || !n.IsDir {
+		return nil
+	}
+	kids := make([]treeKey, 0, len(n.Children))
+	for _, child := range n.Children {
+		kids = append(kids, treeKey{project: k.project, path: child.Path})
+	}
+	return kids
+}
+
+// treeNode returns the entry a row names: the project's own node, or the entry
+// at its path.
+func (s *State) treeNode(k treeKey) (*workspace.Node, bool) {
+	tr, ok := s.treeOf(k.project)
+	if !ok || tr.root == nil {
+		return nil, false
+	}
+	if k.path == "" {
+		return tr.root, true
+	}
+	return findNode(tr.root, k.path)
+}
+
+// findNode returns the entry of n at path, if the tree has it.
+func findNode(n *workspace.Node, path string) (*workspace.Node, bool) {
+	rest := path
+	for {
+		name, tail, _ := strings.Cut(rest, "/")
+		var found *workspace.Node
+		for _, c := range n.Children {
+			if c.Name == name {
+				found = c
+				break
+			}
+		}
+		if found == nil {
+			return nil, false
+		}
+		if tail == "" {
+			return found, true
+		}
+		n, rest = found, tail
+	}
+}
+
+// rowOf is the row k shows on, -1 when the tree does not show it. It walks the
+// open items itself rather than reading Rows(), which is the last frame's: a
+// click opens the directories above a row and scrolls to it in one frame, and
+// the row it scrolls to must be the one this frame builds.
+func (s *State) rowOf(roots []treeKey, want treeKey) int {
+	type level struct {
+		items []treeKey
+		next  int
+	}
+	row := 0
+	stack := []level{{items: roots}}
+	for len(stack) > 0 {
+		top := &stack[len(stack)-1]
+		if top.next >= len(top.items) {
+			stack = stack[:len(stack)-1]
+			continue
+		}
+		k := top.items[top.next]
+		top.next++
+		if k == want {
+			return row
+		}
+		row++
+		if s.treeOpen.Open.Has(k) {
+			if kids := s.children(k); len(kids) > 0 {
+				stack = append(stack, level{items: kids})
+			}
+		}
+	}
+	return -1
+}
+
+// treeRow builds one row of the tree: a project's node, a directory, or a
+// document. The outline builds its indentation and arrow; what shows beside
+// them, and what a click does, is here.
+func (s *State) treeRow(c *ui.Context, k treeKey) {
+	t := c.Theme()
+	n, ok := s.treeNode(k)
+	if !ok {
+		return
+	}
+	row := ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(t.Space(0.75)).
+		Padding(t.Space(0.5), t.Space(1))
+	if k.path != "" && k.project == s.sel.project && k.path == s.sel.path {
+		row.Background(selectedRowTint(t))
+	}
+	if k.path == "" {
+		tr, _ := s.treeOf(k.project)
+		row.Children(func() { components.Text(c, tr.project.Name).SingleLine().Grow(1) })
+		s.projectActions(c, row, tr)
+		s.projectMenu(c, row, tr)
+		row.OnClick(func() { s.toggleTreeKey(k) })
+		return
+	}
+	row.Children(func() { components.Text(c, n.Name).SingleLine().Grow(1) })
+	if tr, ok := s.treeOf(k.project); ok {
+		s.nodeMenu(c, row, tr, n)
+	}
+	if n.IsDir {
+		row.OnClick(func() { s.toggleTreeKey(k) })
+		return
+	}
+	row.OnClick(func() { s.selectDocIn(k.project, k.path) })
+}
+
+// setTreeKeyOpen opens or closes the children of a row, as a click on its arrow
+// does.
+func (s *State) setTreeKeyOpen(k treeKey, open bool) {
+	if open {
+		s.treeOpen.Open.Add(k)
+		return
+	}
+	s.treeOpen.Open.Remove(k)
+}
+
+// toggleTreeKey opens the children of a row, or closes them.
+func (s *State) toggleTreeKey(k treeKey) {
+	s.setTreeKeyOpen(k, !s.treeOpen.Open.Has(k))
+}
+
+// setTreeOpen folds or unfolds every directory of the open projects, or of the
+// project with projectID alone ("" for all of them). Folding closes the
+// directories and leaves the project nodes as the user left them — a folded
+// project still shows its top level, as a window of one project does; unfolding
+// opens the nodes too, so that nothing stays hidden after it.
+func (s *State) setTreeOpen(projectID string, open bool) {
+	for _, tr := range s.trees {
+		if projectID != "" && tr.project.ID != projectID {
+			continue
+		}
+		if open && len(s.trees) > 1 {
+			s.setTreeKeyOpen(treeKey{project: tr.project.ID}, true)
+		}
+		var walk func(n *workspace.Node)
+		walk = func(n *workspace.Node) {
+			for _, child := range n.Children {
+				if !child.IsDir {
+					continue
+				}
+				s.setTreeKeyOpen(treeKey{project: tr.project.ID, path: child.Path}, open)
+				walk(child)
+			}
+		}
+		if tr.root != nil {
+			walk(tr.root)
+		}
+	}
+	s.bumpTree()
+}
+
+// noteNewDirectories opens the directories the window has not shown before: the
+// ones a project read for the first time brought, and the ones a file event
+// added since. A directory the user folded is not new, so it stays folded.
+func (s *State) noteNewDirectories() {
+	for _, tr := range s.trees {
+		s.noteNew(treeKey{project: tr.project.ID})
+		var walk func(n *workspace.Node)
+		walk = func(n *workspace.Node) {
+			for _, child := range n.Children {
+				if !child.IsDir {
+					continue
+				}
+				s.noteNew(treeKey{project: tr.project.ID, path: child.Path})
+				walk(child)
+			}
+		}
+		if tr.root != nil {
+			walk(tr.root)
+		}
+	}
+}
+
+// noteNew opens the row of the tree the window has not shown yet.
+func (s *State) noteNew(k treeKey) {
+	if s.treeSeen[k] {
+		return
+	}
+	s.treeSeen[k] = true
+	s.treeOpen.Open.Add(k)
+}
