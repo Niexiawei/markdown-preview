@@ -11,7 +11,10 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 
+	"mdpreview/internal/config"
+	"mdpreview/internal/session"
 	"mdpreview/internal/watch"
+	"mdpreview/internal/workspace"
 )
 
 // settleStrip lets the strip's glide finish, as the app's own frames do while
@@ -714,5 +717,75 @@ func TestTabsSlideToTheTabShown(t *testing.T) {
 	tt.Frame()
 	if left := s.tabScroll.X - asked; left > 0.5 || left < -0.5 {
 		t.Errorf("the strip rests at %v, want the %v it asked for", s.tabScroll.X, asked)
+	}
+}
+
+// TestTabChangesAreWrittenBack pins the write-back of the session: every tab
+// change lands in session.json, and a restart comes back to what the user left.
+func TestTabChangesAreWrittenBack(t *testing.T) {
+	root, dir := t.TempDir(), t.TempDir()
+	var cfg config.Config
+	p, _ := cfg.AddProject(root, "alpha")
+	cfg.ActiveID = p.ID
+	writeDoc(t, root, "a.md", "# A\n")
+	writeDoc(t, root, "b.md", "# B\n")
+	s := New(workspace.New(cfg), cfg, dir)
+	s.SetSyncScan()
+	s.selectDocIn(p.ID, "a.md")
+	s.selectDocIn(p.ID, "b.md") // b active, second in the bar
+	s.closeTab(docSel{project: p.ID, path: "a.md"})
+
+	out, err := session.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Tabs) != 1 || out.Tabs[0] != (session.Ref{Project: p.ID, Path: "b.md"}) {
+		t.Errorf("session tabs = %v, want only b.md", out.Tabs)
+	}
+	if out.Active != (session.Ref{Project: p.ID, Path: "b.md"}) {
+		t.Errorf("session active = %v, want b.md", out.Active)
+	}
+
+	s2 := New(workspace.New(cfg), cfg, dir)
+	s2.SetSyncScan()
+	if len(s2.tabs) != 1 || s2.sel.path != "b.md" {
+		t.Errorf("restart tabs = %v, sel = %v; want b.md active", s2.tabs, s2.sel)
+	}
+}
+
+// TestDroppingTabsOfAProjectUpdatesTheSession pins the write-back of the two
+// changes that do not come from the bar: closing a project takes its tabs out
+// of the snapshot, and a rename moves the tab to its new path.
+func TestDroppingTabsOfAProjectUpdatesTheSession(t *testing.T) {
+	root, other, dir := t.TempDir(), t.TempDir(), t.TempDir()
+	var cfg config.Config
+	p, _ := cfg.AddProject(root, "alpha")
+	q, _ := cfg.AddProject(other, "beta")
+	cfg.ActiveID = p.ID
+	writeDoc(t, root, "a.md", "# A\n")
+	writeDoc(t, other, "q.md", "# Q\n")
+	s := New(workspace.New(cfg), cfg, dir)
+	s.SetSyncScan()
+	s.selectDocIn(p.ID, "a.md")
+	s.selectDocIn(q.ID, "q.md")
+	s.ToggleProject(q.ID)
+
+	out, err := session.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ref := range out.Tabs {
+		if ref.Project == q.ID {
+			t.Errorf("session tabs = %v, want none of beta after it closed", out.Tabs)
+		}
+	}
+	if out.Active.Project == q.ID {
+		t.Errorf("session active = %v, want it off the closed project", out.Active)
+	}
+
+	s.renameTab(docSel{project: p.ID, path: "a.md"}, docSel{project: p.ID, path: "renamed.md"})
+	out, _ = session.Load(dir)
+	if len(out.Tabs) != 1 || out.Tabs[0] != (session.Ref{Project: p.ID, Path: "renamed.md"}) {
+		t.Errorf("session tabs = %v, want renamed.md", out.Tabs)
 	}
 }

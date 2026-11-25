@@ -1,9 +1,15 @@
 package view
 
 import (
+	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
+
+	"mdpreview/internal/config"
+	"mdpreview/internal/session"
+	"mdpreview/internal/workspace"
 )
 
 // treeKeyOf names a row of the tree, for a test that reaches into its state.
@@ -198,5 +204,188 @@ func TestFoldingEveryTreeClosesTheProjects(t *testing.T) {
 	s.setTreeOpen("", true)
 	if tt := newTester(s); !tt.HasText("a.md") || !tt.HasText("b.md") {
 		t.Errorf("texts = %q, want every entry back", tt.Texts())
+	}
+}
+
+// TestRestartKeepsTheFoldedDirectoriesFolded pins the restore of the tree's
+// folds: the directories the user folded stay folded, while the ones the
+// snapshot never saw still open by themselves.
+func TestRestartKeepsTheFoldedDirectoriesFolded(t *testing.T) {
+	root, dir := t.TempDir(), t.TempDir()
+	var cfg config.Config
+	p, _ := cfg.AddProject(root, "alpha")
+	cfg.ActiveID = p.ID
+	writeDoc(t, root, "notes/a.md", "# A\n")
+	writeDoc(t, root, "other/b.md", "# B\n")
+	if err := session.Save(dir, session.Session{Version: session.Version,
+		TreeClosed: []session.Ref{{Project: p.ID, Path: "notes"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s := New(workspace.New(cfg), cfg, dir)
+	s.SetSyncScan()
+	tt := newTester(s)
+	if tt.HasText("a.md") {
+		t.Errorf("texts = %q, want notes folded", tt.Texts())
+	}
+	if !tt.HasText("b.md") {
+		t.Errorf("texts = %q, want other open: unseen directories auto-open", tt.Texts())
+	}
+}
+
+// TestFoldingADirectoryMarksItClosed pins the closed set: folding a row puts
+// it in the set a restart restores, unfolding takes it back out.
+func TestFoldingADirectoryMarksItClosed(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "notes/a.md", "# A\n")
+	s.Refresh()
+	id := s.Trees()[0].project.ID
+	s.setTreeKeyOpen(treeKeyOf(id, "notes"), false)
+	if !s.treeClosed[treeKeyOf(id, "notes")] {
+		t.Errorf("treeClosed = %v, want notes in it", s.treeClosed)
+	}
+	s.setTreeKeyOpen(treeKeyOf(id, "notes"), true)
+	if s.treeClosed[treeKeyOf(id, "notes")] {
+		t.Errorf("treeClosed = %v, want notes out of it", s.treeClosed)
+	}
+}
+
+// TestAClosedProjectLeavesNoClosedKeysBehind pins the cleanup: a project the
+// window refuses or drops takes its folded rows out of the set with it, as it
+// does with the rows it has shown.
+func TestAClosedProjectLeavesNoClosedKeysBehind(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "notes/a.md", "# A\n")
+	s.Refresh()
+	id := s.Trees()[0].project.ID
+	s.setTreeKeyOpen(treeKeyOf(id, "notes"), false)
+	s.dropTree(id)
+	for k := range s.treeClosed {
+		if k.project == id {
+			t.Errorf("treeClosed still holds %v after dropTree", k)
+		}
+	}
+}
+
+// TestFoldChangesAreWrittenBack pins the write-back of the tree's folds: a
+// click on a row's arrow, expand-all and fold-all each leave the snapshot
+// telling the truth, and a restart comes back to what the user left.
+func TestFoldChangesAreWrittenBack(t *testing.T) {
+	root, dir := t.TempDir(), t.TempDir()
+	var cfg config.Config
+	p, _ := cfg.AddProject(root, "alpha")
+	cfg.ActiveID = p.ID
+	writeDoc(t, root, "notes/a.md", "# A\n")
+	writeDoc(t, root, "other/b.md", "# B\n")
+	s := New(workspace.New(cfg), cfg, dir)
+	s.SetSyncScan()
+
+	s.toggleTreeKey(treeKeyOf(p.ID, "notes"))
+	out, err := session.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(out.TreeClosed, session.Ref{Project: p.ID, Path: "notes"}) {
+		t.Errorf("closed = %v, want notes in it", out.TreeClosed)
+	}
+
+	s.setTreeOpen(p.ID, true) // expand all: the fold memory empties
+	out, _ = session.Load(dir)
+	if len(out.TreeClosed) != 0 {
+		t.Errorf("closed = %v, want none after expand-all", out.TreeClosed)
+	}
+
+	s.setTreeOpen(p.ID, false) // fold all: two directories, no project node
+	out, _ = session.Load(dir)
+	if len(out.TreeClosed) != 2 {
+		t.Errorf("closed = %v, want the two directories only", out.TreeClosed)
+	}
+}
+
+// TestSearchDoesNotDisturbTheClosedSet pins what the tree's search must not
+// do: its temporary opens never reach the snapshot, even though the search is
+// open while something else writes it.
+func TestSearchDoesNotDisturbTheClosedSet(t *testing.T) {
+	root, dir := t.TempDir(), t.TempDir()
+	var cfg config.Config
+	p, _ := cfg.AddProject(root, "alpha")
+	cfg.ActiveID = p.ID
+	writeDoc(t, root, "notes/a.md", "# A\n")
+	writeDoc(t, root, "other/b.md", "# B\n")
+	s := New(workspace.New(cfg), cfg, dir)
+	s.SetSyncScan()
+	s.selectDocIn(p.ID, "notes/a.md")
+	s.toggleTreeKey(treeKeyOf(p.ID, "notes")) // the user folds notes
+
+	openTreeSearchOn(s, "a") // the search unfolds notes to show its candidate
+	s.closeTab(s.sel)        // something else writes the snapshot meanwhile
+
+	out, err := session.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(out.TreeClosed, session.Ref{Project: p.ID, Path: "notes"}) {
+		t.Errorf("closed = %v, want notes kept while the search is open", out.TreeClosed)
+	}
+	if len(out.TreeClosed) != 1 {
+		t.Errorf("closed = %v, want nothing else leaked in", out.TreeClosed)
+	}
+}
+
+// TestRestartRestoresASingleFileTab pins the restore for a project of one
+// document: its tab is named by the file itself, and it comes back shown.
+func TestRestartRestoresASingleFileTab(t *testing.T) {
+	root, dir := t.TempDir(), t.TempDir()
+	writeDoc(t, root, "solo.md", "# S\n")
+	var cfg config.Config
+	p, _ := cfg.AddFileProject(filepath.Join(root, "solo.md"))
+	cfg.ActiveID = p.ID
+	if err := session.Save(dir, session.Session{Version: session.Version,
+		Tabs:   []session.Ref{{Project: p.ID, Path: "solo.md"}},
+		Active: session.Ref{Project: p.ID, Path: "solo.md"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s := New(workspace.New(cfg), cfg, dir)
+	s.SetSyncScan()
+	if len(s.tabs) != 1 || s.sel.path != "solo.md" {
+		t.Errorf("tabs = %v, sel = %v; want solo.md restored and active", s.tabs, s.sel)
+	}
+	if !newTester(s).HasText("S") {
+		t.Errorf("texts = %q, want the restored document's body", newTester(s).Texts())
+	}
+}
+
+// TestRestartKeepsAFoldedProjectNodeFolded pins the restore of a project's own
+// node, which only exists while several projects are open: the empty path in
+// the snapshot folds that project's whole subtree, and the others stay open.
+func TestRestartKeepsAFoldedProjectNodeFolded(t *testing.T) {
+	alpha, beta, dir := t.TempDir(), t.TempDir(), t.TempDir()
+	var cfg config.Config
+	pa, _ := cfg.AddProject(alpha, "alpha")
+	_, _ = cfg.AddProject(beta, "beta")
+	cfg.ActiveID = pa.ID
+	writeDoc(t, alpha, "one.md", "# One\n")
+	writeDoc(t, beta, "two.md", "# Two\n")
+	s := New(workspace.New(cfg), cfg, dir)
+	s.SetSyncScan()
+	s.toggleTreeKey(treeKey{project: pa.ID}) // the project node, path ""
+
+	out, err := session.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(out.TreeClosed, session.Ref{Project: pa.ID, Path: ""}) {
+		t.Fatalf("closed = %v, want alpha's node in it", out.TreeClosed)
+	}
+
+	s2 := New(workspace.New(cfg), cfg, dir)
+	s2.SetSyncScan()
+	tt := newTester(s2)
+	if tt.HasText("one.md") {
+		t.Errorf("texts = %q, want alpha's node folded", tt.Texts())
+	}
+	if !tt.HasText("two.md") {
+		t.Errorf("texts = %q, want beta still open", tt.Texts())
 	}
 }

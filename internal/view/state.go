@@ -8,6 +8,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 
 	"mdpreview/internal/config"
 	"mdpreview/internal/notices"
+	"mdpreview/internal/session"
 	"mdpreview/internal/watch"
 	"mdpreview/internal/workspace"
 )
@@ -58,8 +60,11 @@ type State struct {
 	// lays them out. Its keys are the entries' paths, so that a tree read again
 	// keeps what the user folded; treeSeen are the directories the window has
 	// shown, so that a new one opens by itself and a folded one stays folded.
-	treeOpen ui.OutlineState[treeKey]
-	treeSeen map[treeKey]bool
+	// treeClosed are the rows the user folded — the ones a restart brings back;
+	// the search opens rows of its own and never touches it.
+	treeOpen   ui.OutlineState[treeKey]
+	treeSeen   map[treeKey]bool
+	treeClosed map[treeKey]bool
 	// tabs are the documents the window has open, in the order they were
 	// opened: the tab bar shows them, and sel is always one of them.
 	tabs []docSel
@@ -203,6 +208,7 @@ func New(ws *workspace.Workspace, cfg config.Config, dir string) *State {
 		open:         map[string]*bool{},
 		treeOpen:     ui.OutlineState[treeKey]{Generation: 1},
 		treeSeen:     map[treeKey]bool{},
+		treeClosed:   map[treeKey]bool{},
 		scrolls:      map[docSel]*ui.ScrollState{},
 		gone:         map[string]bool{},
 		watches:      map[string]context.CancelFunc{},
@@ -227,8 +233,46 @@ func New(ws *workspace.Workspace, cfg config.Config, dir string) *State {
 			s.activeID = open[0].ID
 		}
 	}
+	// The last session comes back before the trees are read: the directories
+	// it marks folded have to be seen already, or the scan would open them all.
+	sess, _ := session.Load(dir)
+	s.restoreSession(sess)
 	s.reloadTree()
+	if !s.sel.empty() {
+		s.onDocChanged()
+	}
 	return s
+}
+
+// restoreSession puts the snapshot of the last run back in place: the tabs it
+// names, the active one among them, and the directories the user had folded.
+// It is silent — no "opened" message — and drops what no longer explains
+// itself: tabs of projects the window does not show, and folded rows of them.
+// The active one is only taken when it is one of the tabs; the pruning of
+// files that went away is afterTreesChanged's, which reloadTree calls next.
+func (s *State) restoreSession(sess session.Session) {
+	for _, ref := range sess.TreeClosed {
+		if ref.Project == "" || !s.cfg.IsOpen(ref.Project) {
+			continue
+		}
+		k := treeKey{project: ref.Project, path: ref.Path}
+		s.treeSeen[k] = true
+		s.treeClosed[k] = true
+	}
+	for _, ref := range sess.Tabs {
+		if ref.Project == "" || ref.Path == "" || !s.cfg.IsOpen(ref.Project) {
+			continue
+		}
+		if sel := (docSel{project: ref.Project, path: ref.Path}); !s.hasTab(sel) {
+			s.tabs = append(s.tabs, sel)
+		}
+	}
+	if active := (docSel{project: sess.Active.Project, path: sess.Active.Path}); s.hasTab(active) {
+		s.sel = active
+		if s.sel.project != s.cfg.ActiveID && s.cfg.SetActive(s.sel.project) {
+			s.activeID = s.sel.project
+		}
+	}
 }
 
 // SetSystem gives the window the desktop it acts through.
@@ -550,6 +594,34 @@ func (s *State) Refresh() {
 
 func (s *State) save() {
 	_ = s.cfg.Save(s.cfgDir)
+}
+
+// saveSession writes the snapshot of what the window shows now: the tabs in
+// their order, the active one, and the directories the user folded. It runs
+// on the window's thread after the user acted — once per action, never inside
+// a loop — and when the scans prune a tab of a file that went away.
+func (s *State) saveSession() {
+	closed := make([]session.Ref, 0, len(s.treeClosed))
+	for k := range s.treeClosed {
+		if s.cfg.IsOpen(k.project) {
+			closed = append(closed, session.Ref{Project: k.project, Path: k.path})
+		}
+	}
+	slices.SortFunc(closed, func(a, b session.Ref) int {
+		if a.Project != b.Project {
+			return strings.Compare(a.Project, b.Project)
+		}
+		return strings.Compare(a.Path, b.Path)
+	})
+	tabs := make([]session.Ref, len(s.tabs))
+	for i, tab := range s.tabs {
+		tabs[i] = session.Ref{Project: tab.project, Path: tab.path}
+	}
+	_ = session.Save(s.cfgDir, session.Session{
+		Tabs:       tabs,
+		Active:     session.Ref{Project: s.sel.project, Path: s.sel.path},
+		TreeClosed: closed,
+	})
 }
 
 // reloadTree lines the trees up with the open projects: the trees of the ones

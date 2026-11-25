@@ -10,6 +10,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"mdpreview/internal/config"
+	"mdpreview/internal/session"
 	"mdpreview/internal/workspace"
 )
 
@@ -1148,5 +1149,100 @@ func TestTheToolbarOpensAProjectOrADocument(t *testing.T) {
 	}
 	if doc.X < open.X || doc.X+doc.W > reload.X+1 {
 		t.Errorf("打开 Markdown 文件 at X %v..%v, want it between %v and %v", doc.X, doc.X+doc.W, open.X, reload.X)
+	}
+}
+
+// TestRestartRestoresTheTabsAndTheActiveOne pins the session restore: the tabs
+// the window had open come back in the order they sat in the bar, and the one
+// that was active is shown again.
+func TestRestartRestoresTheTabsAndTheActiveOne(t *testing.T) {
+	root, dir := t.TempDir(), t.TempDir()
+	var cfg config.Config
+	p, _ := cfg.AddProject(root, "alpha")
+	cfg.ActiveID = p.ID
+	writeDoc(t, root, "a.md", "# A\n")
+	writeDoc(t, root, "b.md", "# B\n")
+	if err := session.Save(dir, session.Session{Version: session.Version,
+		Tabs:   []session.Ref{{Project: p.ID, Path: "a.md"}, {Project: p.ID, Path: "b.md"}},
+		Active: session.Ref{Project: p.ID, Path: "b.md"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	s := New(workspace.New(cfg), cfg, dir)
+	s.SetSyncScan()
+	tt := newTester(s)
+	if len(s.tabs) != 2 || s.tabs[0].path != "a.md" || s.tabs[1].path != "b.md" {
+		t.Errorf("tabs = %v, want a.md then b.md", s.tabs)
+	}
+	if s.sel.path != "b.md" {
+		t.Errorf("sel = %q, want b.md", s.sel.path)
+	}
+	if !tt.HasText("B") {
+		t.Errorf("texts = %q, want the restored document's body", tt.Texts())
+	}
+}
+
+// TestRestartDropsTabsOfClosedProjects pins the restore's filter: a tab of a
+// project the window does not show is not restored, and with it no active
+// document.
+func TestRestartDropsTabsOfClosedProjects(t *testing.T) {
+	root, other, dir := t.TempDir(), t.TempDir(), t.TempDir()
+	var cfg config.Config
+	p, _ := cfg.AddProject(root, "alpha")
+	q, _ := cfg.AddProject(other, "beta")
+	cfg.OpenIDs = []string{p.ID}
+	cfg.ActiveID = p.ID
+	writeDoc(t, other, "q.md", "# Q\n")
+	if err := session.Save(dir, session.Session{Version: session.Version,
+		Tabs:   []session.Ref{{Project: q.ID, Path: "q.md"}},
+		Active: session.Ref{Project: q.ID, Path: "q.md"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s := New(workspace.New(cfg), cfg, dir)
+	s.SetSyncScan()
+	if len(s.tabs) != 0 || !s.sel.empty() {
+		t.Errorf("tabs = %v, sel = %v; want none restored", s.tabs, s.sel)
+	}
+}
+
+// TestRestartPrunesTabsWhoseFileIsGone pins what the restore does with a tab
+// whose file went away between runs: the existing pruning drops it, and the
+// neighbour in the bar takes over, as closing a tab does.
+func TestRestartPrunesTabsWhoseFileIsGone(t *testing.T) {
+	root, dir := t.TempDir(), t.TempDir()
+	var cfg config.Config
+	p, _ := cfg.AddProject(root, "alpha")
+	cfg.ActiveID = p.ID
+	writeDoc(t, root, "a.md", "# A\n") // b.md is not written
+	if err := session.Save(dir, session.Session{Version: session.Version,
+		Tabs:   []session.Ref{{Project: p.ID, Path: "a.md"}, {Project: p.ID, Path: "b.md"}},
+		Active: session.Ref{Project: p.ID, Path: "b.md"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s := New(workspace.New(cfg), cfg, dir)
+	s.SetSyncScan()
+	if len(s.tabs) != 1 || s.tabs[0].path != "a.md" || s.sel.path != "a.md" {
+		t.Errorf("tabs = %v, sel = %v; want only a.md, active", s.tabs, s.sel)
+	}
+}
+
+// TestRestartRestoresTheOpenProjects pins that the view lines its trees up
+// with the projects config.json keeps open: it is how the open projects, and
+// the active one, survive a restart.
+func TestRestartRestoresTheOpenProjects(t *testing.T) {
+	rootA, rootB := t.TempDir(), t.TempDir()
+	var cfg config.Config
+	a, _ := cfg.AddProject(rootA, "alpha")
+	_, _ = cfg.AddProject(rootB, "beta")
+	// What config.Load + normalize make of a file that has beta closed.
+	cfg.OpenIDs = []string{a.ID}
+	cfg.ActiveID = a.ID
+	s := New(workspace.New(cfg), cfg, "")
+	s.SetSyncScan()
+	if len(s.trees) != 1 || s.trees[0].project.ID != a.ID {
+		t.Errorf("trees = %v, want only alpha", s.trees)
 	}
 }

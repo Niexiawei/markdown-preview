@@ -24,6 +24,7 @@ func (s *State) openTab(sel docSel) {
 		s.scrolls[sel] = &ui.ScrollState{}
 	}
 	s.activateTab(sel)
+	s.saveSession()
 }
 
 // activateTab makes sel the document shown, without adding a tab.
@@ -60,6 +61,7 @@ func (s *State) closeTab(sel docSel) {
 	s.tabs = append(s.tabs[:i], s.tabs[i+1:]...)
 	delete(s.scrolls, sel)
 	if sel != s.sel {
+		s.saveSession()
 		return
 	}
 	switch {
@@ -71,6 +73,7 @@ func (s *State) closeTab(sel docSel) {
 		s.sel = docSel{}
 		s.onDocChanged()
 	}
+	s.saveSession()
 }
 
 // dropTab forgets the document's tab without changing what the window shows:
@@ -80,6 +83,7 @@ func (s *State) dropTab(sel docSel) {
 		s.tabs = append(s.tabs[:i], s.tabs[i+1:]...)
 	}
 	delete(s.scrolls, sel)
+	s.saveSession()
 }
 
 // dropTabsOf closes every tab of one project: a project that is closed or
@@ -98,6 +102,7 @@ func (s *State) dropTabsOf(projectID string) {
 		s.sel = docSel{}
 		s.onDocChanged()
 	}
+	s.saveSession()
 }
 
 // renameTab moves a tab and its scroll position to its new path, keeping where
@@ -112,6 +117,7 @@ func (s *State) renameTab(from, to docSel) {
 		delete(s.scrolls, from)
 		s.scrolls[to] = st
 	}
+	s.saveSession()
 }
 
 // tabsMenuWidth is how wide the list of all tabs is, in DIPs.

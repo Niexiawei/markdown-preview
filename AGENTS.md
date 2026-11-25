@@ -57,11 +57,12 @@ GUI 要真实窗口；**无头环境里验证视图一律用 `ui.NewTester`，�
 | `internal/watch` | `mygo.WatchFiles` → `ChangeSet`（新增 / 删除 / 重命名 / 写入）；单文件监听（`WatchFile` + `FoldFile`）、监听上限 |
 | `internal/mcp` | `POST /mcp` JSON-RPC 2.0，四个只读工具 |
 | `internal/notices` | 消息账本与 `notices.json`（最新在前、无上限、未读标记）；原子写，**不 import ui**，可无窗口测试 |
+| `internal/session` | 会话快照 `session.json`（标签页与活动标签、树里被折叠的目录）；原子写，**不 import ui**，可无窗口测试 |
 | `internal/view` | Onevra 主题（`theme.go`）与外壳各区域：侧栏顶栏（项目面板 + 右键菜单）、树（`tree.go` 的 `treeKey` / `roots` / `children` / `rowOf` / 自绘行，`scan.go` 的异步扫描与上限，`locate.go` 的 crosshair 定位）、侧栏工具栏（含铃铛）、标签栏（`tabs.go`，占 shell 的标题槽位）、页面第一行的路径与渲染开关（`titleRow`）、预览、消息历史浮层（`notices.go`）、MCP 设置面板；`find.go` 是悬浮搜索（三块浮岛 + 两块数据岛各自的可拖拽高度 `findGripBand`）与跳转，`native.go` 是原生正文与跳转（`jumpToBlock` / `jumpMarker`），`zoom.go` 是正文缩放；`system.go` 是桌面动作接口 |
 | `internal/tray` | 托盘：图标与两条菜单（打开主页面 / 退出）、关闭窗口即隐藏、`Show`（托盘与第二次启动共用）、窗口/任务栏图标。图片在 `assets/`，用 `go:embed` 打包；纯逻辑（菜单项、关闭决策、图标尺寸）无窗口可测 |
 | `.github/workflows/build.yml` | CI：gofmt / vet / 测试（Ubuntu，带 Pango），再在 macOS / Ubuntu 上交叉编译三平台安装包；推 `v*` 标签时把产物挂到 Release |
 
-依赖方向：`view → workspace`、`view → notices`、`view → config`、`mcp → workspace`、`workspace → config`、
+依赖方向：`view → workspace`、`view → notices`、`view → session`、`view → config`、`mcp → workspace`、`workspace → config`、
 `launch → workspace`（只用 `IsMarkdown`）、`watch → workspace`。
 
 ## 硬规则
@@ -129,6 +130,12 @@ GUI 要真实窗口；**无头环境里验证视图一律用 `ui.NewTester`，�
   三个入口是 `view.go` 的 `treeBulkActions`（`leftHeader`，项目选择按钮左边）、项目节点的 `projectActions`
   （项目名后面那两个行内小按钮，label 带项目名以便区分）与 `projectMenu` + 项目面板每行的右键菜单。
   label 不得与目录工具条重名（树是 `展开全部目录树`，目录是 `展开全部目录`），重名会让 `tt.Find`、读屏与快捷键提示都分不清。
+- **改会话记忆（重启恢复什么）**：改 `internal/view/state.go` 的 `restoreSession`（恢复）与 `saveSession`（快照），
+补 `TestRestart*`、`TestTabChangesAreWrittenBack` / `TestFoldChangesAreWrittenBack`。写盘点 = 五个标签变更点
+（`openTab` / `closeTab` / `dropTab` / `dropTabsOf` / `renameTab`）+ `toggleTreeKey` / `setTreeOpen` / `locateDoc`；
+**`setTreeKeyOpen` 里绝不写盘**（`setTreeOpen` 循环调它上万次，写盘只在入口尾部一次）。恢复必须在 `New` 里
+`reloadTree` **之前**（closed 键要先进 `treeSeen`，否则扫描落地时 `noteNewDirectories` 把折叠目录全部展开）；
+活动标签无效就空着（不擅自挑一个）。
 - **改提示消息**：写入只调 `internal/view/notices.go` 的 `notify` / `notifyDone` / `notifyWarn` / `notifyErr`，
   不要直接在 view 里 `c.AddToast`（绕过了账本、去重与历史）；浮层与铃铛也在这个文件（`bellButton` /
   `noticePanel` / `noticeRow` / `noticeBadgeText` / `noticeTime`）。账本自己的行为（落盘、上限、未读）改
@@ -229,6 +236,10 @@ GUI 要真实窗口；**无头环境里验证视图一律用 `ui.NewTester`，�
 - **树的展开状态分两套**：侧栏树是 `s.treeOpen.Open`（`treeKey{project, path}`，`path` 为 `""` 是项目节点），
   目录（TOC）那棵 `ui.Tree` 仍是 `s.open` / `s.openOf`（键 `"projectID:slug"`）。`setOpen` 已删，别复活；
   `openOf` 只给 TOC 用。
+- **折叠记忆是显式 closed 集，不从 `Open` 推导**（`s.treeClosed`，写进 `session.json`）：树搜索的临时展开
+  （`openForSearch` / `closeSearchOpen`）直接动 `Open`、不碰 `treeClosed`，快照才能在搜索开着时照常写而不把
+  用户折叠的目录抹掉。恢复时 closed 键要**同时**进 `treeSeen`（否则 `noteNewDirectories` 把它们当新目录重新展开）。
+  删除目录不清它的键（与 `treeSeen` 同语义：重建同名目录保持折叠）；`dropTree` 随 `treeSeen` 一起清掉整个项目的键。
 - **扫描结果必须带项目 ID + 代数**：`applyTree` 先比 `scanGen`，再比 `cfg.IsOpen`；被关掉的项目、被更新的扫描取代的结果一律丢弃。
   一次点击/一次变动可能会连发几次扫描请求，`scanAgain` 把它们合并成一次。
 - **`OutlineState.Rows()` 是上一帧的快照**：算行号一律用 `rowOf(roots, key)`（它自己按 `Open` 走一遍），

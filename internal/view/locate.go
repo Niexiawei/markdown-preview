@@ -21,6 +21,9 @@ func (s *State) locateDoc() {
 		s.notifyWarn("项目树里没有这个文件：" + s.sel.path)
 		return
 	}
+	// The ancestors it unfolded stay open from now on, so the fold memory the
+	// restart restores changes with them: one write for the whole reveal.
+	s.saveSession()
 	if row := s.rowOf(s.roots(), treeKey{project: s.sel.project, path: s.sel.path}); row >= 0 {
 		s.treeOpen.List.ScrollIntoView(row)
 	}
