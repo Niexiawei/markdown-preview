@@ -200,17 +200,20 @@ func (n *Node) child(name string) *Node {
 	return nil
 }
 
+// lessNode is the order the tree keeps: directories first, then documents,
+// each by name ignoring case.
+func lessNode(a, b *Node) bool {
+	if a.IsDir != b.IsDir {
+		return a.IsDir
+	}
+	return strings.ToLower(a.Name) < strings.ToLower(b.Name)
+}
+
 func sortTree(n *Node) {
 	if len(n.Children) == 0 {
 		return
 	}
-	sort.Slice(n.Children, func(i, j int) bool {
-		a, b := n.Children[i], n.Children[j]
-		if a.IsDir != b.IsDir {
-			return a.IsDir
-		}
-		return strings.ToLower(a.Name) < strings.ToLower(b.Name)
-	})
+	sort.Slice(n.Children, func(i, j int) bool { return lessNode(n.Children[i], n.Children[j]) })
 	for _, c := range n.Children {
 		sortTree(c)
 	}

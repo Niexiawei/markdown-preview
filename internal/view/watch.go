@@ -66,6 +66,23 @@ func (s *State) stopWatch(id string) {
 // it was: the tree shows them all. It runs on the window's thread, from the
 // inbox.
 func (s *State) applyChanges(id string, set watch.ChangeSet) {
+	// The tree the window has takes the changes the watch reports, rather than
+	// being read again: the events already say what appeared, went or moved.
+	patched := false
+	for _, change := range set.Docs {
+		tr, ok := s.treeOf(id)
+		if !ok || tr.root == nil {
+			break
+		}
+		switch {
+		case change.Old != "":
+			patched = workspace.RenameDoc(tr.root, change.Old, change.Path) || patched
+		case change.Op == mygo.FileRemove:
+			patched = workspace.RemoveDoc(tr.root, change.Path) || patched
+		default:
+			patched = workspace.InsertDoc(tr.root, change.Path) || patched
+		}
+	}
 	for _, change := range set.Docs {
 		// A tab pointing at the old name would show nothing: follow the file
 		// wherever it went, and forget it if it went away.
@@ -90,7 +107,12 @@ func (s *State) applyChanges(id string, set watch.ChangeSet) {
 			s.dropTab(docSel{project: id, path: change.Path})
 		}
 	}
-	if set.TreeDirty {
+	switch {
+	case patched:
+		s.bumpTree()
+	case set.TreeDirty && len(set.Docs) == 0:
+		// The watch says the tree changed without saying how, as a directory
+		// that appeared or went: only a scan can tell.
 		s.rescanTree(id)
 	}
 }

@@ -149,6 +149,15 @@ func (s *State) sortTrees() {
 	})
 }
 
+// bumpTree says the trees changed under the window: what a search over them
+// offers is read again. The view of a tree is a function of the tree, so a
+// patched one shows without anything else being done here.
+func (s *State) bumpTree() {
+	if s.treeSearch.open {
+		s.refreshCandidates()
+	}
+}
+
 // afterTreesChanged tells the search and the tabs what the new trees mean: the
 // candidates are what the trees hold now, and a tab whose file is gone goes.
 func (s *State) afterTreesChanged() {
