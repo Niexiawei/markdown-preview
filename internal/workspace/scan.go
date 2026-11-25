@@ -14,6 +14,15 @@ import (
 // returns: its root was deleted, moved or replaced.
 var ErrProjectGone = errors.New("workspace: project directory is gone")
 
+// ErrTreeTooLarge is what reading a project with more than MaxEntries entries
+// returns: the window refuses it rather than read a tree it cannot show.
+var ErrTreeTooLarge = errors.New("workspace: project has too many entries")
+
+// MaxEntries is the most entries a project may hold: files and directories,
+// the ones the scan leaves out not counted. The file watch reads the same
+// number, so a project that scans watches too.
+const MaxEntries = 1_000_000
+
 // Doc is a markdown document of a project.
 type Doc struct {
 	ProjectID string    `json:"project_id"`
@@ -73,8 +82,15 @@ func IsMarkdown(name string) bool {
 	return false
 }
 
-// ListDocs returns the markdown documents under root, sorted by path.
+// ListDocs returns the markdown documents under root, sorted by path. A root
+// with more than MaxEntries entries is refused, so that a project the window
+// could never show is not read whole.
 func ListDocs(root string) ([]Doc, error) {
+	return listDocs(root, MaxEntries)
+}
+
+// listDocs is ListDocs with the ceiling named, which its test holds it to.
+func listDocs(root string, max int) ([]Doc, error) {
 	info, err := os.Stat(root)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, ErrProjectGone
@@ -87,6 +103,7 @@ func ListDocs(root string) ([]Doc, error) {
 	}
 	docs := []Doc{}
 	seen := map[string]bool{}
+	entries := 0
 	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			if path == root {
@@ -107,6 +124,10 @@ func ListDocs(root string) ([]Doc, error) {
 				return fs.SkipDir
 			}
 			return nil
+		}
+		entries++
+		if entries > max {
+			return ErrTreeTooLarge
 		}
 		if d.IsDir() {
 			if key, ok := realPath(path); ok {
@@ -179,17 +200,20 @@ func (n *Node) child(name string) *Node {
 	return nil
 }
 
+// lessNode is the order the tree keeps: directories first, then documents,
+// each by name ignoring case.
+func lessNode(a, b *Node) bool {
+	if a.IsDir != b.IsDir {
+		return a.IsDir
+	}
+	return strings.ToLower(a.Name) < strings.ToLower(b.Name)
+}
+
 func sortTree(n *Node) {
 	if len(n.Children) == 0 {
 		return
 	}
-	sort.Slice(n.Children, func(i, j int) bool {
-		a, b := n.Children[i], n.Children[j]
-		if a.IsDir != b.IsDir {
-			return a.IsDir
-		}
-		return strings.ToLower(a.Name) < strings.ToLower(b.Name)
-	})
+	sort.Slice(n.Children, func(i, j int) bool { return lessNode(n.Children[i], n.Children[j]) })
 	for _, c := range n.Children {
 		sortTree(c)
 	}

@@ -27,11 +27,14 @@ const (
 	RenderWebView RenderMode = "webview"
 )
 
-// Project is a directory of markdown documents.
+// Project is a directory of markdown documents, or one markdown file: File is
+// the document and Root the directory it sits in, so a single file is a
+// project of its own and can sit in the tree beside the directory projects.
 type Project struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 	Root string `json:"root"`
+	File string `json:"file,omitempty"`
 }
 
 // MCP is the app's local Model Context Protocol server: whether it runs, the
@@ -175,6 +178,24 @@ func (c *Config) AddProject(root, name string) (Project, bool) {
 		name = filepath.Base(root)
 	}
 	p := Project{ID: id, Name: name, Root: root}
+	c.Projects = append(c.Projects, p)
+	c.OpenIDs = append(c.OpenIDs, id)
+	if c.ActiveID == "" {
+		c.ActiveID = id
+	}
+	return p, true
+}
+
+// AddFileProject adds the document at path as a project of its own, unless it is one
+// already. It reports whether it added it.
+func (c *Config) AddFileProject(path string) (Project, bool) {
+	id := ProjectID(path)
+	for _, p := range c.Projects {
+		if p.ID == id {
+			return p, false
+		}
+	}
+	p := Project{ID: id, Name: filepath.Base(path), Root: filepath.Dir(path), File: path}
 	c.Projects = append(c.Projects, p)
 	c.OpenIDs = append(c.OpenIDs, id)
 	if c.ActiveID == "" {

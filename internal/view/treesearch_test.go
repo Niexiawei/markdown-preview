@@ -56,7 +56,7 @@ func TestCandidatesMarkTheirDirectories(t *testing.T) {
 	want := []string{id + ":docs", id + ":docs/deep"}
 	got := make([]string, 0, len(s.treeSearch.dirs))
 	for key := range s.treeSearch.dirs {
-		got = append(got, key)
+		got = append(got, key.project+":"+key.path)
 	}
 	slices.Sort(got)
 	if !slices.Equal(got, want) {
@@ -174,10 +174,10 @@ func TestSearchingTheTreeShowsOnlyMatchingFiles(t *testing.T) {
 	}
 }
 
-// TestCandidatesAndTheOneChosenAreTwoDifferentFills pins the two washes the
-// search puts on the tree: every candidate is filled, the one the keyboard is on
-// is filled more, and the two are not the same fill.
-func TestCandidatesAndTheOneChosenAreTwoDifferentFills(t *testing.T) {
+// TestOnlyTheCurrentCandidateIsFilled pins the single wash the search keeps: the
+// tree already shows nothing but matches, so the candidate the keyboard is on
+// is the one row that reads differently.
+func TestOnlyTheCurrentCandidateIsFilled(t *testing.T) {
 	s, root := newState(t)
 	for _, name := range []string{"a_plan.md", "b_plan.md", "c_plan.md", "other.md"} {
 		writeDoc(t, root, name, "# "+name+"\n")
@@ -185,23 +185,14 @@ func TestCandidatesAndTheOneChosenAreTwoDifferentFills(t *testing.T) {
 	s.Refresh()
 	openTreeSearchOn(s, "plan")
 	s.treeSearch.current = 1
-
 	id := s.Projects()[0].ID
 	switch {
-	case s.treeRowFill(id, "a_plan.md") != rowCandidate:
-		t.Errorf("fill of a_plan.md = %v, want rowCandidate", s.treeRowFill(id, "a_plan.md"))
-	case s.treeRowFill(id, "b_plan.md") != rowCurrent:
-		t.Errorf("fill of b_plan.md = %v, want rowCurrent", s.treeRowFill(id, "b_plan.md"))
-	case s.treeRowFill(id, "other.md") != rowNone:
-		t.Errorf("fill of other.md = %v, want rowNone", s.treeRowFill(id, "other.md"))
-	}
-
-	same := true
-	_ = ui.NewTester(func(c *ui.Context) {
-		same = candidateRowTint(c.Theme()) == currentCandidateTint(c.Theme())
-	}, 100, 100)
-	if same {
-		t.Error("the two fills are the same colour, want the chosen one told apart")
+	case !s.isCurrentCandidate(id, "b_plan.md"):
+		t.Error("b_plan.md is not the current candidate, want it")
+	case s.isCurrentCandidate(id, "a_plan.md"):
+		t.Error("a_plan.md reads as the current candidate, want a plain row")
+	case s.isCurrentCandidate(id, "other.md"):
+		t.Error("other.md is not a candidate at all, want no fill")
 	}
 }
 
@@ -220,8 +211,84 @@ func TestSteppingTheCurrentCandidateScrollsTheTree(t *testing.T) {
 	tt := ui.NewTester(s.View, 1000, 300)
 	tt.Frame()
 	tt.Frame()
-	if s.treeScroll.Y <= 0 {
-		t.Errorf("treeScroll.Y = %v, want the tree scrolled to the candidate", s.treeScroll.Y)
+	first, last := s.treeOpen.List.Visible()
+	cell := s.treeSearch.candidates[s.treeSearch.current]
+	want := s.rowOf(s.roots(), treeKey{project: cell.project, path: cell.path})
+	if want < first || want > last {
+		t.Errorf("rows %d..%d visible, want row %d (%s): the tree slid to the candidate", first, last, want, cell.path)
+	}
+}
+
+// TestTheSearchShowsOnlyWhatMatchesInTheOutline pins the filtered tree: the
+// directories holding a match unfold for the length of the search, and closing
+// it shows the tree as the user folded it.
+func TestTheSearchShowsOnlyWhatMatchesInTheOutline(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "docs/plan.md", "# P\n")
+	writeDoc(t, root, "docs/other.md", "# O\n")
+	writeDoc(t, root, "top.md", "# T\n")
+	s.Refresh()
+	id := s.Trees()[0].project.ID
+	s.setTreeKeyOpen(treeKey{project: id, path: "docs"}, false)
+	openTreeSearchOn(s, "plan")
+	tt := newTester(s)
+	if tt.HasText("other.md") {
+		t.Errorf("texts = %q, want only what the phrase matches", tt.Texts())
+	}
+	if !tt.HasText("plan.md") {
+		t.Errorf("texts = %q, want the match under the directory it sits in", tt.Texts())
+	}
+	s.closeTreeSearch()
+	tt = newTester(s)
+	if tt.HasText("plan.md") {
+		t.Errorf("texts = %q, want the directory as the user folded it", tt.Texts())
+	}
+	if !tt.HasText("top.md") {
+		t.Errorf("texts = %q, want the rest of the tree back", tt.Texts())
+	}
+}
+
+// TestTheSearchFoldsTheProjectNodeBack pins the project nodes too: a search
+// unfolds them to show what it matched, and closing it leaves them as the user
+// had them.
+func TestTheSearchFoldsTheProjectNodeBack(t *testing.T) {
+	s, alphaRoot, betaRoot := twoProjects(t)
+	writeDoc(t, alphaRoot, "plan.md", "# P\n")
+	writeDoc(t, betaRoot, "plan_b.md", "# P\n")
+	s.Refresh()
+	alpha := s.Trees()[0].project.ID
+	s.setTreeKeyOpen(treeKey{project: alpha}, false)
+	openTreeSearchOn(s, "plan")
+	if !s.treeOpen.Open.Has(treeKey{project: alpha}) {
+		t.Fatal("the project node is folded, want the search to unfold it")
+	}
+	s.closeTreeSearch()
+	if s.treeOpen.Open.Has(treeKey{project: alpha}) {
+		t.Error("the project node is unfolded, want it folded as the user had it")
+	}
+}
+
+// TestTheSearchRevealsTheCurrentCandidate pins the slide to the candidate the
+// keyboard is on, of a list longer than the pane.
+func TestTheSearchRevealsTheCurrentCandidate(t *testing.T) {
+	s, root := newState(t)
+	for i := range 60 {
+		writeDoc(t, root, "docs/a"+strconv.Itoa(100 + i)[1:]+".md", "# A\n")
+	}
+	s.Refresh()
+	openTreeSearchOn(s, "a")
+	if got := len(s.treeSearch.candidates); got != 60 {
+		t.Fatalf("candidates = %d, want 60", got)
+	}
+	s.moveCandidate(40)
+	tt := ui.NewTester(s.View, 1000, 300)
+	tt.Frame()
+	tt.Frame()
+	cell := s.treeSearch.candidates[40]
+	want := s.rowOf(s.roots(), treeKey{project: cell.project, path: cell.path})
+	first, last := s.treeOpen.List.Visible()
+	if want < first || want > last {
+		t.Errorf("rows %d..%d visible, want row %d (%s)", first, last, want, cell.path)
 	}
 }
 

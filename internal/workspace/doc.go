@@ -45,17 +45,27 @@ type docEntry struct {
 // ListDocs returns the markdown documents of a project, each with the title
 // it shows: its first level-one heading, or its file name without the suffix.
 func (w *Workspace) ListDocs(projectID string) ([]Doc, error) {
-	root, err := w.root(projectID)
-	if err != nil {
-		return nil, err
+	p, ok := w.Project(projectID)
+	if !ok {
+		return nil, ErrProjectGone
 	}
-	docs, err := ListDocs(root)
-	if err != nil {
-		return nil, err
+	var docs []Doc
+	if p.File != "" {
+		var err error
+		docs, err = fileDocs(p)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		var err error
+		docs, err = ListDocs(p.Root)
+		if err != nil {
+			return nil, err
+		}
 	}
 	for i := range docs {
 		docs[i].ProjectID = projectID
-		if title, ok := w.titleOf(projectID, root, &docs[i]); ok {
+		if title, ok := w.titleOf(projectID, p.Root, &docs[i]); ok {
 			docs[i].Title = title
 		}
 	}

@@ -20,12 +20,16 @@ func newState(t *testing.T) (*State, string) {
 	var cfg config.Config
 	p, _ := cfg.AddProject(root, "alpha")
 	cfg.ActiveID = p.ID
-	return New(workspace.New(cfg), cfg, t.TempDir()), root
+	s := New(workspace.New(cfg), cfg, t.TempDir())
+	s.SetSyncScan()
+	return s, root
 }
 
 // newStateWith returns a window showing the projects of cfg.
 func newStateWith(cfg config.Config) *State {
-	return New(workspace.New(cfg), cfg, "")
+	s := New(workspace.New(cfg), cfg, "")
+	s.SetSyncScan()
+	return s
 }
 
 // newTester builds the window in memory, without a window.
@@ -45,7 +49,7 @@ func writeDoc(t *testing.T, root, rel, body string) {
 func TestViewShowsEmptyState(t *testing.T) {
 	s := newStateWith(config.Config{Version: config.Version})
 	tt := ui.NewTester(s.View, 1000, 700)
-	if !tt.HasText("打开一个目录开始预览 markdown") {
+	if !tt.HasText("打开一个目录或 Markdown 文件开始预览") {
 		t.Errorf("texts = %q, want the empty state", tt.Texts())
 	}
 	if !tt.HasText("打开项目") {
@@ -75,7 +79,7 @@ func TestTreeKeepsOpenStateAcrossRefresh(t *testing.T) {
 		t.Fatalf("texts = %q, want a.md before collapsing", tt.Texts())
 	}
 
-	*s.openOf(s.Trees()[0].project.ID + ":notes") = false
+	s.setTreeKeyOpen(treeKeyOf(s.Trees()[0].project.ID, "notes"), false)
 	tt = ui.NewTester(s.View, 1000, 700)
 	if tt.HasText("a.md") {
 		t.Errorf("texts = %q, want notes collapsed", tt.Texts())
@@ -218,7 +222,9 @@ func twoProjects(t *testing.T) (*State, string, string) {
 			t.Fatal(err)
 		}
 	}
-	return New(workspace.New(cfg), cfg, t.TempDir()), alphaRoot, betaRoot
+	s := New(workspace.New(cfg), cfg, t.TempDir())
+	s.SetSyncScan()
+	return s, alphaRoot, betaRoot
 }
 
 func TestTreeGroupsByProjectWhenSeveralAreOpen(t *testing.T) {
@@ -269,7 +275,7 @@ func TestNoOpenProjectShowsTheEmptyState(t *testing.T) {
 	}
 	s := newStateWith(cfg)
 	tt := newTester(s)
-	if !tt.HasText("打开一个目录开始预览 markdown") {
+	if !tt.HasText("打开一个目录或 Markdown 文件开始预览") {
 		t.Errorf("texts = %q, want the empty state", tt.Texts())
 	}
 	if got := s.Selected(); got != "" {
@@ -338,7 +344,7 @@ func TestDirectoriesOfTwoProjectsOpenApart(t *testing.T) {
 	if len(trees) != 2 {
 		t.Fatalf("Trees = %d, want 2", len(trees))
 	}
-	*s.openOf(trees[0].project.ID + ":docs") = false
+	s.setTreeKeyOpen(treeKeyOf(trees[0].project.ID, "docs"), false)
 	tt := newTester(s)
 	if tt.HasText("a.md") {
 		t.Errorf("texts = %q, want alpha's docs collapsed", tt.Texts())
@@ -1000,7 +1006,7 @@ func TestBulkActionsSitLeftOfTheProjectSwitcher(t *testing.T) {
 		t.Fatalf("no project switcher; texts = %q", tt.Texts())
 	}
 	right := switch_.X
-	for _, label := range []string{"展开全部目录树", "折叠全部目录树"} {
+	for _, label := range []string{"展开全部目录树", "折叠全部目录树", "在项目树中定位当前文档"} {
 		r, ok := tt.Find(label)
 		if !ok {
 			t.Fatalf("no %q; texts = %q", label, tt.Texts())
@@ -1043,8 +1049,8 @@ func TestTheProjectMenuFoldsOneProjectOnly(t *testing.T) {
 	if !tt.HasText("a.md") {
 		t.Errorf("texts = %q, want alpha's document kept", tt.Texts())
 	}
-	if !tt.HasText("only") {
-		t.Errorf("texts = %q, want beta's own directory still shown: folding closed the folders, not the node", tt.Texts())
+	if tt.HasText("only") {
+		t.Errorf("texts = %q, want beta's node folded shut with its directories", tt.Texts())
 	}
 	if err := tt.RightClick("beta"); err != nil {
 		t.Fatalf("RightClick again: %v", err)
@@ -1111,8 +1117,8 @@ func TestTheProjectRowFoldsOnlyItsOwnProject(t *testing.T) {
 	if !tt.HasText("a.md") {
 		t.Errorf("texts = %q, want alpha's document kept", tt.Texts())
 	}
-	if !tt.HasText("only") {
-		t.Errorf("texts = %q, want beta's own directory still shown: the button folded it, not closed the node", tt.Texts())
+	if tt.HasText("only") {
+		t.Errorf("texts = %q, want beta's node folded shut with its directories", tt.Texts())
 	}
 	if err := tt.Click("展开项目 beta 的全部目录"); err != nil {
 		t.Fatalf("Click unfold: %v", err)
@@ -1120,5 +1126,27 @@ func TestTheProjectRowFoldsOnlyItsOwnProject(t *testing.T) {
 	tt.Frame()
 	if !tt.HasText("b.md") {
 		t.Errorf("texts = %q, want beta's document back", tt.Texts())
+	}
+}
+
+// TestTheToolbarOpensAProjectOrADocument pins the two entries of the sidebar's
+// footer, side by side, before the reload button.
+func TestTheToolbarOpensAProjectOrADocument(t *testing.T) {
+	s, _ := newState(t)
+	tt := ui.NewTester(func(c *ui.Context) { s.LeftToolbar(c) }, 300, 48)
+	open, ok := tt.Find("打开项目")
+	if !ok {
+		t.Fatalf("no 打开项目; texts = %q", tt.Texts())
+	}
+	doc, ok := tt.Find("打开 Markdown 文件")
+	if !ok {
+		t.Fatalf("no 打开 Markdown 文件; texts = %q", tt.Texts())
+	}
+	reload, ok := tt.Find("刷新")
+	if !ok {
+		t.Fatalf("no 刷新; texts = %q", tt.Texts())
+	}
+	if doc.X < open.X || doc.X+doc.W > reload.X+1 {
+		t.Errorf("打开 Markdown 文件 at X %v..%v, want it between %v and %v", doc.X, doc.X+doc.W, open.X, reload.X)
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/egoist/mygo"
@@ -64,6 +65,23 @@ func Fold(events []mygo.FileEvent) ChangeSet {
 	return set
 }
 
+// FoldFile turns a batch of events of a watch on one file into what the
+// window should do about them: mygo names the file it watches as ".", which
+// the window knows as name.
+func FoldFile(events []mygo.FileEvent, name string) ChangeSet {
+	named := make([]mygo.FileEvent, len(events))
+	for i, e := range events {
+		if !e.IsDir && e.Path == "." {
+			e.Path = name
+		}
+		if !e.IsDir && e.OldPath == "." {
+			e.OldPath = name
+		}
+		named[i] = e
+	}
+	return Fold(named)
+}
+
 // cleanOld turns a rename's source into the path the tree uses.
 func cleanOld(old string) string {
 	if old == "" {
@@ -84,23 +102,46 @@ type Source interface {
 	Close() error
 }
 
-// watcher is a Source over a mygo file watch.
+// watcher is a Source over a mygo file watch. A watch on one file keeps its
+// name, since mygo reports that file as ".".
 type watcher struct {
-	fw  *mygo.FileWatcher
-	err error
+	fw   *mygo.FileWatcher
+	err  error
+	name string
 }
 
 // Watch watches the project at root, and reports what changes in it as
 // ChangeSets. It must be called once the app runs.
 func Watch(ctx context.Context, root string) (Source, error) {
-	fw, err := mygo.WatchFiles(ctx, root, mygo.FileWatchOptions{
-		Recursive: true,
-		Ignore:    workspace.Ignored,
-	})
+	fw, err := mygo.WatchFiles(ctx, root, watchOptions(false))
 	if err != nil {
 		return nil, err
 	}
 	return &watcher{fw: fw}, nil
+}
+
+// WatchFile watches the one document at path, reporting what happens to it
+// without watching, or counting, the rest of its directory: a document opened
+// on its own may sit in a directory the watch would never keep up with.
+func WatchFile(ctx context.Context, path string) (Source, error) {
+	fw, err := mygo.WatchFiles(ctx, path, watchOptions(true))
+	if err != nil {
+		return nil, err
+	}
+	return &watcher{fw: fw, name: filepath.Base(path)}, nil
+}
+
+// watchOptions is what a watch asks the system for: the project's whole tree,
+// or the one file, up to the same ceiling the scan reads.
+func watchOptions(single bool) mygo.FileWatchOptions {
+	if single {
+		return mygo.FileWatchOptions{MaxEntries: workspace.MaxEntries}
+	}
+	return mygo.FileWatchOptions{
+		Recursive:  true,
+		Ignore:     workspace.Ignored,
+		MaxEntries: workspace.MaxEntries,
+	}
 }
 
 // Next waits for the next batch of changes.
@@ -114,6 +155,9 @@ func (w *watcher) Next() (ChangeSet, error) {
 			return ChangeSet{}, err
 		}
 		set := Fold(events)
+		if w.name != "" {
+			set = FoldFile(events, w.name)
+		}
 		if len(set.Docs) == 0 && !set.TreeDirty {
 			continue
 		}

@@ -251,3 +251,36 @@ func TestRemoveProjectClosesIt(t *testing.T) {
 		t.Errorf("ActiveID = %q, want alpha", c.ActiveID)
 	}
 }
+
+// TestAFileProjectIsOneDocument pins a single-document project: its file, the
+// directory it sits in, its name, and that adding it twice keeps one entry.
+func TestAFileProjectIsOneDocument(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "notes.md")
+	if err := os.WriteFile(file, []byte("# N\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var c Config
+	p, isNew := c.AddFileProject(file)
+	switch {
+	case !isNew:
+		t.Fatal("isNew = false, want the file added")
+	case p.File != file:
+		t.Errorf("File = %q, want %q", p.File, file)
+	case p.Root != dir:
+		t.Errorf("Root = %q, want %q", p.Root, dir)
+	case p.Name != "notes.md":
+		t.Errorf("Name = %q, want notes.md", p.Name)
+	case !c.IsOpen(p.ID):
+		t.Error("the file project is not open, want it open")
+	case p.ID == ProjectID(dir):
+		t.Error("the file project's id is the directory project's, want them apart")
+	}
+	if again, isNew := c.AddFileProject(file); isNew || again.ID != p.ID {
+		t.Errorf("AddFileProject twice = %q, %v, want the same one", again.ID, isNew)
+	}
+	// The file survives a save and a load.
+	if err := c.Save(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+}

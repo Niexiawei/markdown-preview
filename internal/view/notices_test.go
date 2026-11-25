@@ -19,7 +19,9 @@ import (
 // app does the next time it starts.
 func restart(t *testing.T, s *State) *State {
 	t.Helper()
-	return New(workspace.New(s.cfg), s.cfg, s.cfgDir)
+	next := New(workspace.New(s.cfg), s.cfg, s.cfgDir)
+	next.SetSyncScan()
+	return next
 }
 
 func TestTheNewestMessageIsTheStatus(t *testing.T) {

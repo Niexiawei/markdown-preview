@@ -6,6 +6,7 @@ package view
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -17,6 +18,7 @@ import (
 
 	"mdpreview/internal/config"
 	"mdpreview/internal/notices"
+	"mdpreview/internal/watch"
 	"mdpreview/internal/workspace"
 )
 
@@ -47,10 +49,17 @@ type State struct {
 	// trees are the trees of the open projects, in the order they were added:
 	// with more than one project the sidebar puts a node of each on top.
 	trees []projectTree
-	// open is the open state of each directory of the trees, by the key
-	// "projectID:path": directories start open, and a click on one's arrow
-	// writes here, so that a reloaded tree shows what the user left open.
+	// open is the open state of each heading of the document's outline, by the
+	// key its title makes: the outline's directories start open, and a click on
+	// one's arrow writes here, so that a reloaded outline shows what the user
+	// left open.
 	open map[string]*bool
+	// treeOpen is the sidebar's tree: which of its rows are open, and how it
+	// lays them out. Its keys are the entries' paths, so that a tree read again
+	// keeps what the user folded; treeSeen are the directories the window has
+	// shown, so that a new one opens by itself and a folded one stays folded.
+	treeOpen ui.OutlineState[treeKey]
+	treeSeen map[treeKey]bool
 	// tabs are the documents the window has open, in the order they were
 	// opened: the tab bar shows them, and sel is always one of them.
 	tabs []docSel
@@ -96,8 +105,6 @@ type State struct {
 	// it was not.
 	treeSearch  treeSearchState
 	treeFocused bool
-	// treeScroll is how far the tree scrolls.
-	treeScroll ui.ScrollState
 
 	// The document shown: its source, its parse, the outline built from it,
 	// and what the native markdown view shows it with.
@@ -134,6 +141,22 @@ type State struct {
 	// gone remembers the projects whose directory was removed, so that a
 	// project found gone is dropped once and not every frame.
 	gone map[string]bool
+
+	// scan reads a project's tree: on a goroutine unless syncScan, which the
+	// tests set so that a tree they write is there in the frame that asks.
+	// scanning says which projects are being read now, scanAgain which were
+	// asked for again while they were, and scanGen the scan whose result
+	// counts. tooLarge are the projects the window refused to read, until a
+	// reload asks again.
+	scan     func(workspace.Project) (*workspace.Node, error)
+	syncScan bool
+	// watchProject starts one project's watch. It is a field so that a test
+	// can hold a watch, as it holds a scan; the app's own starts mygo's.
+	watchProject func(context.Context, workspace.Project) (watch.Source, error)
+	scanning     map[string]bool
+	scanAgain    map[string]bool
+	scanGen      map[string]int
+	tooLarge     map[string]bool
 
 	// watchReady is set once the app runs, when the projects can be
 	// watched; watches holds each project's cancel function.
@@ -173,16 +196,24 @@ func New(ws *workspace.Workspace, cfg config.Config, dir string) *State {
 	// shows as no messages at all: it must open all the same.
 	book, _ := notices.Load(dir)
 	s := &State{
-		ws:         ws,
-		cfgDir:     dir,
-		cfg:        cfg,
-		activeID:   cfg.ActiveID,
-		open:       map[string]*bool{},
-		scrolls:    map[docSel]*ui.ScrollState{},
-		gone:       map[string]bool{},
-		watches:    map[string]context.CancelFunc{},
-		renderMode: map[docSel]config.RenderMode{},
-		notes:      book,
+		ws:           ws,
+		cfgDir:       dir,
+		cfg:          cfg,
+		activeID:     cfg.ActiveID,
+		open:         map[string]*bool{},
+		treeOpen:     ui.OutlineState[treeKey]{Generation: 1},
+		treeSeen:     map[treeKey]bool{},
+		scrolls:      map[docSel]*ui.ScrollState{},
+		gone:         map[string]bool{},
+		watches:      map[string]context.CancelFunc{},
+		scan:         readTree,
+		watchProject: startProjectWatch,
+		scanning:     map[string]bool{},
+		scanAgain:    map[string]bool{},
+		scanGen:      map[string]int{},
+		tooLarge:     map[string]bool{},
+		renderMode:   map[docSel]config.RenderMode{},
+		notes:        book,
 		// The messages the last run left are history, not news: they show in
 		// the bell's list without popping up again.
 		noticeShown: book.Last(),
@@ -283,7 +314,7 @@ func (s *State) ToggleProject(id string) {
 	open := !s.cfg.IsOpen(id)
 	s.cfg.SetOpen(id, open)
 	if open {
-		s.startWatch(p.ID, p.Root)
+		s.startWatch(p)
 	} else {
 		s.stopWatch(p.ID)
 		s.dropTabsOf(id)
@@ -328,54 +359,28 @@ func (s *State) openOf(path string) *bool {
 	return &b
 }
 
-// setOpen asks for the directory, or the project node, at key to be open or
-// folded. An entry that is there is written through its pointer, which is the
-// one the tree's items hold: replacing it would leave a tree item reading a
-// state that this frame no longer writes.
-func (s *State) setOpen(key string, open bool) {
-	if p, ok := s.open[key]; ok {
-		*p = open
-		return
-	}
-	s.open[key] = &open
-}
-
-// setTreeOpen folds or unfolds every directory of the open projects, or of the
-// project with projectID alone ("" for all of them). Folding closes the
-// directories and leaves the project nodes as the user left them — a folded
-// project still shows its top level, as a window of one project does; unfolding
-// opens the nodes too, so that nothing stays hidden after it.
-func (s *State) setTreeOpen(projectID string, open bool) {
-	for _, tr := range s.trees {
-		if projectID != "" && tr.project.ID != projectID {
-			continue
-		}
-		if open && len(s.trees) > 1 {
-			s.setOpen("project:"+tr.project.ID, true)
-		}
-		var walk func(n *workspace.Node)
-		walk = func(n *workspace.Node) {
-			for _, child := range n.Children {
-				if !child.IsDir {
-					continue
-				}
-				s.setOpen(tr.project.ID+":"+child.Path, open)
-				walk(child)
-			}
-		}
-		if tr.root != nil {
-			walk(tr.root)
-		}
-	}
-}
-
 // Trees returns the trees of the open projects, in the order they were added.
 func (s *State) Trees() []projectTree { return s.trees }
+
+// treeOf returns the tree of the project with id, if the window has read it.
+func (s *State) treeOf(id string) (projectTree, bool) {
+	for _, tr := range s.trees {
+		if tr.project.ID == id {
+			return tr, true
+		}
+	}
+	return projectTree{}, false
+}
 
 // hasDocs reports whether any open project has a markdown document.
 func (s *State) hasDocs() bool {
 	for _, tr := range s.trees {
-		if tr.root != nil && len(tr.root.Children) > 0 {
+		switch {
+		case tr.root == nil:
+		case tr.project.File != "":
+			// A project of one document is that document.
+			return true
+		case len(tr.root.Children) > 0:
 			return true
 		}
 	}
@@ -396,6 +401,23 @@ func (s *State) OpenProject() {
 	s.AddProjects(paths)
 }
 
+// OpenDocumentFile asks for markdown files and opens each of them, as a
+// document of a project the window knows or of its own.
+func (s *State) OpenDocumentFile() {
+	paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
+		Title:    "打开 Markdown 文件",
+		Multiple: true,
+		Filters:  []mygo.FileFilter{{Name: "Markdown", Extensions: []string{"md", "markdown"}}},
+		Parent:   s.win,
+	})
+	if err != nil || len(paths) == 0 {
+		return
+	}
+	for _, path := range paths {
+		s.OpenDocument(path)
+	}
+}
+
 // AddProject opens the directory at root as a project.
 func (s *State) AddProject(root string) { s.AddProjects([]string{root}) }
 
@@ -412,16 +434,74 @@ func (s *State) AddProjects(roots []string) int {
 		}
 		s.cfg.SetOpen(p.ID, true)
 		s.cfg.ActiveID = p.ID
-		s.startWatch(p.ID, p.Root)
+		s.startWatch(p)
 	}
 	if len(roots) == 0 {
 		return 0
 	}
+	s.afterProjectsChanged()
+	return added
+}
+
+// afterProjectsChanged applies a change to the projects to everything that
+// reads them: the workspace the app asks, the file it keeps, and the trees.
+func (s *State) afterProjectsChanged() {
 	s.activeID = s.cfg.ActiveID
 	s.ws.SetConfig(s.cfg)
 	s.save()
 	s.reloadTree()
-	return added
+}
+
+// OpenDocument shows the document at path, as the command line, a second
+// launch or the system opening a file with the app asks: a document of a
+// project the window knows, or a file of its own, which makes a project of one
+// document. Opening the document shown again does nothing.
+func (s *State) OpenDocument(path string) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		s.notifyErr("无法打开：" + path)
+		return
+	}
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		abs = resolved
+	}
+	info, err := os.Stat(abs)
+	if err != nil || !info.Mode().IsRegular() || !workspace.IsMarkdown(abs) {
+		s.notifyErr("无法打开：" + abs)
+		return
+	}
+	sel := docSel{project: "", path: filepath.Base(abs)}
+	if id, rel, ok := workspace.Locate(s.cfg.Projects, abs); ok {
+		sel = docSel{project: id, path: rel}
+		if sel == s.sel && s.cfg.IsOpen(id) {
+			return
+		}
+		if !s.cfg.IsOpen(id) {
+			p, _ := s.project(id)
+			s.cfg.SetOpen(id, true)
+			s.startWatch(p)
+			s.afterProjectsChanged()
+		}
+	} else {
+		p, _ := s.cfg.AddFileProject(abs)
+		sel = docSel{project: p.ID, path: filepath.Base(abs)}
+		if sel == s.sel {
+			return
+		}
+		s.startWatch(p)
+		s.afterProjectsChanged()
+	}
+	s.selectDocIn(sel.project, sel.path)
+	s.notifyDone("已打开 " + filepath.Base(abs))
+	s.invalidate()
+}
+
+// invalidate asks the window for a frame, for the work that arrives outside
+// one, as a second launch's command line does.
+func (s *State) invalidate() {
+	if s.win != nil {
+		s.win.Invalidate()
+	}
 }
 
 // RemoveProject removes a project from the window, asking first: the window
@@ -455,9 +535,16 @@ func (s *State) removeProject(id string) {
 	s.reloadTree()
 }
 
-// Refresh reloads the file tree and the document shown.
+// Refresh reloads the file tree and the document shown. It is the user's ask,
+// so it reads again what the window refused as too large, and watches again a
+// project whose watch stopped at the entry limit.
 func (s *State) Refresh() {
-	s.reloadTree()
+	s.tooLarge = map[string]bool{}
+	for _, p := range s.cfg.OpenProjects() {
+		s.startWatch(p)
+		s.loadTree(p)
+	}
+	s.afterTreesChanged()
 	s.onDocChanged()
 }
 
@@ -465,51 +552,34 @@ func (s *State) save() {
 	_ = s.cfg.Save(s.cfgDir)
 }
 
-// reloadTree reads the trees of the open projects, dropping the projects whose
-// directory is gone and the document that is no longer one of them.
+// reloadTree lines the trees up with the open projects: the trees of the ones
+// the window no longer shows go, and the ones it shows but has not read yet are
+// read. What a scan makes of a project is applyTree's business.
 func (s *State) reloadTree() {
-	s.trees = s.trees[:0]
-	for _, p := range s.cfg.OpenProjects() {
-		tree, err := workspace.BuildTree(p.Root)
-		if err == nil {
-			s.trees = append(s.trees, projectTree{project: p, root: tree})
+	open := s.cfg.OpenProjects()
+	rank := make(map[string]bool, len(open))
+	for _, p := range open {
+		rank[p.ID] = true
+	}
+	kept := s.trees[:0]
+	for _, tr := range s.trees {
+		if rank[tr.project.ID] {
+			kept = append(kept, tr)
+		}
+	}
+	s.trees = kept
+	for _, p := range open {
+		if s.tooLarge[p.ID] {
+			// The window refused this one: the user's reload reads it again,
+			// not every frame that lines the trees up.
 			continue
 		}
-		if s.gone[p.ID] {
-			s.notifyErr("项目目录不可用：" + p.Root)
+		if _, ok := s.treeOf(p.ID); ok {
 			continue
 		}
-		s.gone[p.ID] = true
-		s.notifyErr("项目目录不可用：" + p.Root)
-		s.cfg.RemoveProject(p.ID)
-		s.activeID = s.cfg.ActiveID
-		s.dropTabsOf(p.ID)
-		s.ws.SetConfig(s.cfg)
-		s.save()
+		s.loadTree(p)
 	}
-	if s.treeSearch.open {
-		// The tree the search walks is the one just read: a file added or
-		// renamed behind the window's back changes what it offers.
-		s.refreshCandidates()
-	}
-	if s.sel.empty() {
-		return
-	}
-	// A tab pointing at a file that is no longer there shows nothing: drop
-	// those the window does not show first, then the one it does, so that its
-	// neighbour in the bar takes over.
-	for _, tab := range append([]docSel(nil), s.tabs...) {
-		if tab == s.sel {
-			continue
-		}
-		if _, err := s.ws.Stat(tab.project, tab.path); err != nil {
-			s.dropTab(tab)
-		}
-	}
-	if _, err := s.ws.Stat(s.sel.project, s.sel.path); err != nil {
-		s.closeTab(s.sel)
-		s.notifyWarn("文件已被删除")
-	}
+	s.afterTreesChanged()
 }
 
 // selectDoc shows a document of the active project.
@@ -593,6 +663,11 @@ func (s *State) shortPath() string {
 		return ""
 	}
 	if p, ok := s.SelectedProject(); ok {
+		if p.File != "" {
+			// A document of its own is named by the path it has, not by a
+			// project's name in front of the same name.
+			return p.File
+		}
 		return p.Name + "/" + s.sel.path
 	}
 	return s.sel.path

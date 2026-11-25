@@ -3,6 +3,7 @@ package view
 import (
 	"time"
 
+	"github.com/egoist/mygo/plugins/loading"
 	"github.com/egoist/mygo/ui"
 	"github.com/oneo-me/onevra/source/components"
 	"github.com/oneo-me/onevra/source/icons/lucide"
@@ -27,8 +28,7 @@ func (s *State) View(c *ui.Context) {
 			if s.treeSearch.open {
 				s.treeSearchRow(c)
 			}
-			ui.Scroll(c).Grow(1).Label("项目树").TrackScroll(&s.treeScroll).
-				HandleInput(s.treePress).Children(func() { s.fileTree(c) })
+			s.fileTree(c)
 			s.leftToolbar(c)
 		})
 		ui.Column(c).Grow(1).MinWidth(0).FillHeight().Clip().Children(func() {
@@ -49,8 +49,7 @@ func (s *State) Left(c *ui.Context) {
 		if s.treeSearch.open {
 			s.treeSearchRow(c)
 		}
-		ui.Scroll(c).Grow(1).Label("项目树").TrackScroll(&s.treeScroll).
-			HandleInput(s.treePress).Children(func() { s.fileTree(c) })
+		s.fileTree(c)
 	})
 }
 
@@ -113,18 +112,26 @@ func (s *State) leftHeader(c *ui.Context) {
 	})
 }
 
+// treeBulkSize is the square of the tree's bulk actions: a dense row above the
+// projects, smaller than the footer's buttons (which are plain, 32 DIP).
+const treeBulkSize float32 = 24
+
 // treeBulkActions builds the tree's bulk actions: unfold or fold every directory
-// of every open project. They sit before the project panel's button; the
-// outline's own pair sits in its header.
+// of every open project, and bring the document shown into view. They sit before
+// the project panel's button; the outline's own pair sits in its header.
 func (s *State) treeBulkActions(c *ui.Context) {
 	none := len(s.trees) == 0
-	if components.IconButton(c, lucide.UnfoldVertical(), "展开全部目录树", components.IconButtonPlain).
-		Disabled(none).Clicked() {
+	unfold := components.IconButton(c, lucide.UnfoldVertical(), "展开全部目录树", components.IconButtonCompact)
+	if unfold.Size(treeBulkSize, treeBulkSize).Disabled(none).Clicked() {
 		s.setTreeOpen("", true)
 	}
-	if components.IconButton(c, lucide.FoldVertical(), "折叠全部目录树", components.IconButtonPlain).
-		Disabled(none).Clicked() {
+	fold := components.IconButton(c, lucide.FoldVertical(), "折叠全部目录树", components.IconButtonCompact)
+	if fold.Size(treeBulkSize, treeBulkSize).Disabled(none).Clicked() {
 		s.setTreeOpen("", false)
+	}
+	locate := components.IconButton(c, lucide.Crosshair(), "在项目树中定位当前文档", components.IconButtonCompact)
+	if locate.Size(treeBulkSize, treeBulkSize).Disabled(s.sel.empty()).Clicked() {
+		s.locateDoc()
 	}
 }
 
@@ -132,14 +139,27 @@ func (s *State) treeBulkActions(c *ui.Context) {
 // and the list of every project the window knows.
 func (s *State) projectSwitcher(c *ui.Context) {
 	t := c.Theme()
-	label := "项目"
+	label, reading := "项目", ""
 	if p, ok := s.ActiveProject(); ok {
 		label = trimEllipsis(p.Name, 18)
+		if s.scanning[p.ID] {
+			// The tree below still shows what the window read last time: the
+			// name says that it is being read again.
+			reading = p.Name
+		}
 	}
 	button := components.Button(c, "", components.ButtonGhost).Label("切换项目")
-	button.Grow(1).Gap(t.Space(0.75)).Children(func() {
-		components.Icon(c, lucide.Folder()).Size(t.Rem(1), t.Rem(1)).TextColor(t.TextMuted)
+	button.Grow(1).Gap(t.Space(0.75)).Busy(reading != "").Children(func() {
+		icon := lucide.Folder()
+		if p, ok := s.ActiveProject(); ok && p.File != "" {
+			icon = lucide.FileText()
+		}
+		components.Icon(c, icon).Size(t.Rem(1), t.Rem(1)).TextColor(t.TextMuted)
 		components.Text(c, label).SingleLine().Grow(1)
+		if reading != "" {
+			loading.Snake(c, loading.Options{Size: loading.DefaultSize, Color: t.TextMuted}).
+				MarginStart(t.Space(0.5)).Label("正在扫描 " + reading)
+		}
 		components.Icon(c, lucide.ChevronsUpDown()).Size(t.Rem(0.875), t.Rem(0.875)).TextColor(t.TextMuted)
 	})
 	if button.Clicked() {
@@ -154,12 +174,17 @@ func (s *State) projectSwitcher(c *ui.Context) {
 			for _, p := range s.Projects() {
 				p := p
 				open := s.cfg.IsOpen(p.ID)
-				row := components.Button(c.Key("project:"+p.ID), "", components.ButtonGhost).Label("项目：" + p.Name)
+				kind := "项目："
+				icon := lucide.Folder()
+				if p.File != "" {
+					kind, icon = "文件：", lucide.FileText()
+				}
+				row := components.Button(c.Key("project:"+p.ID), "", components.ButtonGhost).Label(kind + p.Name)
 				// The row opens and closes the project: a check box, so that a
 				// screen reader says which.
 				row.Role(ui.RoleCheckBox).Checked(open)
 				row.Gap(t.Space(0.75)).Children(func() {
-					components.Icon(c, lucide.Folder()).Size(t.Rem(1), t.Rem(1)).TextColor(t.TextMuted)
+					components.Icon(c, icon).Size(t.Rem(1), t.Rem(1)).TextColor(t.TextMuted)
 					components.Text(c, p.Name).SingleLine().Grow(1)
 					if open {
 						components.Icon(c, lucide.Check()).Size(t.Rem(1), t.Rem(1)).TextColor(t.Accent)
@@ -202,6 +227,9 @@ func (s *State) leftToolbar(c *ui.Context) {
 	ui.Row(c).Padding(t.Space(1)).Gap(t.Space(0.5)).AlignItems(ui.Center).Children(func() {
 		if components.IconButton(c, lucide.FolderOpen(), "打开项目", components.IconButtonPlain).Clicked() {
 			s.OpenProject()
+		}
+		if components.IconButton(c, lucide.FilePlus(), "打开 Markdown 文件", components.IconButtonPlain).Clicked() {
+			s.OpenDocumentFile()
 		}
 		if components.IconButton(c, lucide.RefreshCw(), "刷新", components.IconButtonPlain).
 			Disabled(s.activeID == "").Clicked() {
@@ -269,9 +297,18 @@ func (s *State) fileTree(c *ui.Context) {
 		// on its way, or done.
 		s.treeSearch.reveal, s.treeSearch.revealSeen = false, time.Time{}
 	}
-	ui.Column(c).Fill().Padding(t.Space(0.5)).Gap(t.Space(0.25)).Children(func() {
+	ui.Column(c).Grow(1).FillWidth().Padding(t.Space(0.5), 0, t.Space(0.5), 0).
+		Gap(t.Space(0.25)).Children(func() {
 		if len(s.trees) == 0 {
-			components.Text(c, "打开一个目录作为项目").FontSize(12).TextColor(t.TextMuted)
+			if name := s.scanningName(); name != "" {
+				components.Text(c, "正在扫描 "+name+"…").FontSize(12).TextColor(t.TextMuted)
+				return
+			}
+			components.Text(c, "打开一个目录或 Markdown 文件").FontSize(12).TextColor(t.TextMuted)
+			return
+		}
+		if name := s.scanningName(); name != "" && !s.hasDocs() {
+			components.Text(c, "正在扫描 "+name+"…").FontSize(12).TextColor(t.TextMuted)
 			return
 		}
 		if !s.hasDocs() {
@@ -282,45 +319,8 @@ func (s *State) fileTree(c *ui.Context) {
 			components.Text(c, "没有匹配的文件").FontSize(12).TextColor(t.TextMuted)
 			return
 		}
-		ui.Tree(c, func() {
-			if s.searching() {
-				s.treeMatched(c)
-				return
-			}
-			if len(s.trees) == 1 {
-				s.treeItems(c, s.trees[0])
-				return
-			}
-			for _, tr := range s.trees {
-				tr := tr
-				item := ui.TreeItem(c, tr.project.Name, s.openOf("project:"+tr.project.ID), func() {
-					s.treeItems(c, tr)
-				})
-				s.projectActions(c, item, tr)
-				s.projectMenu(c, item, tr)
-			}
-		})
+		s.treeBody(c)
 	})
-}
-
-// treeItems builds one project's entries, and its directories' in turn.
-func (s *State) treeItems(c *ui.Context, tr projectTree) {
-	for _, child := range tr.root.Children {
-		child := child
-		if child.IsDir {
-			item := ui.TreeItem(c, child.Name, s.openOf(tr.project.ID+":"+child.Path), func() {
-				s.treeItems(c, tr.childOf(child))
-			})
-			s.nodeMenu(c, item, tr, child)
-			continue
-		}
-		selected := s.sel.project == tr.project.ID && child.Path == s.sel.path
-		item := ui.TreeItem(c, child.Name, nil, nil).Selected(selected)
-		if item.Clicked() {
-			s.selectDocIn(tr.project.ID, child.Path)
-		}
-		s.nodeMenu(c, item, tr, child)
-	}
 }
 
 // projectActions adds a project node's two bulk actions after its name: the
@@ -382,10 +382,4 @@ func (s *State) nodeMenu(c *ui.Context, item ui.Element, tr projectTree, n *work
 			s.revealNode(tr, n)
 		}
 	})
-}
-
-// childOf is the tree of tr from node down, which the tree builds as the user
-// opens its directories.
-func (tr projectTree) childOf(node *workspace.Node) projectTree {
-	return projectTree{project: tr.project, root: node}
 }

@@ -3,12 +3,14 @@ package main
 import (
 	"log"
 	"net"
+	"os"
 	"strconv"
 
 	"github.com/egoist/mygo"
 	"github.com/oneo-me/onevra/source/shells/sidebar"
 
 	"mdpreview/internal/config"
+	"mdpreview/internal/launch"
 	"mdpreview/internal/mcp"
 	"mdpreview/internal/tray"
 	"mdpreview/internal/view"
@@ -19,6 +21,28 @@ import (
 // and WhenReady run on the main thread.
 var mainWindow *mygo.Window
 
+// windowState is the window's state, for what arrives outside a frame: a
+// second launch's command line, and a document the system opens with the app.
+// pending holds the documents that arrived before it was made, since the
+// system hands over the file an association launched before WhenReady runs.
+var (
+	windowState *view.State
+	pendingDocs []string
+)
+
+// openDocuments shows the documents a launch named, from the command line, a
+// second instance, or the system opening a file with the app. It runs on the
+// main thread, as the handlers that call it do.
+func openDocuments(paths []string) {
+	if windowState == nil {
+		pendingDocs = append(pendingDocs, paths...)
+		return
+	}
+	for _, path := range paths {
+		windowState.OpenDocument(path)
+	}
+}
+
 func main() {
 	// Closing the window only hides it, so a second launch must not start a
 	// second copy with its own tray icon: it hands its command line to this one
@@ -26,7 +50,19 @@ func main() {
 	if !mygo.App.RequestSingleInstanceLock() {
 		return
 	}
-	mygo.App.OnSecondInstance(func([]string, string) { tray.Show(mainWindow) })
+	mygo.App.OnSecondInstance(func(args []string, wd string) {
+		openDocuments(launch.Documents(args, wd))
+		tray.Show(mainWindow)
+	})
+	// A file the system opens with the app: an association of mygo.json's
+	// fileAssociations, a document dropped on the Dock, or the path macOS hands
+	// over at launch. `go run . x.md` never comes this way — the association is
+	// written into the bundle at build time — so the command line is read below
+	// as well, and the two are harmless together.
+	mygo.App.OnOpenFile(func(path string) {
+		openDocuments([]string{path})
+		tray.Show(mainWindow)
+	})
 	mygo.App.WhenReady(func() {
 		dir, err := mygo.App.Path(mygo.PathUserData)
 		if err != nil {
@@ -38,6 +74,9 @@ func main() {
 		}
 		ws := workspace.New(cfg)
 		state := view.New(ws, cfg, dir)
+		windowState = state
+		openDocuments(pendingDocs)
+		pendingDocs = nil
 		view.RegisterMDView(state.Roots)
 		// The shell owns the window, the floating header and the sidebar the
 		// user collapses; the state fills its slots.
@@ -92,6 +131,8 @@ func main() {
 			return float32(height)
 		})
 		state.StartWatching()
+		wd, _ := os.Getwd()
+		openDocuments(launch.Documents(os.Args[1:], wd))
 		startMCP(state, ws, cfg, dir)
 	})
 	if err := mygo.App.Run(); err != nil {

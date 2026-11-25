@@ -32,12 +32,6 @@ func selectedRowTint(t *ui.Theme) ui.Color {
 	return t.Accent.Alpha(0.12)
 }
 
-// candidateRowTint is the fill of a file the tree's search matched: a wash of
-// the accent, lighter than the chosen one so that the two read apart.
-func candidateRowTint(t *ui.Theme) ui.Color {
-	return t.Accent.Alpha(0.08)
-}
-
 // currentCandidateTint is the fill of the candidate the keyboard is on: the
 // candidate's own wash, made strong enough to stand out from the others on a
 // sidebar face.

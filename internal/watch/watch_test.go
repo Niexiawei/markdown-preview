@@ -107,3 +107,40 @@ func TestWatchSeesExternalWrite(t *testing.T) {
 }
 
 var _ = workspace.Ignored
+
+// TestFoldFileTurnsTheWatchedFileIntoADocument pins mygo's single-file watch:
+// its events name the file itself as ".", which the window must read as the
+// document it opened.
+func TestFoldFileTurnsTheWatchedFileIntoADocument(t *testing.T) {
+	set := FoldFile([]mygo.FileEvent{{Op: mygo.FileWrite, Path: "."}}, "notes.md")
+	if len(set.Docs) != 1 || set.Docs[0].Path != "notes.md" || set.Docs[0].Op != mygo.FileWrite {
+		t.Fatalf("Docs = %v, want one write of notes.md", set.Docs)
+	}
+	if set.TreeDirty {
+		t.Error("TreeDirty = true, want false: a write changes no entry")
+	}
+	// The directory itself going away is the tree's news, not a document's.
+	set = FoldFile([]mygo.FileEvent{{Op: mygo.FileRemove, Path: ".", IsDir: true}}, "notes.md")
+	if !set.TreeDirty || len(set.Docs) != 0 {
+		t.Errorf("set = %+v, want a dirty tree and no document", set)
+	}
+}
+
+// TestTheWatchKeepsAMillionEntries pins the ceiling the watch shares with the
+// scan: a project that scans watches too.
+func TestTheWatchKeepsAMillionEntries(t *testing.T) {
+	tree := watchOptions(false)
+	if tree.MaxEntries != workspace.MaxEntries {
+		t.Errorf("MaxEntries = %d, want %d", tree.MaxEntries, workspace.MaxEntries)
+	}
+	if !tree.Recursive || tree.Ignore == nil {
+		t.Errorf("options = %+v, want a recursive watch that ignores what the tree leaves out", tree)
+	}
+	one := watchOptions(true)
+	if one.MaxEntries != workspace.MaxEntries {
+		t.Errorf("single file MaxEntries = %d, want %d", one.MaxEntries, workspace.MaxEntries)
+	}
+	if one.Recursive || one.Ignore != nil {
+		t.Errorf("single file options = %+v, want just the one file, whatever it is called", one)
+	}
+}
