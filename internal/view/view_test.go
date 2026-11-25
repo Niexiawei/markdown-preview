@@ -1006,7 +1006,7 @@ func TestBulkActionsSitLeftOfTheProjectSwitcher(t *testing.T) {
 		t.Fatalf("no project switcher; texts = %q", tt.Texts())
 	}
 	right := switch_.X
-	for _, label := range []string{"展开全部目录树", "折叠全部目录树"} {
+	for _, label := range []string{"展开全部目录树", "折叠全部目录树", "在项目树中定位当前文档"} {
 		r, ok := tt.Find(label)
 		if !ok {
 			t.Fatalf("no %q; texts = %q", label, tt.Texts())

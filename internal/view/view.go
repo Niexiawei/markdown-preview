@@ -124,6 +124,10 @@ func (s *State) treeBulkActions(c *ui.Context) {
 		Disabled(none).Clicked() {
 		s.setTreeOpen("", false)
 	}
+	if components.IconButton(c, lucide.Crosshair(), "在项目树中定位当前文档", components.IconButtonPlain).
+		Disabled(s.sel.empty()).Clicked() {
+		s.locateDoc()
+	}
 }
 
 // projectSwitcher builds the project panel's button: the active project's name,

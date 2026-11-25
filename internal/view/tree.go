@@ -112,13 +112,7 @@ func findNode(n *workspace.Node, path string) (*workspace.Node, bool) {
 	rest := path
 	for {
 		name, tail, _ := strings.Cut(rest, "/")
-		var found *workspace.Node
-		for _, c := range n.Children {
-			if c.Name == name {
-				found = c
-				break
-			}
-		}
+		found := childNamed(n, name)
 		if found == nil {
 			return nil, false
 		}
