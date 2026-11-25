@@ -1,6 +1,7 @@
 package view
 
 import (
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -328,5 +329,63 @@ func TestSearchDoesNotDisturbTheClosedSet(t *testing.T) {
 	}
 	if len(out.TreeClosed) != 1 {
 		t.Errorf("closed = %v, want nothing else leaked in", out.TreeClosed)
+	}
+}
+
+// TestRestartRestoresASingleFileTab pins the restore for a project of one
+// document: its tab is named by the file itself, and it comes back shown.
+func TestRestartRestoresASingleFileTab(t *testing.T) {
+	root, dir := t.TempDir(), t.TempDir()
+	writeDoc(t, root, "solo.md", "# S\n")
+	var cfg config.Config
+	p, _ := cfg.AddFileProject(filepath.Join(root, "solo.md"))
+	cfg.ActiveID = p.ID
+	if err := session.Save(dir, session.Session{Version: session.Version,
+		Tabs:   []session.Ref{{Project: p.ID, Path: "solo.md"}},
+		Active: session.Ref{Project: p.ID, Path: "solo.md"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s := New(workspace.New(cfg), cfg, dir)
+	s.SetSyncScan()
+	if len(s.tabs) != 1 || s.sel.path != "solo.md" {
+		t.Errorf("tabs = %v, sel = %v; want solo.md restored and active", s.tabs, s.sel)
+	}
+	if !newTester(s).HasText("S") {
+		t.Errorf("texts = %q, want the restored document's body", newTester(s).Texts())
+	}
+}
+
+// TestRestartKeepsAFoldedProjectNodeFolded pins the restore of a project's own
+// node, which only exists while several projects are open: the empty path in
+// the snapshot folds that project's whole subtree, and the others stay open.
+func TestRestartKeepsAFoldedProjectNodeFolded(t *testing.T) {
+	alpha, beta, dir := t.TempDir(), t.TempDir(), t.TempDir()
+	var cfg config.Config
+	pa, _ := cfg.AddProject(alpha, "alpha")
+	_, _ = cfg.AddProject(beta, "beta")
+	cfg.ActiveID = pa.ID
+	writeDoc(t, alpha, "one.md", "# One\n")
+	writeDoc(t, beta, "two.md", "# Two\n")
+	s := New(workspace.New(cfg), cfg, dir)
+	s.SetSyncScan()
+	s.toggleTreeKey(treeKey{project: pa.ID}) // the project node, path ""
+
+	out, err := session.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(out.TreeClosed, session.Ref{Project: pa.ID, Path: ""}) {
+		t.Fatalf("closed = %v, want alpha's node in it", out.TreeClosed)
+	}
+
+	s2 := New(workspace.New(cfg), cfg, dir)
+	s2.SetSyncScan()
+	tt := newTester(s2)
+	if tt.HasText("one.md") {
+		t.Errorf("texts = %q, want alpha's node folded", tt.Texts())
+	}
+	if !tt.HasText("two.md") {
+		t.Errorf("texts = %q, want beta still open", tt.Texts())
 	}
 }
