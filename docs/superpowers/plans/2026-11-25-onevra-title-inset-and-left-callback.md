@@ -18,8 +18,8 @@
 | D2 | **语义：`TitleInsetLeft` 是标题与侧栏头部内容之间的间隙**（默认 24 = 标题与主面对齐）。实现上：`shift = inset - 24`，三处 `titleInset` 公式**全部不动**（trailing=24、leading 行宽=clearance−24、折叠 floor=8），标题行改为 `Padding(0, insetRight, 0, titleInset+shift)`。展开两种分支下标题 X 都左移 `24−P`、面板末端不动（面板与标题的间隙恰为 P）；折叠/动画按同一差值平移，保持 toggle 避让。 | mygo 的 padding 原始相加不钳制（`layout.go` `contentX() = pad[3]+border[3]`），负值与今天应用侧 `Translate(-12)` 净几何完全一致（折叠态首个标签仍可能被行 Clip 切掉 4 DIP——与现状相同，非回归）。若把行宽也改成 `clearance−P`，面板会贴住标题（视觉回归），故行宽保持按默认 24 推导。 |
 | D3 | `OnLeftExpanded func(expanded bool)`（true = 展开，false = 折叠）。在 `SetLeftExpanded` 里**值发生变化时**调用（先 `refresh()` 后回调）；构造期（`leftOpen: !options.LeftCollapsed`）不调用；nil 安全；在窗口线程触发；文档写明「回调内不要再调 `SetLeftExpanded`」（不做重入保护）。 | `SetLeftExpanded` 是 `leftOpen` 唯一的变更入口（fork `shell.go:237`），toggle 按钮也走它；词汇与既有 `LeftExpanded()` / `SetLeftExpanded` 一致。重入保护是 YAGNI，文档约定足够。 |
 | D4 | 应用侧 `ContentTitle` 改为直接 `s.tabBar(c)`；`tabBarAt(c, pull)` 并回 `tabBar`（`Translate(pull, 0)` 删除）；`titleInsetGap` / `titleInsetWanted` 删除；main.go `ShellOptions` 加 `TitleInsetLeft: 12`；测试用 `View` 的标签行加 `Padding(0, 8, 0, 12)` 仿外壳（新增测试钉住首标签 X == 12）。 | AGENTS.md「标题槽」条目明确：onevra 新增了间距选项就改用它并删掉常量。⌄ 按钮不受影响（trailing padding 独立，仍为 8）。 |
-| D5 | **提交门**：fork 的提交与推送需用户明确授权（fork AGENTS 规定）；应用的改造提交等 upstream 发版（预计 0.2026.20）后进行，`replace` 永不入库。 | fork AGENTS：「Do not commit, tag, publish or push without explicit authorization」；本地路径 replace 入库会弄红 CI。 |
-| D6 | fork 的 CHANGELOG（仓库根）Unreleased 加两条：标题槽内距选项、折叠回调。网站不加页（ShellOptions 字段不是新组件，PR #17 也未加页）。 | fork 文档规则：「Update a document only when a fact its reader needs changes」。 |
+| D5 | **提交门**：fork 在独立分支 `feat/title-inset-and-left-callback` 开发，本地提交视为已授权（用户 2026-11-25：「帮我在独立分支中开发」）；推送与 GitHub PR 由用户自行执行。应用的改造提交等 upstream 发版（预计 0.2026.20）后进行，`replace` 永不入库。 | fork AGENTS 的授权约束由用户的分支指示满足；本地路径 replace 入库会弄红 CI。 |
+| D6 | fork 的 CHANGELOG（仓库根）Unreleased 加两条：标题槽内距选项、折叠回调。网站不加页（ShellOptions 字段不是新组件，PR #17 也未加页）。`OnLeftExpanded` 在应用侧**暂无消费方**（用户确认），仅组件能力 + fork 测试覆盖。 | fork 文档规则：「Update a document only when a fact its reader needs changes」。 |
 
 ## 文件结构
 
@@ -56,6 +56,8 @@
 
 ### 任务 1：fork——TitleInsetLeft / TitleInsetRight
 
+**准备：** 在 `D:\golang\onevra` 建独立分支：`git checkout -b feat/title-inset-and-left-callback`（用户将自行推送并向 upstream 发 PR；后续任务都在该分支上进行，任务 3 的 replace 读的是检出的工作树，任务 3 期间 fork 必须停留在该分支的检出状态）。
+
 **文件：**
 - 修改：`D:\golang\onevra\source\shells\sidebar\shell.go`
 - 测试：`D:\golang\onevra\source\shells\sidebar\shell_title_test.go`、`shell_left_header_test.go`
@@ -66,34 +68,56 @@
 
 ```go
 func TestShellTitleInsetOptions(t *testing.T) {
-	s, _ := fixture()
-	// 与 TestShellContentTitle 同一几何基准；TitleInsetLeft: 12 让标题左移 12。
-	s.options.TitleInsetLeft, s.options.TitleInsetRight = 12, 20
-	var title ui.Rect
-	s.options.ContentTitle = func(c *ui.Context) {
-		ui.Text(c, "Current document").SingleLine().Grow(1).MinWidth(0).DrawOver(
-			func(_ *ui.Painter, r ui.Rect) { title = r })
+	// 相对断言，不硬编码平台差异：base 与 shifted 用同一几何，只差内距。
+	rect := func(insetLeft, insetRight float32) ui.Rect {
+		s, _ := fixture()
+		s.options.TitleInsetLeft, s.options.TitleInsetRight = insetLeft, insetRight
+		var title ui.Rect
+		s.options.ContentTitle = func(c *ui.Context) {
+			ui.Text(c, "Current document").SingleLine().Grow(1).MinWidth(0).DrawOver(
+				func(_ *ui.Painter, r ui.Rect) { title = r })
+		}
+		tt := ui.NewTester(s.view, 820, 600)
+		tt.SetTitleBar(ui.TitleBar{Height: 48, Left: 80})
+		tt.SetPreferences(ui.Preferences{ReduceMotion: true})
+		return title
 	}
-	tt := ui.NewTester(s.view, 820, 600)
-	tt.SetTitleBar(ui.TitleBar{Height: 48, Left: 80})
-	tt.SetPreferences(ui.Preferences{ReduceMotion: true})
-	if title.X != 224 {
-		t.Fatal("TitleInsetLeft did not move the title by 24-12", title)
+	base := rect(0, 0) // 非正值取默认 24/8，与既有 TestShellContentTitle 的 236 同基准
+	shifted := rect(12, 20)
+	if shifted.X != base.X-12 {
+		t.Fatal("TitleInsetLeft did not move the title by 24-12", base, shifted)
 	}
-	// trailing 内距独立于 leading shift：标题右缘距窗口右缘 20。
-	if room := float32(820) - (title.X + title.W); room != 20 {
-		t.Fatal("TitleInsetRight ignored", room)
+	if shifted.X+shifted.W != base.X+base.W-12 {
+		t.Fatal("TitleInsetRight did not narrow the trailing room", base, shifted)
 	}
-	// 展开的 leading 与 trailing 分支等距（LeftToggleTrailing 组合在任务里另一条测）。
+	collapsed := func(insetLeft float32) ui.Rect {
+		s, _ := fixture()
+		s.options.TitleInsetLeft = insetLeft
+		var title ui.Rect
+		s.options.ContentTitle = func(c *ui.Context) {
+			ui.Text(c, "Current document").SingleLine().Grow(1).MinWidth(0).DrawOver(
+				func(_ *ui.Painter, r ui.Rect) { title = r })
+		}
+		tt := ui.NewTester(s.view, 820, 600)
+		tt.SetTitleBar(ui.TitleBar{Height: 48, Left: 80})
+		tt.SetPreferences(ui.Preferences{ReduceMotion: true})
+		s.SetLeftExpanded(false)
+		tt.Frame()
+		return title
+	}
+	baseC, shiftedC := collapsed(0), collapsed(12)
+	if shiftedC.X != baseC.X-12 {
+		t.Fatal("collapsed title did not shift by 24-12", baseC, shiftedC)
+	}
 }
 ```
 
-在 `shell_left_header_test.go` 的 `TestShellLeftToggleTrailing` 之外**新增**一条组合测试：`TitleInsetLeft: 12` + `LeftToggleTrailing: true`，断言展开态标题 X 与 leading 分支相等（fixture 几何下同为 224）。
+在 `shell_left_header_test.go` **新增**一条组合测试：`TitleInsetLeft: 12` + `LeftHeader` + `LeftToggleTrailing: true`，断言展开态标题 X 与 leading 分支相等（`LeftWidth: 252` 几何下同为 256）。
 
 - [ ] **步骤 2：运行测试验证失败**
 
 运行（在 `source/` 下）：`go test ./shells/sidebar/ -run TestShellTitleInset -v`
-预期：FAIL——`TitleInsetLeft did not move the title`（选项尚不存在，编译失败也算 FAIL）。
+预期：FAIL——`TitleInsetLeft did not move the title`（选项尚不存在，编译失败也算 FAIL）。折叠态断言按实测钉住（预期基准 −12；若 mygo 钳制负 padding 则实测基准 −8，记 Ruling 并报告用户——折叠态会比今天右 4 DIP）。
 
 - [ ] **步骤 3：实现**
 
@@ -112,7 +136,7 @@ shift := inset - 24
 - [ ] **步骤 4：运行测试验证通过**
 
 运行（在 `source/` 下）：`go test ./shells/sidebar/`（整包；既有 `TestShellContentTitle`、`TestShellLeftToggleTrailing` 不得红）
-预期：PASS。折叠态（`SetLeftExpanded(false)` 后标题 X）按实测值补进 `TestShellTitleInsetOptions` 的断言（预期 108；若 mygo 钳制负 padding 实测 112，按实测钉住并在账本记 Ruling）。
+预期：PASS。折叠态差异（若有）已按步骤 2 的说明钉住并记账。
 
 - [ ] **步骤 5：格式与整包验证**
 
@@ -155,6 +179,18 @@ func TestShellLeftExpandedCallback(t *testing.T) {
 	tt.Frame()
 	if len(calls) != 3 || calls[2] != true {
 		t.Fatal("toggle click did not notify", calls)
+	}
+}
+
+func TestShellLeftExpandedCallbackNil(t *testing.T) {
+	s, _ := fixture() // OnLeftExpanded 为 nil：折叠/展开不 panic
+	tt := ui.NewTester(s.view, 820, 600)
+	tt.SetPreferences(ui.Preferences{ReduceMotion: true})
+	s.SetLeftExpanded(false)
+	s.SetLeftExpanded(true)
+	tt.Frame()
+	if !s.LeftExpanded() {
+		t.Fatal("nil callback broke the toggle")
 	}
 }
 ```
