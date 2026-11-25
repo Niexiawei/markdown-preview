@@ -89,13 +89,19 @@ func main() {
 			StateKey:     "markdown-preview.main",
 			LeftWidth:    280,
 			LeftMinWidth: 200,
-			Left:         state.Left,
-			LeftHeader:   state.LeftHeader,
-			LeftToolbar:  state.LeftToolbar,
-			ContentTitle: state.ContentTitle,
-			Content:      state.Content,
-			Toasts:       view.ToastOptions(),
-			Theme:        view.AppTheme,
+			// macOS sinks the project panel into the sidebar's body (view),
+			// leaving the header to the traffic lights and the collapse toggle,
+			// which onevra parks at the header's trailing edge. Elsewhere the
+			// panel stays in the header beside the leading toggle, as it always
+			// has. PanelDown keeps this and the sunk panel one decision.
+			LeftToggleTrailing: state.PanelDown(),
+			Left:               state.Left,
+			LeftHeader:         state.LeftHeader,
+			LeftToolbar:        state.LeftToolbar,
+			ContentTitle:       state.ContentTitle,
+			Content:            state.Content,
+			Toasts:             view.ToastOptions(),
+			Theme:              view.AppTheme,
 		})
 		win := shell.Window()
 		mainWindow = win

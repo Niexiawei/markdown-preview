@@ -123,7 +123,8 @@ GUI 要真实窗口；**无头环境里验证视图一律用 `ui.NewTester`，�
 - **改渲染样式**：原生在 `markdown.Options`（`loadDoc` 里装配）；webview 在 `webview.go` 的 `docCSS`。
 - **改标签栏/标题行/侧栏**：`tabs.go` 的 `tabBarAt`（标签、⌄ 列表）挂在 shell 的 `ContentTitle` 槽位；
   `view.go` 的 `titleRow` → `contentTitle`（路径 + 复制 + `modeToggle`）是 `Content` 的第一行；
-  `leftHeader`（项目面板：点一行开/关、右键打开/复制/移除）、`leftToolbar`（动作图标 + 铃铛）各就各位。
+  `leftHeader`（项目面板：点一行开/关、右键打开/复制/移除；macOS 上它让位给 `panelRow`——主体首行，
+  两者共用 `panelItems`，改面板内容两处一起变，测试见 `panel_test.go`）、`leftToolbar`（动作图标 + 铃铛）各就各位。
   改布局时 `View` 与 `Content` 两条拼装路径要一起改（`TestShellSlotsBuild`、`TestTabsSitAboveTheTitle`）。
 - **改树的展开 / 折叠**：批量只改 `tree.go` 的 `setTreeOpen`（往 `s.treeOpen.Open` 里增删 `treeKey`；
   **多项目时折叠连项目节点一起收**（收完只剩项目名，与单项目窗口「收成顶层」一致；2026-11-25 用户按方案 b 定稿，
