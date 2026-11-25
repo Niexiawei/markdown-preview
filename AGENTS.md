@@ -211,9 +211,20 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
   否则「展开祖先 + 滚过去」在同一帧里会滚到邻居。`ListState.Visible()` 的 `last` 是**包含**的。
 - **`ui.Outline` 的一行不是你建的**：缩进与箭头归 Outline，行的内容 `row(item)` 只是它的子元素；
   行底色因此画在内容上（`Padding` 之内），比旧的 `ui.TreeItem` 略窄。点击、右键菜单、项目行的两个小按钮都要自己装。
-- **行的样子照 mygo 的 `ui.TreeItem` 来**（tree.go 的 `treeRowBox`：`Height(Space(7))` + `Radius(Radius)` +
-  内边距）：悬停 `t.SurfaceHover`，当前文档 `t.Accent` 底 + `t.AccentText` 字。`Hovered()` 在构建期读，
-  它会让 mygo 为悬停变化重建一帧（`hoverBuilt`），不要改成读上一帧的 `st`。
+- **行的样子照 mygo 的 `ui.TreeItem` 来**：`treeBody` 每帧把 `s.treeOpen.Prefix` 设成**空函数**——Prefix 非 nil
+  时 `ui.Outline` 的行没有内边距、没有 gap、也不画箭头，只剩「一个居中的容器」，所以行是自己画的整条
+  （`Height(Space(7))` + `Radius` + `Padding(0, Space(1))`）：悬停 `t.SurfaceHover`、当前文档 `t.Accent` 底 +
+  `t.AccentText` 字，底色因此**铺满整行**（这块以前栽过：底色只盖文字那一块，因为颜色画在 Outline 的内边距内侧）。
+  `Hovered()` 在构建期读，它会让 mygo 为悬停变化重建一帧（`hoverBuilt`），不要改成读上一帧的 `st`。
+- **箭头与文件图标都在 `treeMark` 里自绘**（`treeMark` 的 box = `Size(Space(4))`，与 `ui.TreeItem` 的 arrow box 同尺寸）：
+  目录/项目行画三角（`p.StrokePath`）并 `OnClick` 切换，文件夹在名字前，文档的图标就在 arrow box 里。
+  代价：mygo 的 `OutlineRow.Arrow()`（带 Alt/Option「全部展开」）不能用，左/右键与读屏的展开仍由 Outline 自己接。
+  行本身也有 `OnClick`，靠「最内层可点击元素赢得点击」保证只切换一次（`TestClickingTheArrowOfADirectoryOpensItOnce`）。
+- **loading 用 `plugins/loading.Snake`**（`loading.Options{Size: t.Space(3)}`，约 12 DIP）：`components.Spinner`
+  的默认直径是 `Space(8)`，放在树的行里太大。
+- **任何树的变化都要 `bumpTree()`**：`OutlineState` 会把上一帧的行走一遍的结果缓存起来，只有 `Generation` /
+  `Open` 的 stamp / roots 之一变了才重走。扫描结果落地只换内容（roots 与 Open 都不变），漏掉 `bumpTree` 就会出现
+  「项目没有子项、没有箭头，点一下才有」——`afterTreesChanged` 里必须调它。
 - **树要立刻显示新项目**：`loadTree` 先 `showPlaceholder`（`projectTree{project}`、`root` 为 nil），
   行由 `treeRow` 的项目分支画（名字 + `scanning` 时的 spinner）；`reloadTree` 用 `root != nil` 判断「已读过」，
   别把占位当成读完了。文件监听也在 goroutine 里建（`watchProject` 字段 + `watches[id]` 先占位），

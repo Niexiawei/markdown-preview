@@ -821,3 +821,21 @@ D4 的两种底色改成一层、树容器从 `ui.Tree` 换成 `ui.Outline`（`s
    测试：`TestOpeningAProjectShowsItBeforeTheScanEnds`、`TestOpeningAProjectDoesNotWaitForItsWatch`。
    顺带修了 `TestSteppingTheCurrentCandidateScrollsTheTree`：它以前拿 `plan_39.md` 当最后一个候选，
    字符串序里其实不是，行高变大之后正好差一行才暴露出来。
+
+### 第二轮反馈（2026-11-25，同一晚）
+
+4. **loading 太大** → 换 mygo `plugins/loading` 的 `Snake`，`Options{Size: t.Space(3)}`（12 DIP），
+   `projectSwitcher` 与树的项目行都用它。
+5. **扫描完成后项目没有箭头、要点一下才能展开** → 根因是 `ui.Outline` 缓存了「走一遍开着的项」的结果，
+   而扫描结果落地只换内容（roots 与 `Open` 都没变），`afterTreesChanged` 又没 `bumpTree()`。现在
+   `afterTreesChanged` 第一件事就是 `bumpTree()`；`TestAProjectShowsItsEntriesWhenTheScanLands` 先看扫描中
+   （没有子项、`Expandable` 为假），再看扫完（内容与 `Expandable` 都有，不用点）。
+6. **hover / 选中要整行** → `treeBody` 把 `s.treeOpen.Prefix` 设成空函数，Outline 的行就没有内边距与箭头了，
+   行由 `treeRow` 自己画整条（高 `Space(7)`、圆角、`Padding(0, Space(1))`），底色铺满；缩进按
+   `strings.Count(path, "/") + 1` 自己算（`treeDepth`）。
+7. **文件图标放进 arrow box** → 箭头也改成自绘（`treeMark`：目录/项目行画三角 + 点击切换，文档行画 `FileText`），
+   两者在同一列。代价是丢掉 `OutlineRow.Arrow()` 的 Alt/Option「全部展开」，键盘与读屏的展开仍在。
+   `TestClickingTheArrowOfADirectoryOpensItOnce` 钉住「点箭头只切换一次」。
+8. **「折叠全部」保留一级展开**：按上一期定的规则（`折叠` 只收目录、项目节点保持展开，否则项目里只有根目录文件时
+   折叠看起来没反应）**没有改**，截图里那两级（项目节点展开、一级目录已收起）就是这个规则的样子。
+   若用户要的是「连项目节点一起收起」，改 `setTreeOpen` 里那句 `if open && len(s.trees) > 1` 之外的折叠分支即可。

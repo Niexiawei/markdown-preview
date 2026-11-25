@@ -180,15 +180,13 @@ func (s *State) bumpTree() {
 	}
 }
 
-// afterTreesChanged tells the search and the tabs what the new trees mean: the
-// candidates are what the trees hold now, and a tab whose file is gone goes.
+// afterTreesChanged tells the view and the tabs what the new trees mean: the
+// outline walks the trees again, and a tab whose file is gone goes.
 func (s *State) afterTreesChanged() {
-	s.noteNewDirectories()
-	if s.treeSearch.open {
-		// The tree the search walks is the one just read: a file added or
-		// renamed behind the window's back changes what it offers.
-		s.refreshCandidates()
-	}
+	// The outline keeps the rows it walked until it is told its children may
+	// differ: a tree read for a project that had none, as the scan of a big
+	// directory does, changes them without changing what is open.
+	s.bumpTree()
 	if s.sel.empty() {
 		return
 	}

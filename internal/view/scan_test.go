@@ -308,3 +308,46 @@ func TestOpeningAProjectDoesNotWaitForItsWatch(t *testing.T) {
 	}
 	close(release)
 }
+
+// expandableRow reports whether a row of a tree holding that name tells
+// assistive technology it can open, which is what draws its arrow.
+func expandableRow(tt *ui.Tester, name string) bool {
+	for _, a := range tt.AccessAll() {
+		if a.Role == ui.RoleTreeItem && a.Expandable && strings.HasPrefix(a.Name, name) {
+			return true
+		}
+	}
+	return false
+}
+
+// TestAProjectShowsItsEntriesWhenTheScanLands pins the rows a finished scan
+// brings: the project had no tree when it was opened, and its arrow and its
+// entries appear without a click on it.
+func TestAProjectShowsItsEntriesWhenTheScanLands(t *testing.T) {
+	s, alphaRoot, _ := twoProjects(t)
+	writeDoc(t, alphaRoot, "a.md", "# A\n")
+	s.Refresh()
+	release, started, _ := heldScan(s)
+	dir := t.TempDir()
+	writeDoc(t, dir, "b.md", "# B\n")
+	s.AddProject(dir)
+	startScanNow(t, started)
+	name := filepath.Base(dir)
+	tt := newTester(s)
+	if tt.HasText("b.md") {
+		t.Fatal("b.md shows before the scan landed, want the project to wait for it")
+	}
+	if expandableRow(tt, name) {
+		t.Error("the project's row opens before the scan, want it plain until it has entries")
+	}
+	close(release)
+	id := s.Projects()[len(s.Projects())-1].ID
+	waitFor(t, s, func() bool { return !s.scanning[id] })
+	tt = newTester(s)
+	if !tt.HasText("b.md") {
+		t.Errorf("texts = %q, want the entries the scan brought, without a click", tt.Texts())
+	}
+	if !expandableRow(tt, name) {
+		t.Errorf("access = %v, want the project's row to say it opens", accessLabels(tt))
+	}
+}

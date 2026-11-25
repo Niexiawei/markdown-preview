@@ -145,3 +145,29 @@ func TestTheTreeRowsAreWhatTheTreeHolds(t *testing.T) {
 		t.Errorf("rowOf(a file the tree does not have) = %d, want -1", got)
 	}
 }
+
+// TestClickingTheArrowOfADirectoryOpensItOnce pins the arrow in the box before
+// a row's name: one press there opens or closes the directory, and does not
+// also press the row, which would close it again.
+func TestClickingTheArrowOfADirectoryOpensItOnce(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "docs/a.md", "# A\n")
+	s.Refresh()
+	id := s.Trees()[0].project.ID
+	tt := newTester(s)
+	text, ok := tt.Find("docs")
+	if !ok {
+		t.Fatalf("no docs row; texts = %q", tt.Texts())
+	}
+	// The arrow sits in the square before the name, past the row's padding.
+	tt.ClickAt(text.X-10, text.Y+text.H/2)
+	tt.Frame()
+	if s.treeOpen.Open.Has(treeKeyOf(id, "docs")) {
+		t.Error("docs is still open, want the arrow to close it")
+	}
+	tt.ClickAt(text.X-10, text.Y+text.H/2)
+	tt.Frame()
+	if !s.treeOpen.Open.Has(treeKeyOf(id, "docs")) {
+		t.Error("docs is still closed, want a second press to open it")
+	}
+}

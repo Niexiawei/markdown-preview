@@ -3,6 +3,7 @@ package view
 import (
 	"time"
 
+	"github.com/egoist/mygo/plugins/loading"
 	"github.com/egoist/mygo/ui"
 	"github.com/oneo-me/onevra/source/components"
 	"github.com/oneo-me/onevra/source/icons/lucide"
@@ -152,7 +153,8 @@ func (s *State) projectSwitcher(c *ui.Context) {
 		components.Icon(c, icon).Size(t.Rem(1), t.Rem(1)).TextColor(t.TextMuted)
 		components.Text(c, label).SingleLine().Grow(1)
 		if reading != "" {
-			components.Spinner(c, components.SpinnerSpokes).Label("正在扫描 " + reading)
+			loading.Snake(c, loading.Options{Size: t.Space(3), Color: t.TextMuted}).
+				Label("正在扫描 " + reading)
 		}
 		components.Icon(c, lucide.ChevronsUpDown()).Size(t.Rem(0.875), t.Rem(0.875)).TextColor(t.TextMuted)
 	})
