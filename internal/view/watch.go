@@ -77,19 +77,19 @@ func (s *State) stopWatch(id string) {
 func (s *State) applyChanges(id string, set watch.ChangeSet) {
 	// The tree the window has takes the changes the watch reports, rather than
 	// being read again: the events already say what appeared, went or moved.
+	tr, ok := s.treeOf(id)
+	haveTree := ok && tr.root != nil
 	patched := false
-	for _, change := range set.Docs {
-		tr, ok := s.treeOf(id)
-		if !ok || tr.root == nil {
-			break
-		}
-		switch {
-		case change.Old != "":
-			patched = workspace.RenameDoc(tr.root, change.Old, change.Path) || patched
-		case change.Op == mygo.FileRemove:
-			patched = workspace.RemoveDoc(tr.root, change.Path) || patched
-		default:
-			patched = workspace.InsertDoc(tr.root, change.Path) || patched
+	if haveTree {
+		for _, change := range set.Docs {
+			switch {
+			case change.Old != "":
+				patched = workspace.RenameDoc(tr.root, change.Old, change.Path) || patched
+			case change.Op == mygo.FileRemove:
+				patched = workspace.RemoveDoc(tr.root, change.Path) || patched
+			default:
+				patched = workspace.InsertDoc(tr.root, change.Path) || patched
+			}
 		}
 	}
 	for _, change := range set.Docs {
@@ -119,6 +119,11 @@ func (s *State) applyChanges(id string, set watch.ChangeSet) {
 	switch {
 	case patched:
 		s.bumpTree()
+	case !haveTree && len(set.Docs) > 0:
+		// The first scan of the project has not landed yet: there is no tree
+		// to make the change to, so the project is read again and the change
+		// is in what it reads.
+		s.rescanTree(id)
 	case set.TreeDirty && len(set.Docs) == 0:
 		// The watch says the tree changed without saying how, as a directory
 		// that appeared or went: only a scan can tell.

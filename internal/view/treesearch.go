@@ -168,20 +168,25 @@ func (s *State) closeTreeSearch() {
 // search: what it unfolds is remembered, so that closing it folds them back.
 func (s *State) openSearchDirs() {
 	for k := range s.treeSearch.dirs {
-		if !s.treeOpen.Open.Has(k) {
-			s.treeSearch.opened = append(s.treeSearch.opened, k)
-		}
-		s.treeOpen.Open.Add(k)
+		s.openForSearch(k)
 	}
-	switch {
-	case len(s.trees) > 1:
+	if len(s.trees) > 1 {
 		for _, tr := range s.trees {
 			if s.projectHasCandidate(tr.project.ID) {
-				s.treeOpen.Open.Add(treeKey{project: tr.project.ID})
+				s.openForSearch(treeKey{project: tr.project.ID})
 			}
 		}
 	}
 	s.treeOpen.Generation++
+}
+
+// openForSearch unfolds one row for the length of the search, remembering it
+// if the user had it folded.
+func (s *State) openForSearch(k treeKey) {
+	if !s.treeOpen.Open.Has(k) {
+		s.treeSearch.opened = append(s.treeSearch.opened, k)
+	}
+	s.treeOpen.Open.Add(k)
 }
 
 // closeSearchOpen folds back the rows the search unfolded.

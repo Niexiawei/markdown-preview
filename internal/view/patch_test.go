@@ -108,3 +108,23 @@ func TestADeadDirectoryRescans(t *testing.T) {
 		t.Errorf("texts = %q, want the directory gone", tt.Texts())
 	}
 }
+
+// TestAChangeWithNoTreeYetIsReadAgain pins the case of a file event that
+// arrives before the first scan of its project did: there is no tree to patch,
+// so the project is read again rather than the change being lost.
+func TestAChangeWithNoTreeYetIsReadAgain(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", "# A\n")
+	s.trees = nil
+	scans := countingScan(s)
+	s.applyChanges(s.activeID, watch.ChangeSet{
+		Docs:      []watch.Change{{Op: mygo.FileCreate, Path: "a.md"}},
+		TreeDirty: true,
+	})
+	if got := scans.Load(); got != 1 {
+		t.Errorf("scans = %d, want 1: without a tree the change cannot be made to one", got)
+	}
+	if trees := s.Trees(); len(trees) != 1 || !hasChild(trees[0].root, "a.md") {
+		t.Errorf("Trees = %v, want the project read again", trees)
+	}
+}

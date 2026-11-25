@@ -23,16 +23,23 @@ var mainWindow *mygo.Window
 
 // windowState is the window's state, for what arrives outside a frame: a
 // second launch's command line, and a document the system opens with the app.
-var windowState *view.State
+// pending holds the documents that arrived before it was made, since the
+// system hands over the file an association launched before WhenReady runs.
+var (
+	windowState *view.State
+	pendingDocs []string
+)
 
 // openDocuments shows the documents a launch named, from the command line, a
 // second instance, or the system opening a file with the app. It runs on the
 // main thread, as the handlers that call it do.
 func openDocuments(paths []string) {
+	if windowState == nil {
+		pendingDocs = append(pendingDocs, paths...)
+		return
+	}
 	for _, path := range paths {
-		if windowState != nil {
-			windowState.OpenDocument(path)
-		}
+		windowState.OpenDocument(path)
 	}
 }
 
@@ -68,6 +75,8 @@ func main() {
 		ws := workspace.New(cfg)
 		state := view.New(ws, cfg, dir)
 		windowState = state
+		openDocuments(pendingDocs)
+		pendingDocs = nil
 		view.RegisterMDView(state.Roots)
 		// The shell owns the window, the floating header and the sidebar the
 		// user collapses; the state fills its slots.

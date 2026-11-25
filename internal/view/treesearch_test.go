@@ -246,6 +246,26 @@ func TestTheSearchShowsOnlyWhatMatchesInTheOutline(t *testing.T) {
 	}
 }
 
+// TestTheSearchFoldsTheProjectNodeBack pins the project nodes too: a search
+// unfolds them to show what it matched, and closing it leaves them as the user
+// had them.
+func TestTheSearchFoldsTheProjectNodeBack(t *testing.T) {
+	s, alphaRoot, betaRoot := twoProjects(t)
+	writeDoc(t, alphaRoot, "plan.md", "# P\n")
+	writeDoc(t, betaRoot, "plan_b.md", "# P\n")
+	s.Refresh()
+	alpha := s.Trees()[0].project.ID
+	s.setTreeKeyOpen(treeKey{project: alpha}, false)
+	openTreeSearchOn(s, "plan")
+	if !s.treeOpen.Open.Has(treeKey{project: alpha}) {
+		t.Fatal("the project node is folded, want the search to unfold it")
+	}
+	s.closeTreeSearch()
+	if s.treeOpen.Open.Has(treeKey{project: alpha}) {
+		t.Error("the project node is unfolded, want it folded as the user had it")
+	}
+}
+
 // TestTheSearchRevealsTheCurrentCandidate pins the slide to the candidate the
 // keyboard is on, of a list longer than the pane.
 func TestTheSearchRevealsTheCurrentCandidate(t *testing.T) {
