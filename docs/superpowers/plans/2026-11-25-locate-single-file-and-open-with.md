@@ -801,4 +801,23 @@ D4 的两种底色改成一层、树容器从 `ui.Tree` 换成 `ui.Outline`（`s
 
 ## 执行后的修订（只追加，不改写上面的任务步骤）
 
-（执行过程中或之后追加的东西写在这里。）
+### 用户验收反馈（2026-11-25，执行完之后）
+
+1. **树行的 hover / 选中要对齐 mygo 的 `ui.Tree`**（截图对比：树里选中的文档只是淡淡一层，与 hover 几乎一样，
+   而目录（TOC）里选中项是蓝底反色字）。实现：`tree.go` 的 `treeRowBox`（`Height(Space(7))` + `Radius` + 内边距，
+   照 `ui.TreeItem` 的量），悬停 `t.SurfaceHover`、当前文档 `t.Accent` + `t.AccentText`。
+   `selectedRowTint` 只剩项目面板在用一个地方（面板行不是树的项）。
+2. **独立文件那一行要有图标**：`treeRow` 对单文件项目的行画 `lucide.FileText`（选中时用 `AccentText`），
+   项目节点顺带画 `lucide.Folder`，两者才分得清。
+3. **打开大目录（Downloads）时卡住、树里也不显示这个项目**（截图：面板里已勾上，树里没有 Downloads，
+   popup 里看着像在加载）。两个原因：
+   - `startWatch` 在窗口线程上同步跑 `mygo.WatchFiles`，它要把整个目录读一遍建快照——几万条目就是几秒的白屏。
+     现在改成 `watchProject` 字段（测试可替换）+ goroutine，`watches[id]` 先登记 cancel，关项目能取消；
+     失败时 `ctx.Err() != nil` 说明是窗口自己取消的，不报警。
+   - 扫描是异步的，但 `s.trees` 里没有占位，新项目**在扫描结束前根本不存在**于树中。
+     现在 `loadTree` 先 `showPlaceholder`（`root` 为 nil 的 `projectTree`），项目行立刻出现、后面跟 spinner
+     （`Label("正在扫描 <项目名>")`，树项的无障碍名是它内容拼起来的，所以 `Access` 要按包含判断）；
+     `reloadTree` 改成用 `root != nil` 判断「已读过」，`fileTree` 在没有文档但又正在扫时显示「正在扫描 …」。
+   测试：`TestOpeningAProjectShowsItBeforeTheScanEnds`、`TestOpeningAProjectDoesNotWaitForItsWatch`。
+   顺带修了 `TestSteppingTheCurrentCandidateScrollsTheTree`：它以前拿 `plan_39.md` 当最后一个候选，
+   字符串序里其实不是，行高变大之后正好差一行才暴露出来。

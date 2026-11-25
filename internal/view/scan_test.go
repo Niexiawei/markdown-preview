@@ -1,7 +1,9 @@
 package view
 
 import (
+	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -10,6 +12,7 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 
+	"mdpreview/internal/watch"
 	"mdpreview/internal/workspace"
 )
 
@@ -223,6 +226,17 @@ func TestAWatchLimitStopsTheWatchAndSaysSo(t *testing.T) {
 	}
 }
 
+// accessSays reports whether anything the window tells a screen reader holds
+// that phrase: a tree item's name is what its row holds, all of it.
+func accessSays(tt *ui.Tester, phrase string) bool {
+	for _, a := range tt.AccessAll() {
+		if strings.Contains(a.Name, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
 // accessLabels is what a screen reader would read of the window, for a test
 // that expected one of them.
 func accessLabels(tt *ui.Tester) []string {
@@ -232,4 +246,65 @@ func accessLabels(tt *ui.Tester) []string {
 		labels = append(labels, a.Name)
 	}
 	return labels
+}
+
+// TestOpeningAProjectShowsItBeforeTheScanEnds pins the row the window shows at
+// once: the project appears in the tree, marked as being read, rather than
+// waiting for the scan of a directory of thousands of entries.
+func TestOpeningAProjectShowsItBeforeTheScanEnds(t *testing.T) {
+	s, alphaRoot, _ := twoProjects(t)
+	writeDoc(t, alphaRoot, "a.md", "# A\n")
+	s.Refresh()
+	release, started, _ := heldScan(s)
+	dir := t.TempDir()
+	s.AddProject(dir)
+	startScanNow(t, started)
+	name := filepath.Base(dir)
+	tt := newTester(s)
+	if !tt.HasText(name) {
+		t.Errorf("texts = %q, want the project's node at once", tt.Texts())
+	}
+	// A tree item's accessible name is what its row holds, the spinner's own
+	// label among it.
+	if !accessSays(tt, "正在扫描 "+name) {
+		t.Errorf("access = %v, want the project's row to say it is being read", accessLabels(tt))
+	}
+	id := s.Projects()[len(s.Projects())-1].ID
+	close(release)
+	waitFor(t, s, func() bool { return !s.scanning[id] })
+	tt = newTester(s)
+	if accessSays(tt, "正在扫描 "+name) {
+		t.Error("the spinner outlived the scan")
+	}
+}
+
+// TestOpeningAProjectDoesNotWaitForItsWatch pins the frame: a watch reads the
+// project it covers before it reports anything, and a directory of thousands of
+// entries takes long enough that doing it in the frame would freeze the window.
+func TestOpeningAProjectDoesNotWaitForItsWatch(t *testing.T) {
+	s, _ := newState(t)
+	s.watchReady = true
+	release, started := make(chan struct{}), make(chan struct{}, 1)
+	s.watchProject = func(context.Context, workspace.Project) (watch.Source, error) {
+		started <- struct{}{}
+		<-release
+		return nil, errors.New("held")
+	}
+	dir := t.TempDir()
+	writeDoc(t, dir, "a.md", "# A\n")
+	done := make(chan struct{})
+	go func() {
+		s.AddProject(dir)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("AddProject waited for the watch")
+	}
+	startScanNow(t, started)
+	if tt := newTester(s); !tt.HasText(filepath.Base(dir)) {
+		t.Errorf("texts = %q, want the project in the tree", tt.Texts())
+	}
+	close(release)
 }

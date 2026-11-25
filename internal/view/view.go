@@ -301,6 +301,10 @@ func (s *State) fileTree(c *ui.Context) {
 			components.Text(c, "打开一个目录或 Markdown 文件").FontSize(12).TextColor(t.TextMuted)
 			return
 		}
+		if name := s.scanningName(); name != "" && !s.hasDocs() {
+			components.Text(c, "正在扫描 "+name+"…").FontSize(12).TextColor(t.TextMuted)
+			return
+		}
 		if !s.hasDocs() {
 			components.Text(c, "这个目录下没有 markdown 文件").FontSize(12).TextColor(t.TextMuted)
 			return

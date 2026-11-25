@@ -23,9 +23,21 @@ func (s *State) StartWatching() {
 // the ones the tree shows.
 func (s *State) watchedProjects() []workspace.Project { return s.cfg.OpenProjects() }
 
-// startWatch begins watching one project, unless it is watched already. A
-// project of one document watches that document alone: its directory may be a
-// home directory, or one the watch would never keep up with.
+// startProjectWatch is the watch of a project: the one document of a project
+// of one, or everything under a directory project's root.
+func startProjectWatch(ctx context.Context, p workspace.Project) (watch.Source, error) {
+	if p.File != "" {
+		return watch.WatchFile(ctx, p.File)
+	}
+	return watch.Watch(ctx, p.Root)
+}
+
+// startWatch begins watching one project, unless it is watched already. It
+// does not wait for the watch: reading what a directory holds before the watch
+// can report anything takes as long as the scan does, and the frame it runs in
+// must not wait for it. A project of one document watches that document alone:
+// its directory may be a home directory, or one the watch would never keep up
+// with.
 func (s *State) startWatch(p workspace.Project) {
 	if !s.watchReady {
 		return
@@ -34,30 +46,33 @@ func (s *State) startWatch(p workspace.Project) {
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	var (
-		src watch.Source
-		err error
-	)
-	if p.File != "" {
-		src, err = watch.WatchFile(ctx, p.File)
-	} else {
-		src, err = watch.Watch(ctx, p.Root)
-	}
-	if err != nil {
-		cancel()
-		s.notifyErr(watchFailure(p, err))
-		return
-	}
+	// The cancel goes in at once, so that closing the project while the watch
+	// is being made stops it rather than leaving it behind.
+	s.watches[p.ID] = cancel
 	id := p.ID
-	s.watches[id] = cancel
 	go func() {
+		src, err := s.watchProject(ctx, p)
+		if err != nil {
+			cancel()
+			if ctx.Err() != nil {
+				// The project was closed while the watch was made: it stopped
+				// because the window asked it to.
+				return
+			}
+			s.Post(func() {
+				if _, ok := s.watches[id]; ok {
+					delete(s.watches, id)
+				}
+				s.notifyErr(watchFailure(p, err))
+			})
+			return
+		}
 		defer src.Close()
 		for {
 			set, err := src.Next()
 			if err != nil {
 				return
 			}
-			id, set := id, set
 			s.Post(func() { s.applyChanges(id, set) })
 		}
 	}()

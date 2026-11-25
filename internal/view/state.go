@@ -18,6 +18,7 @@ import (
 
 	"mdpreview/internal/config"
 	"mdpreview/internal/notices"
+	"mdpreview/internal/watch"
 	"mdpreview/internal/workspace"
 )
 
@@ -147,12 +148,15 @@ type State struct {
 	// asked for again while they were, and scanGen the scan whose result
 	// counts. tooLarge are the projects the window refused to read, until a
 	// reload asks again.
-	scan      func(workspace.Project) (*workspace.Node, error)
-	syncScan  bool
-	scanning  map[string]bool
-	scanAgain map[string]bool
-	scanGen   map[string]int
-	tooLarge  map[string]bool
+	scan     func(workspace.Project) (*workspace.Node, error)
+	syncScan bool
+	// watchProject starts one project's watch. It is a field so that a test
+	// can hold a watch, as it holds a scan; the app's own starts mygo's.
+	watchProject func(context.Context, workspace.Project) (watch.Source, error)
+	scanning     map[string]bool
+	scanAgain    map[string]bool
+	scanGen      map[string]int
+	tooLarge     map[string]bool
 
 	// watchReady is set once the app runs, when the projects can be
 	// watched; watches holds each project's cancel function.
@@ -192,23 +196,24 @@ func New(ws *workspace.Workspace, cfg config.Config, dir string) *State {
 	// shows as no messages at all: it must open all the same.
 	book, _ := notices.Load(dir)
 	s := &State{
-		ws:         ws,
-		cfgDir:     dir,
-		cfg:        cfg,
-		activeID:   cfg.ActiveID,
-		open:       map[string]*bool{},
-		treeOpen:   ui.OutlineState[treeKey]{Generation: 1},
-		treeSeen:   map[treeKey]bool{},
-		scrolls:    map[docSel]*ui.ScrollState{},
-		gone:       map[string]bool{},
-		watches:    map[string]context.CancelFunc{},
-		scan:       readTree,
-		scanning:   map[string]bool{},
-		scanAgain:  map[string]bool{},
-		scanGen:    map[string]int{},
-		tooLarge:   map[string]bool{},
-		renderMode: map[docSel]config.RenderMode{},
-		notes:      book,
+		ws:           ws,
+		cfgDir:       dir,
+		cfg:          cfg,
+		activeID:     cfg.ActiveID,
+		open:         map[string]*bool{},
+		treeOpen:     ui.OutlineState[treeKey]{Generation: 1},
+		treeSeen:     map[treeKey]bool{},
+		scrolls:      map[docSel]*ui.ScrollState{},
+		gone:         map[string]bool{},
+		watches:      map[string]context.CancelFunc{},
+		scan:         readTree,
+		watchProject: startProjectWatch,
+		scanning:     map[string]bool{},
+		scanAgain:    map[string]bool{},
+		scanGen:      map[string]int{},
+		tooLarge:     map[string]bool{},
+		renderMode:   map[docSel]config.RenderMode{},
+		notes:        book,
 		// The messages the last run left are history, not news: they show in
 		// the bell's list without popping up again.
 		noticeShown: book.Last(),

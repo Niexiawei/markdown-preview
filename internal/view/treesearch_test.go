@@ -212,8 +212,10 @@ func TestSteppingTheCurrentCandidateScrollsTheTree(t *testing.T) {
 	tt.Frame()
 	tt.Frame()
 	first, last := s.treeOpen.List.Visible()
-	if want := s.rowOf(s.roots(), treeKey{project: s.Trees()[0].project.ID, path: "plan_39.md"}); want < first || want > last {
-		t.Errorf("rows %d..%d visible, want row %d: the tree slid to the candidate", first, last, want)
+	cell := s.treeSearch.candidates[s.treeSearch.current]
+	want := s.rowOf(s.roots(), treeKey{project: cell.project, path: cell.path})
+	if want < first || want > last {
+		t.Errorf("rows %d..%d visible, want row %d (%s): the tree slid to the candidate", first, last, want, cell.path)
 	}
 }
 

@@ -211,6 +211,13 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
   否则「展开祖先 + 滚过去」在同一帧里会滚到邻居。`ListState.Visible()` 的 `last` 是**包含**的。
 - **`ui.Outline` 的一行不是你建的**：缩进与箭头归 Outline，行的内容 `row(item)` 只是它的子元素；
   行底色因此画在内容上（`Padding` 之内），比旧的 `ui.TreeItem` 略窄。点击、右键菜单、项目行的两个小按钮都要自己装。
+- **行的样子照 mygo 的 `ui.TreeItem` 来**（tree.go 的 `treeRowBox`：`Height(Space(7))` + `Radius(Radius)` +
+  内边距）：悬停 `t.SurfaceHover`，当前文档 `t.Accent` 底 + `t.AccentText` 字。`Hovered()` 在构建期读，
+  它会让 mygo 为悬停变化重建一帧（`hoverBuilt`），不要改成读上一帧的 `st`。
+- **树要立刻显示新项目**：`loadTree` 先 `showPlaceholder`（`projectTree{project}`、`root` 为 nil），
+  行由 `treeRow` 的项目分支画（名字 + `scanning` 时的 spinner）；`reloadTree` 用 `root != nil` 判断「已读过」，
+  别把占位当成读完了。文件监听也在 goroutine 里建（`watchProject` 字段 + `watches[id]` 先占位），
+  否则 `mygo.WatchFiles` 的首次遍历会把窗口冻住几秒。
 - **树的焦点跟踪用 `ObserveInput`，不是 `HandleInput`**：`HandleInput` 会顶掉 Outline 自己的输入处理，
   `ObserveInput` 只是旁听（`treePress` 只认 `InputPointerDown`）。
 - **`workspace.Locate` 两侧都先 `EvalSymlinks`**：Windows 的 8.3 短名（`NIEXIA~1`）、符号链接会让

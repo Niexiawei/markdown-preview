@@ -38,6 +38,7 @@ func (s *State) SetSyncScan() {
 // restarted: the ask is remembered and made again when the scan ends, since
 // the tree it read may be older than the ask.
 func (s *State) loadTree(p workspace.Project) {
+	s.showPlaceholder(p)
 	if s.scanning[p.ID] {
 		s.scanAgain[p.ID] = true
 		return
@@ -55,6 +56,17 @@ func (s *State) loadTree(p workspace.Project) {
 		tree, err := scan(p)
 		s.Post(func() { s.applyTree(p, gen, tree, err) })
 	}()
+}
+
+// showPlaceholder puts a project's row in the tree before its scan lands, so
+// that opening a directory of thousands of entries shows what was opened at
+// once, marked as being read.
+func (s *State) showPlaceholder(p workspace.Project) {
+	if _, ok := s.treeOf(p.ID); ok {
+		return
+	}
+	s.trees = append(s.trees, projectTree{project: p})
+	s.sortTrees()
 }
 
 // rescanTree reads one project's tree again, as its files changed in a way the

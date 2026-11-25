@@ -5,6 +5,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 	"github.com/oneo-me/onevra/source/components"
+	"github.com/oneo-me/onevra/source/icons/lucide"
 
 	"mdpreview/internal/workspace"
 )
@@ -159,34 +160,52 @@ func (s *State) rowOf(roots []treeKey, want treeKey) int {
 // document. The outline builds its indentation and arrow; what shows beside
 // them, and what a click does, is here.
 func (s *State) treeRow(c *ui.Context, k treeKey) {
-	t := c.Theme()
+	tr, ok := s.treeOf(k.project)
+	if !ok {
+		return
+	}
+	if k.path == "" || tr.root == nil {
+		// The project's own node, and the row a project shows while the window
+		// has not read it yet.
+		s.projectRow(c, k, tr)
+		return
+	}
 	n, ok := s.treeNode(k)
 	if !ok {
 		return
 	}
-	row := ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(t.Space(0.75)).
-		Padding(t.Space(0.5), t.Space(1))
+	t := c.Theme()
+	row := s.treeRowBox(c)
 	switch {
-	case k.path == "":
 	case s.isCurrentCandidate(k.project, k.path):
 		// The one row that reads differently: everything else in the tree is
 		// a match already.
 		row.Background(currentCandidateTint(t))
 	case !s.searching() && k.project == s.sel.project && k.path == s.sel.path:
-		row.Background(selectedRowTint(t))
+		// The document shown, as the theme paints the row of a list chosen.
+		row.Background(t.Accent)
+	case row.Hovered():
+		row.Background(t.SurfaceHover)
 	}
-	if k.path == "" {
-		tr, _ := s.treeOf(k.project)
-		row.Children(func() { components.Text(c, tr.project.Name).SingleLine().Grow(1) })
-		s.projectActions(c, row, tr)
-		s.projectMenu(c, row, tr)
-		row.OnClick(func() { s.toggleTreeKey(k) })
-		return
+	name := n.Name
+	if k.project == s.sel.project && k.path == s.sel.path && !s.searching() {
+		row.Children(func() {
+			if !n.IsDir {
+				components.Icon(c, lucide.FileText()).Size(t.Rem(0.875), t.Rem(0.875)).TextColor(t.AccentText)
+			}
+			components.Text(c, name).SingleLine().Grow(1).TextColor(t.AccentText)
+		})
+	} else {
+		row.Children(func() {
+			if s.isLooseFile(k) {
+				// A document of its own reads as one, where a project's node
+				// reads as a directory.
+				components.Icon(c, lucide.FileText()).Size(t.Rem(0.875), t.Rem(0.875)).TextColor(t.TextMuted)
+			}
+			components.Text(c, name).SingleLine().Grow(1)
+		})
 	}
-	row.Children(func() { components.Text(c, n.Name).SingleLine().Grow(1) })
-	if tr, ok := s.treeOf(k.project); ok {
-		s.nodeMenu(c, row, tr, n)
-	}
+	s.nodeMenu(c, row, tr, n)
 	if n.IsDir {
 		row.OnClick(func() { s.toggleTreeKey(k) })
 		return
@@ -198,6 +217,50 @@ func (s *State) treeRow(c *ui.Context, k treeKey) {
 		s.selectDocIn(k.project, k.path)
 	})
 }
+
+// treeRowBox is the box of one row of the tree, sized and rounded as the theme
+// paints an item of a tree: hover and the accent of the documet shown are what
+// its rows read by.
+func (s *State) treeRowBox(c *ui.Context) ui.Element {
+	t := c.Theme()
+	return ui.Row(c).FillWidth().Height(t.Space(7)).AlignItems(ui.Center).
+		Gap(t.Space(0.5)).Padding(0, t.Space(1)).Radius(t.Radius)
+}
+
+// projectRow builds the row of a project: its name, the loading mark while the
+// window reads it, and the actions of that project alone.
+func (s *State) projectRow(c *ui.Context, k treeKey, tr projectTree) {
+	t := c.Theme()
+	row := s.treeRowBox(c)
+	if row.Hovered() {
+		row.Background(t.SurfaceHover)
+	}
+	row.Children(func() {
+		if tr.project.File == "" {
+			components.Icon(c, lucide.Folder()).Size(t.Rem(1), t.Rem(1)).TextColor(t.TextMuted)
+		} else {
+			components.Icon(c, lucide.FileText()).Size(t.Rem(0.875), t.Rem(0.875)).TextColor(t.TextMuted)
+		}
+		components.Text(c, tr.project.Name).SingleLine().Grow(1)
+		if s.scanning[tr.project.ID] {
+			components.Spinner(c, components.SpinnerSpokes).Label("正在扫描 " + tr.project.Name)
+		}
+	})
+	s.projectActions(c, row, tr)
+	s.projectMenu(c, row, tr)
+	row.OnClick(func() { s.toggleTreeKey(k) })
+}
+
+// isLooseFile reports whether the row is a document of its own, rather than an
+// entry of a project's tree.
+func (s *State) isLooseFile(k treeKey) bool {
+	tr, ok := s.treeOf(k.project)
+	return ok && tr.project.File != "" && !tr.rootIsDir()
+}
+
+// rootIsDir reports whether the project's tree has a directory at its top, as
+// a directory project does.
+func (tr projectTree) rootIsDir() bool { return tr.root == nil || tr.root.IsDir }
 
 // setTreeKeyOpen opens or closes the children of a row, as a click on its arrow
 // does.
