@@ -1,6 +1,7 @@
 package view
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -262,5 +263,70 @@ func TestAClosedProjectLeavesNoClosedKeysBehind(t *testing.T) {
 		if k.project == id {
 			t.Errorf("treeClosed still holds %v after dropTree", k)
 		}
+	}
+}
+
+// TestFoldChangesAreWrittenBack pins the write-back of the tree's folds: a
+// click on a row's arrow, expand-all and fold-all each leave the snapshot
+// telling the truth, and a restart comes back to what the user left.
+func TestFoldChangesAreWrittenBack(t *testing.T) {
+	root, dir := t.TempDir(), t.TempDir()
+	var cfg config.Config
+	p, _ := cfg.AddProject(root, "alpha")
+	cfg.ActiveID = p.ID
+	writeDoc(t, root, "notes/a.md", "# A\n")
+	writeDoc(t, root, "other/b.md", "# B\n")
+	s := New(workspace.New(cfg), cfg, dir)
+	s.SetSyncScan()
+
+	s.toggleTreeKey(treeKeyOf(p.ID, "notes"))
+	out, err := session.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(out.TreeClosed, session.Ref{Project: p.ID, Path: "notes"}) {
+		t.Errorf("closed = %v, want notes in it", out.TreeClosed)
+	}
+
+	s.setTreeOpen(p.ID, true) // expand all: the fold memory empties
+	out, _ = session.Load(dir)
+	if len(out.TreeClosed) != 0 {
+		t.Errorf("closed = %v, want none after expand-all", out.TreeClosed)
+	}
+
+	s.setTreeOpen(p.ID, false) // fold all: two directories, no project node
+	out, _ = session.Load(dir)
+	if len(out.TreeClosed) != 2 {
+		t.Errorf("closed = %v, want the two directories only", out.TreeClosed)
+	}
+}
+
+// TestSearchDoesNotDisturbTheClosedSet pins what the tree's search must not
+// do: its temporary opens never reach the snapshot, even though the search is
+// open while something else writes it.
+func TestSearchDoesNotDisturbTheClosedSet(t *testing.T) {
+	root, dir := t.TempDir(), t.TempDir()
+	var cfg config.Config
+	p, _ := cfg.AddProject(root, "alpha")
+	cfg.ActiveID = p.ID
+	writeDoc(t, root, "notes/a.md", "# A\n")
+	writeDoc(t, root, "other/b.md", "# B\n")
+	s := New(workspace.New(cfg), cfg, dir)
+	s.SetSyncScan()
+	s.selectDocIn(p.ID, "notes/a.md")
+	s.toggleTreeKey(treeKeyOf(p.ID, "notes")) // the user folds notes
+
+	openTreeSearchOn(s, "a") // the search unfolds notes to show its candidate
+	s.closeTab(s.sel)        // something else writes the snapshot meanwhile
+
+	out, err := session.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(out.TreeClosed, session.Ref{Project: p.ID, Path: "notes"}) {
+		t.Errorf("closed = %v, want notes kept while the search is open", out.TreeClosed)
+	}
+	if len(out.TreeClosed) != 1 {
+		t.Errorf("closed = %v, want nothing else leaked in", out.TreeClosed)
 	}
 }

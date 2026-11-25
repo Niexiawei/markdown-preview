@@ -292,9 +292,11 @@ func (s *State) setTreeKeyOpen(k treeKey, open bool) {
 	s.treeClosed[k] = true
 }
 
-// toggleTreeKey opens the children of a row, or closes them.
+// toggleTreeKey opens the children of a row, or closes them. It is one click,
+// so the fold it leaves goes into the snapshot once, here.
 func (s *State) toggleTreeKey(k treeKey) {
 	s.setTreeKeyOpen(k, !s.treeOpen.Open.Has(k))
+	s.saveSession()
 }
 
 // setTreeOpen folds or unfolds every directory of the open projects, or of the
@@ -325,6 +327,9 @@ func (s *State) setTreeOpen(projectID string, open bool) {
 		}
 	}
 	s.bumpTree()
+	// One write at the end, not one per row: folding a directory of thousands
+	// of entries must not write the snapshot thousands of times.
+	s.saveSession()
 }
 
 // noteNewDirectories opens the directories the window has not shown before: the
