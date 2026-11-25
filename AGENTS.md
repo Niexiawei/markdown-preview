@@ -95,6 +95,8 @@ GUI 要真实窗口；**无头环境里验证视图一律用 `ui.NewTester`，�
 - **图标只用 `icons/lucide`**，用 `components.Icon` / `components.IconButton`；图标按钮必须给 `label`
   （无障碍名，也是测试定位的唯一方式，图标本身不是文本）。侧栏底部的动作按钮用
   `IconButtonPlain`（32 DIP 方块 / 20 DIP 图形），**不要**用 `IconButtonCompact`：用户反馈太小。
+  例外只有侧栏**顶部**那一行的三个树操作（`treeBulkActions`）：`IconButtonCompact` + `Size(treeBulkSize, treeBulkSize)`
+  （24），用户 2026-11-25 明确要求比底部的小一号。
 - **配置与状态不落 `localStorage`**，一律写 `App.Path(PathUserData)` 下的 JSON。
 - **MCP server 默认关闭**；只监听 `127.0.0.1`（`Start` 会拒绝非 loopback 地址）；无
   `Authorization: Bearer <token>` 一律 401。

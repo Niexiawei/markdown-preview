@@ -855,3 +855,5 @@ D4 的两种底色改成一层、树容器从 `ui.Tree` 换成 `ui.Outline`（`s
     loading 紧贴名字（`MarginStart(Space(0.5))`）。
 12. **项目文件夹图标放大**：`Rem(1.25)`（20）+ `AlignSelf(ui.Center)` + `MarginEnd(Space(1))`，
     以前 `Rem(1)` 且只靠行的 2 DIP gap，贴着名字。
+13. **顶部三个树操作按钮缩小**：`treeBulkActions` 从 `IconButtonPlain`（32）改成
+    `IconButtonCompact` + `Size(treeBulkSize, treeBulkSize)`（24）；底部的动作按钮仍按上一期的规矩保持 32。

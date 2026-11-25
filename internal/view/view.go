@@ -112,21 +112,25 @@ func (s *State) leftHeader(c *ui.Context) {
 	})
 }
 
+// treeBulkSize is the square of the tree's bulk actions: a dense row above the
+// projects, smaller than the footer's buttons (which are plain, 32 DIP).
+const treeBulkSize float32 = 24
+
 // treeBulkActions builds the tree's bulk actions: unfold or fold every directory
-// of every open project. They sit before the project panel's button; the
-// outline's own pair sits in its header.
+// of every open project, and bring the document shown into view. They sit before
+// the project panel's button; the outline's own pair sits in its header.
 func (s *State) treeBulkActions(c *ui.Context) {
 	none := len(s.trees) == 0
-	if components.IconButton(c, lucide.UnfoldVertical(), "展开全部目录树", components.IconButtonPlain).
-		Disabled(none).Clicked() {
+	unfold := components.IconButton(c, lucide.UnfoldVertical(), "展开全部目录树", components.IconButtonCompact)
+	if unfold.Size(treeBulkSize, treeBulkSize).Disabled(none).Clicked() {
 		s.setTreeOpen("", true)
 	}
-	if components.IconButton(c, lucide.FoldVertical(), "折叠全部目录树", components.IconButtonPlain).
-		Disabled(none).Clicked() {
+	fold := components.IconButton(c, lucide.FoldVertical(), "折叠全部目录树", components.IconButtonCompact)
+	if fold.Size(treeBulkSize, treeBulkSize).Disabled(none).Clicked() {
 		s.setTreeOpen("", false)
 	}
-	if components.IconButton(c, lucide.Crosshair(), "在项目树中定位当前文档", components.IconButtonPlain).
-		Disabled(s.sel.empty()).Clicked() {
+	locate := components.IconButton(c, lucide.Crosshair(), "在项目树中定位当前文档", components.IconButtonCompact)
+	if locate.Size(treeBulkSize, treeBulkSize).Disabled(s.sel.empty()).Clicked() {
 		s.locateDoc()
 	}
 }
