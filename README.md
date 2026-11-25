@@ -33,7 +33,7 @@ go tool mygo build -platform darwin/universal,windows/amd64,linux/amd64
 
 产物在 `dist/<os>-<arch>/`：macOS 是 `.app` + `.dmg`；Windows 是 `Markdown Preview.exe` + `markdown-preview-setup-<版本>-amd64.exe`；
 Linux 是可执行文件 + 带 `install.sh` 的 `.tar.gz`，以及 `.deb` / `.rpm` / `PKGBUILD`。
-`mygo` 由 `go.mod` 的 `tool` 指令钉在 v0.9.1，本地与 CI 是同一套打包器。
+`mygo` 由 `go.mod` 的 `tool` 指令钉在 v0.10.0，本地与 CI 是同一套打包器。
 
 `.github/workflows/build.yml` 会在每次 push / PR 上跑 gofmt、`go vet`、测试，并编译三平台安装包作为 Actions artifact；
 推 `v*` 标签（须与 `mygo.json` 的 `version` 一致）时再自动建 Release 并挂上这些包，

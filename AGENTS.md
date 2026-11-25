@@ -4,8 +4,8 @@
 正文可在原生渲染（`ui/markdown`）与 WebView 渲染（`ui.WebView`）之间切换；外部改动（agent / 编辑器）
 实时跟随；另带一个默认关闭的本地 MCP server。
 
-UI 框架是 `github.com/egoist/mygo v0.9.1`（原生 UI 路径，**不用** web 前端、不需要 bun）；
-布局、主题与图标来自 `github.com/oneo-me/onevra/source v0.2026.18`（`shells/sidebar` 外壳、`theme.Onevra`、
+UI 框架是 `github.com/egoist/mygo v0.10.0`（原生 UI 路径，**不用** web 前端、不需要 bun）；
+布局、主题与图标来自 `github.com/oneo-me/onevra/source v0.2026.19`（`shells/sidebar` 外壳、`theme.Onevra`、
 `icons/lucide`、`components`）。设计与实现计划在 `docs/superpowers/`。
 
 ## 命令
@@ -22,10 +22,10 @@ MDPREVIEW_SHOT_DIR=/tmp/shots go test ./internal/view -run TestScreenshots
                             # 把界面状态渲染成 PNG，改完界面自己看一眼（见「GUI 验证」）
 ```
 
-`mygo` 这个 CLI 由 `go.mod` 的 `tool` 指令钉在 mygo v0.9.1（`go tool mygo`），
+`mygo` 这个 CLI 由 `go.mod` 的 `tool` 指令钉在 mygo v0.10.0（`go tool mygo`），
 所以本地与 CI 用同一套打包器；`dist/` 与 `build/` 都在 `.gitignore` 里。
 
-Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本机旧版本时 `GOTOOLCHAIN=auto` 会自动取工具链。
+Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.10.0 要求）；本机旧版本时 `GOTOOLCHAIN=auto` 会自动取工具链。
 
 ## GUI 验证（硬规则）
 
