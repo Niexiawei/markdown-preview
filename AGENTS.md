@@ -20,6 +20,8 @@ go test ./internal/view/ -run TestTOC -v
 go vet ./... && gofmt -l .   # 提交前必跑：vet 无输出、gofmt 无输出
 MDPREVIEW_SHOT_DIR=/tmp/shots go test ./internal/view -run TestScreenshots
                             # 把界面状态渲染成 PNG，改完界面自己看一眼（见「GUI 验证」）
+MDPREVIEW_PANEL_DOWN=1 go run .
+                            # 在 Windows/Linux 上预览 macOS 的头部形态（面板下沉、折叠按钮尾随）
 ```
 
 `mygo` 这个 CLI 由 `go.mod` 的 `tool` 指令钉在 mygo v0.10.0（`go tool mygo`），
@@ -58,7 +60,7 @@ GUI 要真实窗口；**无头环境里验证视图一律用 `ui.NewTester`，�
 | `internal/mcp` | `POST /mcp` JSON-RPC 2.0，四个只读工具 |
 | `internal/notices` | 消息账本与 `notices.json`（最新在前、无上限、未读标记）；原子写，**不 import ui**，可无窗口测试 |
 | `internal/session` | 会话快照 `session.json`（标签页与活动标签、树里被折叠的目录）；原子写，**不 import ui**，可无窗口测试 |
-| `internal/view` | Onevra 主题（`theme.go`）与外壳各区域：侧栏顶栏（项目面板 + 右键菜单）、树（`tree.go` 的 `treeKey` / `roots` / `children` / `rowOf` / 自绘行，`scan.go` 的异步扫描与上限，`locate.go` 的 crosshair 定位）、侧栏工具栏（含铃铛）、标签栏（`tabs.go`，占 shell 的标题槽位）、页面第一行的路径与渲染开关（`titleRow`）、预览、消息历史浮层（`notices.go`）、MCP 设置面板；`find.go` 是悬浮搜索（三块浮岛 + 两块数据岛各自的可拖拽高度 `findGripBand`）与跳转，`native.go` 是原生正文与跳转（`jumpToBlock` / `jumpMarker`），`zoom.go` 是正文缩放；`system.go` 是桌面动作接口 |
+| `internal/view` | Onevra 主题（`theme.go`）与外壳各区域：侧栏顶栏（项目面板 + 右键菜单；macOS 上面板下沉为 `panelRow`，槽位留空）、树（`tree.go` 的 `treeKey` / `roots` / `children` / `rowOf` / 自绘行，`scan.go` 的异步扫描与上限，`locate.go` 的 crosshair 定位）、侧栏工具栏（含铃铛）、标签栏（`tabs.go`，占 shell 的标题槽位）、页面第一行的路径与渲染开关（`titleRow`）、预览、消息历史浮层（`notices.go`）、MCP 设置面板；`find.go` 是悬浮搜索（三块浮岛 + 两块数据岛各自的可拖拽高度 `findGripBand`）与跳转，`native.go` 是原生正文与跳转（`jumpToBlock` / `jumpMarker`），`zoom.go` 是正文缩放；`system.go` 是桌面动作接口 |
 | `internal/tray` | 托盘：图标与两条菜单（打开主页面 / 退出）、关闭窗口即隐藏、`Show`（托盘与第二次启动共用）、窗口/任务栏图标。图片在 `assets/`，用 `go:embed` 打包；纯逻辑（菜单项、关闭决策、图标尺寸）无窗口可测 |
 | `.github/workflows/build.yml` | CI：gofmt / vet / 测试（Ubuntu，带 Pango），再在 macOS / Ubuntu 上交叉编译三平台安装包；推 `v*` 标签时把产物挂到 Release |
 
@@ -280,6 +282,7 @@ GUI 要真实窗口；**无头环境里验证视图一律用 `ui.NewTester`，�
   `updateToasts` 三步顺序要一致。
 - **`view.New(…, "")` 表示无用户数据目录**：账本只在内存里，`Save` 是 no-op。`dir` 非空时是 `notices.json`
   所在目录（与 `config.json` 同目录）。测试一律传 `t.TempDir()`，不要在仓库根目录写出文件。
+- **macOS 的头部是「面板下沉 + 按钮尾随」，两件事必须同源**：`State.panelDown`（`New` 里 `runtime.GOOS == "darwin"`，`MDPREVIEW_PANEL_DOWN=1` 可在任何机器上预览）同时驱动面板位置与 main.go 的 `LeftToggleTrailing: state.PanelDown()`。面板内容只有一份：`panelItems` 同时喂标题栏槽位的 `leftHeader`（macOS 上构建为空）与主体首行的 `panelRow`（高 `panelRowHeight` = 40），改面板内容两处一起变，`Left` 与 `View` 两条拼装路径都按 `panelDown` 分叉。折叠与展开动画期间 onevra 把折叠按钮放回标题栏左端（交通灯之后），动画结束才跳到右端——这是 onevra 的设计，不是 bug。标签条起点在三种模式下不变（onevra 的 trailing 分支不改变 `titleInset`），`-12` 拉回照旧。面板测试显式设置 `s.panelDown`，不依赖 GOOS（darwin 机器上跑测试也要绿）。
 - **标题槽的 24 DIP 首部间距是 onevra 写死的**（`shells/sidebar/shell.go` 里 `titleInset = 24`，`ShellOptions`
   没有对应字段）。本项目要 12，所以 `ContentTitle` 调 `tabBarAt(c, -12)`，只把**标签条**（不含 ⌄ 按钮）往左拉，
   ⌄ 留在标题槽自带的右侧内边距上——整行平移会让右边多出 16 的空档（用户报过「移动太过头」）。

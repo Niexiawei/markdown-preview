@@ -183,3 +183,8 @@ Windows/Linux：布局与现状一致（测试钉住）。"
 
 运行：`GOOS=darwin go build ./...`（纯编译检查，不打包；三平台安装包由 CI 的 `go tool mygo build` 负责）
 预期：编译无错误。
+
+## 执行后的修订
+
+- **`MDPREVIEW_PANEL_DOWN=1` 预览开关**（用户 2026-11-25 执行开始时追加）：开发机是 Windows，要在迭代后预览 macOS 形态。`New` 里 `panelDown = runtime.GOOS == "darwin" || os.Getenv("MDPREVIEW_PANEL_DOWN") == "1"`；`PanelDown()` 同源，所以设了变量后 main.go 的 `LeftToggleTrailing` 也跟着开，Windows 上就能看到完整的 macOS 布局（除交通灯外）。补测试 `TestPanelDownFollowsTheOverride`；AGENTS.md 命令节补一行用法。
+- **面板测试不依赖 GOOS**：所有面板测试显式设置 `s.panelDown`，`TestThePanelStaysInTheHeaderOutsideMacOS` 显式置 `false`——否则在 macOS 机器上跑测试会红。

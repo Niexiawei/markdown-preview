@@ -8,6 +8,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -110,6 +111,13 @@ type State struct {
 	// it was not.
 	treeSearch  treeSearchState
 	treeFocused bool
+	// panelDown sinks the project panel into the sidebar's body as its first
+	// row, leaving the shell's header slot to the collapse toggle, which then
+	// trails at the header's end (main.go): the macOS arrangement, so that
+	// the traffic lights keep the header's leading corner. Elsewhere the
+	// panel stays in the header. MDPREVIEW_PANEL_DOWN=1 previews it on any
+	// machine; the tests set the field directly.
+	panelDown bool
 
 	// The document shown: its source, its parse, the outline built from it,
 	// and what the native markdown view shows it with.
@@ -227,6 +235,10 @@ func New(ws *workspace.Workspace, cfg config.Config, dir string) *State {
 		tocW:        240,
 		inbox:       make(chan func(), 1024),
 	}
+	// macOS puts the project panel in the sidebar's body and the collapse
+	// toggle at the header's trailing end; elsewhere the panel stays in the
+	// header. The env override previews either from any machine.
+	s.panelDown = runtime.GOOS == "darwin" || os.Getenv("MDPREVIEW_PANEL_DOWN") == "1"
 	if !cfg.IsOpen(s.activeID) {
 		s.activeID = ""
 		if open := cfg.OpenProjects(); len(open) > 0 {

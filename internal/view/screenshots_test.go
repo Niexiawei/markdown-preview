@@ -213,5 +213,13 @@ func shotCases() []shotCase {
 				return s
 			},
 		},
+		{
+			name: "10-sunk-panel",
+			build: func(t *testing.T) *State {
+				s := shotTree(t)
+				s.panelDown = true
+				return s
+			},
+		},
 	}
 }
