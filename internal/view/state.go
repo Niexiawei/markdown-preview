@@ -396,6 +396,23 @@ func (s *State) OpenProject() {
 	s.AddProjects(paths)
 }
 
+// OpenDocumentFile asks for markdown files and opens each of them, as a
+// document of a project the window knows or of its own.
+func (s *State) OpenDocumentFile() {
+	paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
+		Title:    "打开 Markdown 文件",
+		Multiple: true,
+		Filters:  []mygo.FileFilter{{Name: "Markdown", Extensions: []string{"md", "markdown"}}},
+		Parent:   s.win,
+	})
+	if err != nil || len(paths) == 0 {
+		return
+	}
+	for _, path := range paths {
+		s.OpenDocument(path)
+	}
+}
+
 // AddProject opens the directory at root as a project.
 func (s *State) AddProject(root string) { s.AddProjects([]string{root}) }
 

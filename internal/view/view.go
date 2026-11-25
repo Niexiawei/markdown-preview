@@ -218,6 +218,9 @@ func (s *State) leftToolbar(c *ui.Context) {
 		if components.IconButton(c, lucide.FolderOpen(), "打开项目", components.IconButtonPlain).Clicked() {
 			s.OpenProject()
 		}
+		if components.IconButton(c, lucide.FilePlus(), "打开 Markdown 文件", components.IconButtonPlain).Clicked() {
+			s.OpenDocumentFile()
+		}
 		if components.IconButton(c, lucide.RefreshCw(), "刷新", components.IconButtonPlain).
 			Disabled(s.activeID == "").Clicked() {
 			s.Refresh()

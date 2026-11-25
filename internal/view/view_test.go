@@ -1128,3 +1128,25 @@ func TestTheProjectRowFoldsOnlyItsOwnProject(t *testing.T) {
 		t.Errorf("texts = %q, want beta's document back", tt.Texts())
 	}
 }
+
+// TestTheToolbarOpensAProjectOrADocument pins the two entries of the sidebar's
+// footer, side by side, before the reload button.
+func TestTheToolbarOpensAProjectOrADocument(t *testing.T) {
+	s, _ := newState(t)
+	tt := ui.NewTester(func(c *ui.Context) { s.LeftToolbar(c) }, 300, 48)
+	open, ok := tt.Find("打开项目")
+	if !ok {
+		t.Fatalf("no 打开项目; texts = %q", tt.Texts())
+	}
+	doc, ok := tt.Find("打开 Markdown 文件")
+	if !ok {
+		t.Fatalf("no 打开 Markdown 文件; texts = %q", tt.Texts())
+	}
+	reload, ok := tt.Find("刷新")
+	if !ok {
+		t.Fatalf("no 刷新; texts = %q", tt.Texts())
+	}
+	if doc.X < open.X || doc.X+doc.W > reload.X+1 {
+		t.Errorf("打开 Markdown 文件 at X %v..%v, want it between %v and %v", doc.X, doc.X+doc.W, open.X, reload.X)
+	}
+}
