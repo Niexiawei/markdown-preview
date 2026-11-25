@@ -29,17 +29,19 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
 
 | 路径 | 职责 |
 | --- | --- |
-| `main.go` | 组装：单实例锁 → 配置 → workspace → 窗口（shell） → 窗口图标 → 托盘 → 文件监听 → MCP |
-| `internal/config` | 配置读写（项目、活动项目、渲染模式、MCP），原子写 `config.json` |
-| `internal/workspace` | 扫描 / 读取 / 解析缓存 / 标题缓存 / TOC 与 slug / 搜索 / 正文内查找（`find.go` 的 `FindIn`）/ 文件名模糊匹配（`fuzzy.go` 的 `FuzzyMatch`）；`Index` 接口 |
-| `internal/watch` | `mygo.WatchFiles` → `ChangeSet`（新增 / 删除 / 重命名 / 写入） |
+| `main.go` | 组装：单实例锁 → 配置 → workspace → 窗口（shell） → 窗口图标 → 托盘 → 文件监听 → 启动参数里的 md → MCP；`windowState` 供第二实例 / `OnOpenFile` 用 |
+| `internal/config` | 配置读写（项目、活动项目、渲染模式、MCP），原子写 `config.json`；`Project.File` 非空即单文件项目（`Root` 是它所在目录） |
+| `internal/workspace` | 扫描（上限 `MaxEntries` = 100 万）/ 读取 / 解析缓存 / 标题缓存 / TOC 与 slug / 搜索 / 正文内查找（`find.go` 的 `FindIn`）/ 文件名模糊匹配（`fuzzy.go` 的 `FuzzyMatch`）/ 单文件项目与归属（`single.go` 的 `Tree`、`Locate`）/ 树的就地增删改（`patch.go` 的 `InsertDoc` / `RemoveDoc` / `RenameDoc`）；`Index` 接口 |
+| `internal/launch` | 命令行 / 系统递来的参数里挑出 md 文件（`Documents`，纯函数，不 import ui） |
+| `internal/watch` | `mygo.WatchFiles` → `ChangeSet`（新增 / 删除 / 重命名 / 写入）；单文件监听（`WatchFile` + `FoldFile`）、监听上限 |
 | `internal/mcp` | `POST /mcp` JSON-RPC 2.0，四个只读工具 |
 | `internal/notices` | 消息账本与 `notices.json`（最新在前、无上限、未读标记）；原子写，**不 import ui**，可无窗口测试 |
-| `internal/view` | Onevra 主题（`theme.go`）与外壳各区域：侧栏顶栏（项目面板 + 右键菜单）、树、侧栏工具栏（含铃铛）、标签栏（`tabs.go`，占 shell 的标题槽位）、页面第一行的路径与渲染开关（`titleRow`）、预览、消息历史浮层（`notices.go`）、MCP 设置面板；`find.go` 是悬浮搜索（三块浮岛 + 两块数据岛各自的可拖拽高度 `findGripBand`）与跳转，`native.go` 是原生正文与跳转（`jumpToBlock` / `jumpMarker`），`zoom.go` 是正文缩放；`system.go` 是桌面动作接口 |
+| `internal/view` | Onevra 主题（`theme.go`）与外壳各区域：侧栏顶栏（项目面板 + 右键菜单）、树（`tree.go` 的 `treeKey` / `roots` / `children` / `rowOf` / 自绘行，`scan.go` 的异步扫描与上限，`locate.go` 的 crosshair 定位）、侧栏工具栏（含铃铛）、标签栏（`tabs.go`，占 shell 的标题槽位）、页面第一行的路径与渲染开关（`titleRow`）、预览、消息历史浮层（`notices.go`）、MCP 设置面板；`find.go` 是悬浮搜索（三块浮岛 + 两块数据岛各自的可拖拽高度 `findGripBand`）与跳转，`native.go` 是原生正文与跳转（`jumpToBlock` / `jumpMarker`），`zoom.go` 是正文缩放；`system.go` 是桌面动作接口 |
 | `internal/tray` | 托盘：图标与两条菜单（打开主页面 / 退出）、关闭窗口即隐藏、`Show`（托盘与第二次启动共用）、窗口/任务栏图标。图片在 `assets/`，用 `go:embed` 打包；纯逻辑（菜单项、关闭决策、图标尺寸）无窗口可测 |
 | `.github/workflows/build.yml` | CI：gofmt / vet / 测试（Ubuntu，带 Pango），再在 macOS / Ubuntu 上交叉编译三平台安装包；推 `v*` 标签时把产物挂到 Release |
 
-依赖方向：`view → workspace`、`view → notices`、`mcp → workspace`、`workspace → config`。
+依赖方向：`view → workspace`、`view → notices`、`view → config`、`mcp → workspace`、`workspace → config`、
+`launch → workspace`（只用 `IsMarkdown`）、`watch → workspace`。
 
 ## 硬规则
 
@@ -51,6 +53,9 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
   `HTML()`；绝不为 webview 另引解析器，否则两模式渲染会不一致。
 - **视图状态归窗口线程。** 视图是 state 的纯函数；其他 goroutine 只通过 `State.Post(fn)` 投递，
   帧首 `drain()` 应用，然后 `win.Invalidate()` 唤醒。不要在 view 热路径里读盘或解析。
+- **扫盘只跑在扫描 goroutine 上**（`view/scan.go` 的 `loadTree` → `s.scan(workspace.Tree)` → `Post(applyTree)`）：
+  窗口线程只应用结果。每一条回程都带**项目 ID + 代数**（`scanGen`），项目被关掉 / 又发起新扫描时旧结果一律丢弃。
+  测试用 `SetSyncScan()` 走同步路径，别在别处偷偷同步扫。
 - **窗口只用 `sidebar.NewShell` 创建**（`main.go`），不要退回 `mygo.NewWindow`：折叠侧栏、浮动标题栏、
   主题安装都由 shell 负责。要加内容就填它的槽位：`Left` / `LeftHeader` / `LeftToolbar` / `ContentTitle` / `Content`。
 - **关闭窗口 = 隐藏，不是退出**：这条规则只在 `internal/tray` 里落地（`Install` 先建托盘，成功后才接管
@@ -94,8 +99,9 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
   `view.go` 的 `titleRow` → `contentTitle`（路径 + 复制 + `modeToggle`）是 `Content` 的第一行；
   `leftHeader`（项目面板：点一行开/关、右键打开/复制/移除）、`leftToolbar`（动作图标 + 铃铛）各就各位。
   改布局时 `View` 与 `Content` 两条拼装路径要一起改（`TestShellSlotsBuild`、`TestTabsSitAboveTheTitle`）。
-- **改树的展开 / 折叠**：批量只改 `state.go` 的 `setTreeOpen`（写 `s.open`，已有指针就地改值，别换指针；
+- **改树的展开 / 折叠**：批量只改 `tree.go` 的 `setTreeOpen`（往 `s.treeOpen.Open` 里增删 `treeKey`；
   **折叠只收目录、项目节点不动，展开会把项目节点一起展开**——否则项目下只有根目录文件时折叠看起来没反应）；
+  单行开合是 `setTreeKeyOpen` / `toggleTreeKey`；
   三个入口是 `view.go` 的 `treeBulkActions`（`leftHeader`，项目选择按钮左边）、项目节点的 `projectActions`
   （项目名后面那两个行内小按钮，label 带项目名以便区分）与 `projectMenu` + 项目面板每行的右键菜单。
   label 不得与目录工具条重名（树是 `展开全部目录树`，目录是 `展开全部目录`），重名会让 `tt.Find`、读屏与快捷键提示都分不清。
@@ -115,9 +121,10 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
   命中跳转只调 `jumpToBlock`，与目录、链接共用同一条路（见「已知的坑」里的 `State.jump`）。
 - **改文件名搜索**：匹配规则只改 `workspace.FuzzyMatch`（子序列、大小写不敏感、空白查询=不匹配、**不编译正则**），
   补 `TestFuzzyMatch*`；候选集合只改 `treesearch.go` 的 `refreshCandidates`（树序、不扫盘、在 `reloadTree` 后重算），
-  补 `TestCandidates*`；过滤视图、两种底色、定位在 `treeMatched` / `treeRowFill` / `matchedFile`，
-  颜色常量在 `theme.go` 的 `candidateRowTint` / `currentCandidateTint`；快捷键路由与 `Esc` / `↑` / `↓`
-  在 `searchShortcuts`，补 `TestCmdF*`、`TestShiftCmdF*`、`TestArrows*`、`TestEscape*`。
+  补 `TestCandidates*`；过滤视图是 `tree.go` 的 `roots` / `children`（搜索时只给有候选的项目、有候选的目录与候选本身），
+  临时展开记在 `treeSearch.opened` 并在 `closeTreeSearch` / 清空查询时折回；
+  只有当前候选上一层底色（`isCurrentCandidate` + `theme.go` 的 `currentCandidateTint`）；
+  快捷键路由与 `Esc` / `↑` / `↓` 在 `searchShortcuts`，补 `TestCmdF*`、`TestShiftCmdF*`、`TestArrows*`、`TestEscape*`。
 - **改搜索面板的尺寸**：高度常量全在 `find.go` 顶部（列表默认 132 / 最小 72 / 最大 320，上下文默认 148 /
   最小 96 / 最大 420，拖拽带 `findGrip` 10），可拖拽的是 `findGripBand(c, which)`；读取一律经
   `findHeightOf(which)`（自己的上下限只在那里钳制一次），窗口给的余量由 `findRoom` / `findHeightMaxOf` 管，
@@ -136,7 +143,13 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
 - **改构建/发布**：只改 `.github/workflows/build.yml`；本地复现用 `go tool mygo build -platform <goos/goarch>`，
   产物在 `dist/<os>-<arch>/`（`mygo.json` 没设 `out`，默认就是 `dist`）。版本以 `mygo.json` 的 `version` 为准：
   发版先改它，再推 `v<同一版本>` 标签（workflow 会校验，不匹配就不构建）。
-- **换掉 `ui.Tree`**：md 项超过约 3000 时 `ui.Tree` 会构建全部节点，应换成 `ui.Outline`。
+- **改树的容器 / 行**：树是 `tree.go` 的 `treeBody`（`ui.Outline` + `OutlineState[treeKey]`），行是自绘的
+  `ui.Row`（点击、右键菜单、选中底色都在那里）。**只有目录（TOC）那一棵还是 `ui.Tree`**（`native.go` 的 `toc`，
+  用 `s.openOf` / `s.open`），两套展开状态别混。树的虚拟化靠 `treeOpen.Generation`：任何改动 `children()` 结果的操作
+  都必须 `bumpTree()`（或至少 `treeOpen.Generation++`），否则 Outline 会继续用它缓存的旧行。
+- **改扫描的上限 / 提示**：`workspace.MaxEntries`（100 万）是扫描与监听共用的那个数字，改它要同时想清楚两处；
+  扫描拒绝时视图 `stopWatch` 并提示「目录过大无法打开，请缩小目录范围」，监听撞上限时提示「目录过大，已停止监听：…（刷新仍可用）」
+  （`view/scan.go` 的 `watchFailure`）。
 
 ## 已知的坑
 
@@ -183,6 +196,25 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
 - **没有底部状态栏**：提示一律走 `notify*` → `internal/notices` 的账本 → 构建期 `updateToasts` 弹右下角 Toast /
   铃铛浮层看历史。不要在 view 里直接 `c.AddToast`（会绕过账本、去重与历史）；改 Toast 落位只改
   `view.ToastOptions()`。
+- **`packageFileExtensions` 只有 `mygo build` / `mygo dev` 会写进二进制**：`go run . x.md` 与未打包的 exe
+  **不会**触发 `OnOpenFile`（exe 也不注册文件关联），所以 `main.go` 必须自己解析 `os.Args[1:]`；
+  macOS 的「用此应用打开」只走 `OnOpenFile`，两边都要接，`State.OpenDocument` 幂等所以重复投递无害。
+- **单文件项目要 `watch.WatchFile`**：`watch.Watch(root)` 会盯住整个目录，而独立文件可能就在 `~` 下。
+  mygo 的单文件监听把事件路径报成 `"."`，`watch.FoldFile` 把它翻成文件名；删掉/换掉目录时它报 `"."` + `IsDir` 并结束（`io.EOF`）。
+- **`workspace.Tree(p)` ≠ `BuildTree(p.Root)`**：单文件项目的树就是那一个文件节点，写错会去扫它所在的整个目录。
+- **树的展开状态分两套**：侧栏树是 `s.treeOpen.Open`（`treeKey{project, path}`，`path` 为 `""` 是项目节点），
+  目录（TOC）那棵 `ui.Tree` 仍是 `s.open` / `s.openOf`（键 `"projectID:slug"`）。`setOpen` 已删，别复活；
+  `openOf` 只给 TOC 用。
+- **扫描结果必须带项目 ID + 代数**：`applyTree` 先比 `scanGen`，再比 `cfg.IsOpen`；被关掉的项目、被更新的扫描取代的结果一律丢弃。
+  一次点击/一次变动可能会连发几次扫描请求，`scanAgain` 把它们合并成一次。
+- **`OutlineState.Rows()` 是上一帧的快照**：算行号一律用 `rowOf(roots, key)`（它自己按 `Open` 走一遍），
+  否则「展开祖先 + 滚过去」在同一帧里会滚到邻居。`ListState.Visible()` 的 `last` 是**包含**的。
+- **`ui.Outline` 的一行不是你建的**：缩进与箭头归 Outline，行的内容 `row(item)` 只是它的子元素；
+  行底色因此画在内容上（`Padding` 之内），比旧的 `ui.TreeItem` 略窄。点击、右键菜单、项目行的两个小按钮都要自己装。
+- **树的焦点跟踪用 `ObserveInput`，不是 `HandleInput`**：`HandleInput` 会顶掉 Outline 自己的输入处理，
+  `ObserveInput` 只是旁听（`treePress` 只认 `InputPointerDown`）。
+- **`workspace.Locate` 两侧都先 `EvalSymlinks`**：Windows 的 8.3 短名（`NIEXIA~1`）、符号链接会让
+  「项目根」「文件路径」字面不同，不解析就会把项目内的文件当成独立文件。`OpenDocument` 自己也解析一次。
 - **浮层开着 = 已读**：`bellButton` 在开头就把未读标掉（`MarkSeen` 没有变化时不写盘），所以新消息到达时
   不会在正显示着的列表上冒出角标。
 - **Toast 按 `noticeShown` 水位线去重**：一次点击会建两遍视图（同下面那条坑），不去重会弹两个、读屏还会念两遍。

@@ -553,3 +553,20 @@ git commit -m "docs: 项目树批量折叠与文件名搜索的规格与计划�
    「折叠」看起来毫无反应（没有目录可收），且项目节点一关就像把项目关了。改成：**折叠只收目录、项目节点不动；
    展开把项目节点一起展开**。`TestTheProjectRowFoldsOnlyItsOwnProject` / `TestTheProjectMenuFoldsOneProjectOnly`
    都断言折叠后项目自己的顶层目录还在。
+
+### 第三轮：被 2026-11-25 那期改掉的两处（2026-11-25）
+
+同一份树的后续计划 `2026-11-25-locate-single-file-and-open-with.md` 推翻了本期两条决定，代码与测试都已跟着改，
+这里的记录只为不让人以为它们是笔误：
+
+1. **「两种底色」收敛成一层**（用户截图反馈）：树在搜索时已经只剩命中项与它们所在的目录，再给每个候选上淡主色
+   等于整片都亮。现在只有**当前候选**带 `currentCandidateTint`，`candidateRowTint` 已删除；
+   `treeRowFill` / `rowCandidate` / `matchedFile` 之类的枚举与函数一并消失，换成
+   `State.isCurrentCandidate(projectID, path)`。`TestCandidatesAndTheOneChosenAreTwoDifferentFills`
+   改成 `TestOnlyTheCurrentCandidateIsFilled`。
+2. **树容器从 `ui.Tree` 换成 `ui.Outline`**：`ui.Tree` 每帧构建全部节点（实测 3700 个节点一帧 14.5 ms），
+   换成 `ui.Outline` + `OutlineState[treeKey]` 之后只建可见行（3000 个文档一帧约 0.2 ms）。
+   展开状态因此从 `s.open`（`"projectID:path"` 字符串键 + 指针就地改值）搬到 `treeOpen.Open`（`Selection[treeKey]`）；
+   `s.open` / `s.openOf` 只剩**目录（TOC）**那一棵 `ui.Tree` 还在用。搜索的过滤视图也从
+   `treeMatched` / `matchedItems` / `matchedFile` 搬到 `tree.go` 的 `roots` / `children`。
+   本期那条「md 项超过 3000 会变慢」的已知限制随之作废。
