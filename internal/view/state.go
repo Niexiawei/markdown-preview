@@ -8,6 +8,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -593,6 +594,34 @@ func (s *State) Refresh() {
 
 func (s *State) save() {
 	_ = s.cfg.Save(s.cfgDir)
+}
+
+// saveSession writes the snapshot of what the window shows now: the tabs in
+// their order, the active one, and the directories the user folded. It runs
+// on the window's thread after the user acted — once per action, never inside
+// a loop — and when the scans prune a tab of a file that went away.
+func (s *State) saveSession() {
+	closed := make([]session.Ref, 0, len(s.treeClosed))
+	for k := range s.treeClosed {
+		if s.cfg.IsOpen(k.project) {
+			closed = append(closed, session.Ref{Project: k.project, Path: k.path})
+		}
+	}
+	slices.SortFunc(closed, func(a, b session.Ref) int {
+		if a.Project != b.Project {
+			return strings.Compare(a.Project, b.Project)
+		}
+		return strings.Compare(a.Path, b.Path)
+	})
+	tabs := make([]session.Ref, len(s.tabs))
+	for i, tab := range s.tabs {
+		tabs[i] = session.Ref{Project: tab.project, Path: tab.path}
+	}
+	_ = session.Save(s.cfgDir, session.Session{
+		Tabs:       tabs,
+		Active:     session.Ref{Project: s.sel.project, Path: s.sel.path},
+		TreeClosed: closed,
+	})
 }
 
 // reloadTree lines the trees up with the open projects: the trees of the ones
