@@ -277,3 +277,5 @@ git commit -m "feat: notify the left sidebar's expanded state via ShellOptions.O
 ## 执行后的修订
 
 （执行过程中追加。）
+
+- **标题槽 shift 改为随展开进度渐变**（用户 2026-11-25 实机反馈：折叠态标题压进 toggle −4 DIP 不能要）：fork 的 `titleInset += (inset - 24) * leftProgress`——折叠/动画中保持外壳原公式（无偏移），展开后全量偏移，动画中平滑渐变；回调无需参与（外壳自己知道状态）。应用侧 `TitleInsetLeft` 由 12 改 **16**（展开态标题在 leftWidth+8，折叠态回到 toggle 后 8 DIP），View 仿垫同步、测试钉 316。fork 提交 `872742f`。
