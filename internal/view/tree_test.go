@@ -4,6 +4,10 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"mdpreview/internal/config"
+	"mdpreview/internal/session"
+	"mdpreview/internal/workspace"
 )
 
 // treeKeyOf names a row of the tree, for a test that reaches into its state.
@@ -198,5 +202,65 @@ func TestFoldingEveryTreeClosesTheProjects(t *testing.T) {
 	s.setTreeOpen("", true)
 	if tt := newTester(s); !tt.HasText("a.md") || !tt.HasText("b.md") {
 		t.Errorf("texts = %q, want every entry back", tt.Texts())
+	}
+}
+
+// TestRestartKeepsTheFoldedDirectoriesFolded pins the restore of the tree's
+// folds: the directories the user folded stay folded, while the ones the
+// snapshot never saw still open by themselves.
+func TestRestartKeepsTheFoldedDirectoriesFolded(t *testing.T) {
+	root, dir := t.TempDir(), t.TempDir()
+	var cfg config.Config
+	p, _ := cfg.AddProject(root, "alpha")
+	cfg.ActiveID = p.ID
+	writeDoc(t, root, "notes/a.md", "# A\n")
+	writeDoc(t, root, "other/b.md", "# B\n")
+	if err := session.Save(dir, session.Session{Version: session.Version,
+		TreeClosed: []session.Ref{{Project: p.ID, Path: "notes"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s := New(workspace.New(cfg), cfg, dir)
+	s.SetSyncScan()
+	tt := newTester(s)
+	if tt.HasText("a.md") {
+		t.Errorf("texts = %q, want notes folded", tt.Texts())
+	}
+	if !tt.HasText("b.md") {
+		t.Errorf("texts = %q, want other open: unseen directories auto-open", tt.Texts())
+	}
+}
+
+// TestFoldingADirectoryMarksItClosed pins the closed set: folding a row puts
+// it in the set a restart restores, unfolding takes it back out.
+func TestFoldingADirectoryMarksItClosed(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "notes/a.md", "# A\n")
+	s.Refresh()
+	id := s.Trees()[0].project.ID
+	s.setTreeKeyOpen(treeKeyOf(id, "notes"), false)
+	if !s.treeClosed[treeKeyOf(id, "notes")] {
+		t.Errorf("treeClosed = %v, want notes in it", s.treeClosed)
+	}
+	s.setTreeKeyOpen(treeKeyOf(id, "notes"), true)
+	if s.treeClosed[treeKeyOf(id, "notes")] {
+		t.Errorf("treeClosed = %v, want notes out of it", s.treeClosed)
+	}
+}
+
+// TestAClosedProjectLeavesNoClosedKeysBehind pins the cleanup: a project the
+// window refuses or drops takes its folded rows out of the set with it, as it
+// does with the rows it has shown.
+func TestAClosedProjectLeavesNoClosedKeysBehind(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "notes/a.md", "# A\n")
+	s.Refresh()
+	id := s.Trees()[0].project.ID
+	s.setTreeKeyOpen(treeKeyOf(id, "notes"), false)
+	s.dropTree(id)
+	for k := range s.treeClosed {
+		if k.project == id {
+			t.Errorf("treeClosed still holds %v after dropTree", k)
+		}
 	}
 }

@@ -150,6 +150,7 @@ func (s *State) dropTree(id string) {
 	for k := range s.treeSeen {
 		if k.project == id {
 			delete(s.treeSeen, k)
+			delete(s.treeClosed, k)
 		}
 	}
 }

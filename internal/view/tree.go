@@ -279,13 +279,17 @@ func (s *State) treeDepth(k treeKey) int {
 }
 
 // setTreeKeyOpen opens or closes the children of a row, as a click on its arrow
-// does.
+// does. Closing a row the user chose to fold puts it in the set a restart
+// restores; opening it takes it back out. It never saves: the entries that
+// call it in a loop save once, at their own end.
 func (s *State) setTreeKeyOpen(k treeKey, open bool) {
 	if open {
 		s.treeOpen.Open.Add(k)
+		delete(s.treeClosed, k)
 		return
 	}
 	s.treeOpen.Open.Remove(k)
+	s.treeClosed[k] = true
 }
 
 // toggleTreeKey opens the children of a row, or closes them.
