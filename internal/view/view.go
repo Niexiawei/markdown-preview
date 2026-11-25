@@ -153,7 +153,7 @@ func (s *State) projectSwitcher(c *ui.Context) {
 		components.Icon(c, icon).Size(t.Rem(1), t.Rem(1)).TextColor(t.TextMuted)
 		components.Text(c, label).SingleLine().Grow(1)
 		if reading != "" {
-			loading.Snake(c, loading.Options{Size: t.Space(3), Color: t.TextMuted}).
+			loading.Snake(c, loading.Options{Size: loading.DefaultSize, Color: t.TextMuted}).
 				Label("正在扫描 " + reading)
 		}
 		components.Icon(c, lucide.ChevronsUpDown()).Size(t.Rem(0.875), t.Rem(0.875)).TextColor(t.TextMuted)

@@ -836,6 +836,17 @@ D4 的两种底色改成一层、树容器从 `ui.Tree` 换成 `ui.Outline`（`s
 7. **文件图标放进 arrow box** → 箭头也改成自绘（`treeMark`：目录/项目行画三角 + 点击切换，文档行画 `FileText`），
    两者在同一列。代价是丢掉 `OutlineRow.Arrow()` 的 Alt/Option「全部展开」，键盘与读屏的展开仍在。
    `TestClickingTheArrowOfADirectoryOpensItOnce` 钉住「点箭头只切换一次」。
-8. **「折叠全部」保留一级展开**：按上一期定的规则（`折叠` 只收目录、项目节点保持展开，否则项目里只有根目录文件时
-   折叠看起来没反应）**没有改**，截图里那两级（项目节点展开、一级目录已收起）就是这个规则的样子。
-   若用户要的是「连项目节点一起收起」，改 `setTreeOpen` 里那句 `if open && len(s.trees) > 1` 之外的折叠分支即可。
+8. **「折叠全部」保留一级展开** → 用户选**方案 b**：折叠连**项目节点**一起收起（收完只剩项目名），
+   与单项目窗口「收成顶层」一致；推翻上一期「折叠不动项目节点」。改的是 `setTreeOpen`：多项目时节点跟着
+   `open` 一起写；`TestFoldingEveryTreeClosesTheProjects` 钉住这个，`TestTheProjectRowFoldsOnlyItsOwnProject` /
+   `TestTheProjectMenuFoldsOneProjectOnly` 的断言改成「节点也关了」。
+   顺带发现并修掉：项目行的 `branch` 只对非项目行算，项目节点因此**从来没有展开三角**（收起来时看不出能再打开）。
+
+### 第三轮反馈（2026-11-25，方案 b 与 GUI 验证）
+
+9. **GUI 验证要能看图**：按 `D:/golang/tailcat_tool` 的做法加了 `internal/view/screenshots_test.go`
+   （`MDPREVIEW_SHOT_DIR=<目录> go test ./internal/view -run TestScreenshots`，不设就 SKIP，用例表 `shotCases()`），
+   并把规范写进 AGENTS.md 的「GUI 验证（硬规则）」：无头环境用 `ui.NewTester`（不要 `go run`）、断言不依赖像素、
+   改完界面必须看图、Tester 的时钟是虚拟的（`Advance` + `Sleep` 才让异步扫描落地）。
+   本轮就是靠这 9 张图核对的行底色、箭头/图标同列、loading 大小与折叠后的样子。
+10. **loading 定稿 20 DIP**（`loading.DefaultSize`）：12 太小、原来的 32 太大。

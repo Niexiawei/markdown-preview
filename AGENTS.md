@@ -18,12 +18,33 @@ go tool mygo build -platform darwin/universal,windows/amd64,linux/amd64
 go test ./...               # 全部测试（视图测试用 ui.NewTester，无窗口）
 go test ./internal/view/ -run TestTOC -v
 go vet ./... && gofmt -l .   # 提交前必跑：vet 无输出、gofmt 无输出
+MDPREVIEW_SHOT_DIR=/tmp/shots go test ./internal/view -run TestScreenshots
+                            # 把界面状态渲染成 PNG，改完界面自己看一眼（见「GUI 验证」）
 ```
 
 `mygo` 这个 CLI 由 `go.mod` 的 `tool` 指令钉在 mygo v0.9.1（`go tool mygo`），
 所以本地与 CI 用同一套打包器；`dist/` 与 `build/` 都在 `.gitignore` 里。
 
 Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本机旧版本时 `GOTOOLCHAIN=auto` 会自动取工具链。
+
+## GUI 验证（硬规则）
+
+GUI 要真实窗口；**无头环境里验证视图一律用 `ui.NewTester`，不要 `go run .`**（它会弹窗、读写真用户目录、
+而且没法断言）。三层，从下往上：
+
+1. **视图断言**（`go test ./internal/view/`）：`ui.NewTester(s.View, 1000, 700)` + `HasText` / `Find` /
+   `Access` / `Texts` / `Click`。**不依赖像素**：只断言文字在不在、控件的位置与尺寸关系、无障碍名与状态。
+   新组件、新面板、新交互都要有这一层测试。
+2. **看图**（人工核对，不是断言）：`MDPREVIEW_SHOT_DIR=<目录> go test ./internal/view -run TestScreenshots`，
+   用例表是 `internal/view/screenshots_test.go` 的 `shotCases()`，每个界面状态渲染成一张 PNG。
+   不设环境变量就 SKIP，CI 不写文件。**改完界面必须自己看一遍**：文字都在不等于布局是对的——
+   底色铺没铺满整行、箭头与图标是否同列、loading 大小、弹层有没有盖住东西，只有图能回答。
+   加了新面板 / 新状态就加一条用例（`build` + 可选 `view`/`act`/`settle`）。
+3. **真窗口**（只有人能做的部分）：拖动分隔条、右键菜单、系统对话框、托盘、文件关联。
+   这些写进提交信息或 PR 的「手动验证」里，不要假装测过。
+
+写截图或异步界面的测试时记住：**Tester 的时钟是虚拟的**，`Frame()` 不会让扫描 goroutine 落地——
+要 `tt.Advance(20*time.Millisecond)` + `time.Sleep(2*time.Millisecond)` 再来几帧（`shotCase.settle` 就是干这个的）。
 
 ## 结构
 
@@ -100,7 +121,8 @@ Go 版本下限由 `go.mod` 的 `go 1.27.3` 决定（mygo v0.9.1 要求）；本
   `leftHeader`（项目面板：点一行开/关、右键打开/复制/移除）、`leftToolbar`（动作图标 + 铃铛）各就各位。
   改布局时 `View` 与 `Content` 两条拼装路径要一起改（`TestShellSlotsBuild`、`TestTabsSitAboveTheTitle`）。
 - **改树的展开 / 折叠**：批量只改 `tree.go` 的 `setTreeOpen`（往 `s.treeOpen.Open` 里增删 `treeKey`；
-  **折叠只收目录、项目节点不动，展开会把项目节点一起展开**——否则项目下只有根目录文件时折叠看起来没反应）；
+  **多项目时折叠连项目节点一起收**（收完只剩项目名，与单项目窗口「收成顶层」一致；2026-11-25 用户按方案 b 定稿，
+  推翻了 2026-11-24 的「折叠不动项目节点」），展开把节点与目录一起开）；
   单行开合是 `setTreeKeyOpen` / `toggleTreeKey`；
   三个入口是 `view.go` 的 `treeBulkActions`（`leftHeader`，项目选择按钮左边）、项目节点的 `projectActions`
   （项目名后面那两个行内小按钮，label 带项目名以便区分）与 `projectMenu` + 项目面板每行的右键菜单。

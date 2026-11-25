@@ -171,3 +171,32 @@ func TestClickingTheArrowOfADirectoryOpensItOnce(t *testing.T) {
 		t.Error("docs is still closed, want a second press to open it")
 	}
 }
+
+// TestFoldingEveryTreeClosesTheProjects pins the whole-tree fold with several
+// projects open: each project's own node folds with its directories, so that
+// folding everything leaves the names, as a window of one project folds down to
+// its top level.
+func TestFoldingEveryTreeClosesTheProjects(t *testing.T) {
+	s, alphaRoot, betaRoot := twoProjects(t)
+	writeDoc(t, alphaRoot, "docs/a.md", "# A\n")
+	writeDoc(t, betaRoot, "only/b.md", "# B\n")
+	s.Refresh()
+	beta := s.Trees()[1].project.ID
+	s.setTreeOpen("", false)
+	tt := newTester(s)
+	for _, gone := range []string{"docs", "a.md", "only", "b.md"} {
+		if tt.HasText(gone) {
+			t.Errorf("texts = %q, want %q folded away with the node", tt.Texts(), gone)
+		}
+	}
+	if !tt.HasText("alpha") || !tt.HasText("beta") {
+		t.Errorf("texts = %q, want the project names left", tt.Texts())
+	}
+	if s.treeOpen.Open.Has(treeKeyOf(beta, "")) {
+		t.Error("beta's node is open, want it closed with the rest")
+	}
+	s.setTreeOpen("", true)
+	if tt := newTester(s); !tt.HasText("a.md") || !tt.HasText("b.md") {
+		t.Errorf("texts = %q, want every entry back", tt.Texts())
+	}
+}

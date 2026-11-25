@@ -197,11 +197,12 @@ func (s *State) treeRow(c *ui.Context, k treeKey) {
 		text, mark = t.AccentText, t.AccentText
 	}
 	name := tr.project.Name
-	branch := false
 	if !project {
 		name = n.Name
-		branch = len(s.children(k)) > 0
 	}
+	// A project's node opens like a directory, and a document has no entries:
+	// the arrow of one and the icon of the other share the box.
+	branch := len(s.children(k)) > 0
 	row.Children(func() {
 		if depth := s.treeDepth(k); depth > 0 {
 			ui.Box(c).Width(float32(depth) * t.Space(4)).Shrink(0)
@@ -213,7 +214,7 @@ func (s *State) treeRow(c *ui.Context, k treeKey) {
 		}
 		components.Text(c, name).SingleLine().Grow(1).TextColor(text)
 		if project && s.scanning[tr.project.ID] {
-			loading.Snake(c, loading.Options{Size: t.Space(3), Color: t.TextMuted}).
+			loading.Snake(c, loading.Options{Size: loading.DefaultSize, Color: t.TextMuted}).
 				Label("正在扫描 " + tr.project.Name)
 		}
 	})
@@ -288,17 +289,17 @@ func (s *State) toggleTreeKey(k treeKey) {
 }
 
 // setTreeOpen folds or unfolds every directory of the open projects, or of the
-// project with projectID alone ("" for all of them). Folding closes the
-// directories and leaves the project nodes as the user left them — a folded
-// project still shows its top level, as a window of one project does; unfolding
-// opens the nodes too, so that nothing stays hidden after it.
+// project with projectID alone ("" for all of them). With several projects open
+// the node of each folds with them, so that folding everything leaves the
+// projects themselves closed — as a window of one project, which has no node,
+// folds down to its top level.
 func (s *State) setTreeOpen(projectID string, open bool) {
 	for _, tr := range s.trees {
 		if projectID != "" && tr.project.ID != projectID {
 			continue
 		}
-		if open && len(s.trees) > 1 {
-			s.setTreeKeyOpen(treeKey{project: tr.project.ID}, true)
+		if len(s.trees) > 1 {
+			s.setTreeKeyOpen(treeKey{project: tr.project.ID}, open)
 		}
 		var walk func(n *workspace.Node)
 		walk = func(n *workspace.Node) {

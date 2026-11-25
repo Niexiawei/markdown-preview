@@ -1049,8 +1049,8 @@ func TestTheProjectMenuFoldsOneProjectOnly(t *testing.T) {
 	if !tt.HasText("a.md") {
 		t.Errorf("texts = %q, want alpha's document kept", tt.Texts())
 	}
-	if !tt.HasText("only") {
-		t.Errorf("texts = %q, want beta's own directory still shown: folding closed the folders, not the node", tt.Texts())
+	if tt.HasText("only") {
+		t.Errorf("texts = %q, want beta's node folded shut with its directories", tt.Texts())
 	}
 	if err := tt.RightClick("beta"); err != nil {
 		t.Fatalf("RightClick again: %v", err)
@@ -1117,8 +1117,8 @@ func TestTheProjectRowFoldsOnlyItsOwnProject(t *testing.T) {
 	if !tt.HasText("a.md") {
 		t.Errorf("texts = %q, want alpha's document kept", tt.Texts())
 	}
-	if !tt.HasText("only") {
-		t.Errorf("texts = %q, want beta's own directory still shown: the button folded it, not closed the node", tt.Texts())
+	if tt.HasText("only") {
+		t.Errorf("texts = %q, want beta's node folded shut with its directories", tt.Texts())
 	}
 	if err := tt.Click("展开项目 beta 的全部目录"); err != nil {
 		t.Fatalf("Click unfold: %v", err)
