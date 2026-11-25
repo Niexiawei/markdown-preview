@@ -166,18 +166,13 @@ func (s *State) treeRow(c *ui.Context, k treeKey) {
 	}
 	row := ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(t.Space(0.75)).
 		Padding(t.Space(0.5), t.Space(1))
-	switch fill := s.treeRowFill(k.project, k.path); {
+	switch {
 	case k.path == "":
-	case s.searching():
-		// The tree already shows nothing but matches: the candidate the
-		// keyboard is on reads stronger than the rest.
-		switch fill {
-		case rowCurrent:
-			row.Background(currentCandidateTint(t))
-		case rowCandidate:
-			row.Background(candidateRowTint(t))
-		}
-	case k.project == s.sel.project && k.path == s.sel.path:
+	case s.isCurrentCandidate(k.project, k.path):
+		// The one row that reads differently: everything else in the tree is
+		// a match already.
+		row.Background(currentCandidateTint(t))
+	case !s.searching() && k.project == s.sel.project && k.path == s.sel.path:
 		row.Background(selectedRowTint(t))
 	}
 	if k.path == "" {

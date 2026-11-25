@@ -174,10 +174,10 @@ func TestSearchingTheTreeShowsOnlyMatchingFiles(t *testing.T) {
 	}
 }
 
-// TestCandidatesAndTheOneChosenAreTwoDifferentFills pins the two washes the
-// search puts on the tree: every candidate is filled, the one the keyboard is on
-// is filled more, and the two are not the same fill.
-func TestCandidatesAndTheOneChosenAreTwoDifferentFills(t *testing.T) {
+// TestOnlyTheCurrentCandidateIsFilled pins the single wash the search keeps: the
+// tree already shows nothing but matches, so the candidate the keyboard is on
+// is the one row that reads differently.
+func TestOnlyTheCurrentCandidateIsFilled(t *testing.T) {
 	s, root := newState(t)
 	for _, name := range []string{"a_plan.md", "b_plan.md", "c_plan.md", "other.md"} {
 		writeDoc(t, root, name, "# "+name+"\n")
@@ -185,23 +185,14 @@ func TestCandidatesAndTheOneChosenAreTwoDifferentFills(t *testing.T) {
 	s.Refresh()
 	openTreeSearchOn(s, "plan")
 	s.treeSearch.current = 1
-
 	id := s.Projects()[0].ID
 	switch {
-	case s.treeRowFill(id, "a_plan.md") != rowCandidate:
-		t.Errorf("fill of a_plan.md = %v, want rowCandidate", s.treeRowFill(id, "a_plan.md"))
-	case s.treeRowFill(id, "b_plan.md") != rowCurrent:
-		t.Errorf("fill of b_plan.md = %v, want rowCurrent", s.treeRowFill(id, "b_plan.md"))
-	case s.treeRowFill(id, "other.md") != rowNone:
-		t.Errorf("fill of other.md = %v, want rowNone", s.treeRowFill(id, "other.md"))
-	}
-
-	same := true
-	_ = ui.NewTester(func(c *ui.Context) {
-		same = candidateRowTint(c.Theme()) == currentCandidateTint(c.Theme())
-	}, 100, 100)
-	if same {
-		t.Error("the two fills are the same colour, want the chosen one told apart")
+	case !s.isCurrentCandidate(id, "b_plan.md"):
+		t.Error("b_plan.md is not the current candidate, want it")
+	case s.isCurrentCandidate(id, "a_plan.md"):
+		t.Error("a_plan.md reads as the current candidate, want a plain row")
+	case s.isCurrentCandidate(id, "other.md"):
+		t.Error("other.md is not a candidate at all, want no fill")
 	}
 }
 

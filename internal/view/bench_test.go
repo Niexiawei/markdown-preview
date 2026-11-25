@@ -6,7 +6,7 @@ import (
 )
 
 // BenchmarkCandidateLookup measures the per-row work of the filtered tree: every
-// file of a project asks whether it is a candidate and how its row reads.
+// file of a project asks whether it is the candidate the keyboard is on.
 func BenchmarkCandidateLookup(b *testing.B) {
 	s := &State{}
 	const files, candidates = 3000, 3000
@@ -19,7 +19,7 @@ func BenchmarkCandidateLookup(b *testing.B) {
 	b.ResetTimer()
 	for range b.N {
 		for i := range files {
-			_ = s.treeRowFill("p", "plan_"+strconv.Itoa(i)+".md")
+			_ = s.isCurrentCandidate("p", "plan_"+strconv.Itoa(i)+".md")
 		}
 	}
 }

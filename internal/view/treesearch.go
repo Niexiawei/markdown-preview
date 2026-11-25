@@ -216,28 +216,11 @@ func (s *State) projectHasCandidate(projectID string) bool {
 	return false
 }
 
-// treeRowFill is how a row of the tree reads while the search is open.
-type treeRowFill int
-
-const (
-	rowNone treeRowFill = iota
-	rowCandidate
-	rowCurrent
-)
-
-// treeRowFill is how the row of the file at path reads: the candidate the
-// keyboard is on, a candidate the phrase matched, or nothing at all.
-func (s *State) treeRowFill(projectID, path string) treeRowFill {
-	if !s.searching() {
-		return rowNone
-	}
-	switch i := s.candidateIndex(projectID, path); {
-	case i < 0:
-		return rowNone
-	case i == s.treeSearch.current:
-		return rowCurrent
-	}
-	return rowCandidate
+// isCurrentCandidate reports whether the file is the candidate the keyboard is
+// on: the one row the search fills, since the tree already shows nothing but
+// matches.
+func (s *State) isCurrentCandidate(projectID, path string) bool {
+	return s.searching() && s.candidateIndex(projectID, path) == s.treeSearch.current
 }
 
 // gotoCandidate makes the candidate at i the one the keyboard is on, and asks
