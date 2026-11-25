@@ -141,7 +141,11 @@ func (s *State) projectSwitcher(c *ui.Context) {
 	}
 	button := components.Button(c, "", components.ButtonGhost).Label("切换项目")
 	button.Grow(1).Gap(t.Space(0.75)).Busy(reading != "").Children(func() {
-		components.Icon(c, lucide.Folder()).Size(t.Rem(1), t.Rem(1)).TextColor(t.TextMuted)
+		icon := lucide.Folder()
+		if p, ok := s.ActiveProject(); ok && p.File != "" {
+			icon = lucide.FileText()
+		}
+		components.Icon(c, icon).Size(t.Rem(1), t.Rem(1)).TextColor(t.TextMuted)
 		components.Text(c, label).SingleLine().Grow(1)
 		if reading != "" {
 			components.Spinner(c, components.SpinnerSpokes).Label("正在扫描 " + reading)
@@ -160,12 +164,17 @@ func (s *State) projectSwitcher(c *ui.Context) {
 			for _, p := range s.Projects() {
 				p := p
 				open := s.cfg.IsOpen(p.ID)
-				row := components.Button(c.Key("project:"+p.ID), "", components.ButtonGhost).Label("项目：" + p.Name)
+				kind := "项目："
+				icon := lucide.Folder()
+				if p.File != "" {
+					kind, icon = "文件：", lucide.FileText()
+				}
+				row := components.Button(c.Key("project:"+p.ID), "", components.ButtonGhost).Label(kind + p.Name)
 				// The row opens and closes the project: a check box, so that a
 				// screen reader says which.
 				row.Role(ui.RoleCheckBox).Checked(open)
 				row.Gap(t.Space(0.75)).Children(func() {
-					components.Icon(c, lucide.Folder()).Size(t.Rem(1), t.Rem(1)).TextColor(t.TextMuted)
+					components.Icon(c, icon).Size(t.Rem(1), t.Rem(1)).TextColor(t.TextMuted)
 					components.Text(c, p.Name).SingleLine().Grow(1)
 					if open {
 						components.Icon(c, lucide.Check()).Size(t.Rem(1), t.Rem(1)).TextColor(t.Accent)

@@ -6,6 +6,7 @@ package view
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -308,7 +309,7 @@ func (s *State) ToggleProject(id string) {
 	open := !s.cfg.IsOpen(id)
 	s.cfg.SetOpen(id, open)
 	if open {
-		s.startWatch(p.ID, p.Root)
+		s.startWatch(p)
 	} else {
 		s.stopWatch(p.ID)
 		s.dropTabsOf(id)
@@ -369,7 +370,12 @@ func (s *State) treeOf(id string) (projectTree, bool) {
 // hasDocs reports whether any open project has a markdown document.
 func (s *State) hasDocs() bool {
 	for _, tr := range s.trees {
-		if tr.root != nil && len(tr.root.Children) > 0 {
+		switch {
+		case tr.root == nil:
+		case tr.project.File != "":
+			// A project of one document is that document.
+			return true
+		case len(tr.root.Children) > 0:
 			return true
 		}
 	}
@@ -406,16 +412,74 @@ func (s *State) AddProjects(roots []string) int {
 		}
 		s.cfg.SetOpen(p.ID, true)
 		s.cfg.ActiveID = p.ID
-		s.startWatch(p.ID, p.Root)
+		s.startWatch(p)
 	}
 	if len(roots) == 0 {
 		return 0
 	}
+	s.afterProjectsChanged()
+	return added
+}
+
+// afterProjectsChanged applies a change to the projects to everything that
+// reads them: the workspace the app asks, the file it keeps, and the trees.
+func (s *State) afterProjectsChanged() {
 	s.activeID = s.cfg.ActiveID
 	s.ws.SetConfig(s.cfg)
 	s.save()
 	s.reloadTree()
-	return added
+}
+
+// OpenDocument shows the document at path, as the command line, a second
+// launch or the system opening a file with the app asks: a document of a
+// project the window knows, or a file of its own, which makes a project of one
+// document. Opening the document shown again does nothing.
+func (s *State) OpenDocument(path string) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		s.notifyErr("无法打开：" + path)
+		return
+	}
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		abs = resolved
+	}
+	info, err := os.Stat(abs)
+	if err != nil || !info.Mode().IsRegular() || !workspace.IsMarkdown(abs) {
+		s.notifyErr("无法打开：" + abs)
+		return
+	}
+	sel := docSel{project: "", path: filepath.Base(abs)}
+	if id, rel, ok := workspace.Locate(s.cfg.Projects, abs); ok {
+		sel = docSel{project: id, path: rel}
+		if sel == s.sel && s.cfg.IsOpen(id) {
+			return
+		}
+		if !s.cfg.IsOpen(id) {
+			p, _ := s.project(id)
+			s.cfg.SetOpen(id, true)
+			s.startWatch(p)
+			s.afterProjectsChanged()
+		}
+	} else {
+		p, _ := s.cfg.AddFileProject(abs)
+		sel = docSel{project: p.ID, path: filepath.Base(abs)}
+		if sel == s.sel {
+			return
+		}
+		s.startWatch(p)
+		s.afterProjectsChanged()
+	}
+	s.selectDocIn(sel.project, sel.path)
+	s.notifyDone("已打开 " + filepath.Base(abs))
+	s.invalidate()
+}
+
+// invalidate asks the window for a frame, for the work that arrives outside
+// one, as a second launch's command line does.
+func (s *State) invalidate() {
+	if s.win != nil {
+		s.win.Invalidate()
+	}
 }
 
 // RemoveProject removes a project from the window, asking first: the window
@@ -455,7 +519,7 @@ func (s *State) removeProject(id string) {
 func (s *State) Refresh() {
 	s.tooLarge = map[string]bool{}
 	for _, p := range s.cfg.OpenProjects() {
-		s.startWatch(p.ID, p.Root)
+		s.startWatch(p)
 		s.loadTree(p)
 	}
 	s.afterTreesChanged()
@@ -577,6 +641,11 @@ func (s *State) shortPath() string {
 		return ""
 	}
 	if p, ok := s.SelectedProject(); ok {
+		if p.File != "" {
+			// A document of its own is named by the path it has, not by a
+			// project's name in front of the same name.
+			return p.File
+		}
 		return p.Name + "/" + s.sel.path
 	}
 	return s.sel.path

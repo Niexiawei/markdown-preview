@@ -42,31 +42,42 @@ func fileDocs(p Project) ([]Doc, error) {
 	}}, nil
 }
 
+// clean is a path with the links on the way to it resolved, which is how two
+// names of one directory compare: a short 8.3 name on Windows, a link, or a
+// path typed with one.
+func clean(path string) string {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		return filepath.Clean(resolved)
+	}
+	return filepath.Clean(path)
+}
+
 // Locate returns the project the document at abs belongs to, and its path in
 // it: the single-file project that is that document, else the deepest known
 // project that holds it and whose tree would show it. It reports false for a
 // path no project holds, which a new single-file project takes.
 func Locate(projects []Project, abs string) (id, rel string, ok bool) {
-	abs = filepath.Clean(abs)
+	abs = clean(abs)
 	best := -1
 	for i, p := range projects {
 		if p.File != "" {
-			if filepath.Clean(p.File) == abs {
+			if clean(p.File) == abs {
 				return p.ID, filepath.Base(p.File), true
 			}
 			continue
 		}
-		if !within(p.Root, abs) || !IsMarkdown(abs) {
+		root := clean(p.Root)
+		if !within(root, abs) || !IsMarkdown(abs) {
 			continue
 		}
-		in, err := filepath.Rel(p.Root, abs)
+		in, err := filepath.Rel(root, abs)
 		if err != nil {
 			continue
 		}
 		if Ignored(filepath.ToSlash(in), false) {
 			continue
 		}
-		if best < 0 || len(p.Root) > len(projects[best].Root) {
+		if best < 0 || len(root) > len(clean(projects[best].Root)) {
 			best = i
 		}
 	}
@@ -74,7 +85,7 @@ func Locate(projects []Project, abs string) (id, rel string, ok bool) {
 		return "", "", false
 	}
 	p := projects[best]
-	in, err := filepath.Rel(p.Root, abs)
+	in, err := filepath.Rel(clean(p.Root), abs)
 	if err != nil {
 		return "", "", false
 	}

@@ -15,7 +15,7 @@ import (
 func (s *State) StartWatching() {
 	s.watchReady = true
 	for _, p := range s.watchedProjects() {
-		s.startWatch(p.ID, p.Root)
+		s.startWatch(p)
 	}
 }
 
@@ -23,23 +23,32 @@ func (s *State) StartWatching() {
 // the ones the tree shows.
 func (s *State) watchedProjects() []workspace.Project { return s.cfg.OpenProjects() }
 
-// startWatch begins watching one project, unless it is watched already.
-func (s *State) startWatch(id, root string) {
+// startWatch begins watching one project, unless it is watched already. A
+// project of one document watches that document alone: its directory may be a
+// home directory, or one the watch would never keep up with.
+func (s *State) startWatch(p workspace.Project) {
 	if !s.watchReady {
 		return
 	}
-	if _, ok := s.watches[id]; ok {
+	if _, ok := s.watches[p.ID]; ok {
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	src, err := watch.Watch(ctx, root)
+	var (
+		src watch.Source
+		err error
+	)
+	if p.File != "" {
+		src, err = watch.WatchFile(ctx, p.File)
+	} else {
+		src, err = watch.Watch(ctx, p.Root)
+	}
 	if err != nil {
 		cancel()
-		if p, ok := s.project(id); ok {
-			s.notifyErr(watchFailure(p, err))
-		}
+		s.notifyErr(watchFailure(p, err))
 		return
 	}
+	id := p.ID
 	s.watches[id] = cancel
 	go func() {
 		defer src.Close()

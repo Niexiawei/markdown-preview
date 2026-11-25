@@ -46,6 +46,11 @@ func (s *State) revealCandidate(c *ui.Context) {
 // a node of each when it shows several.
 func (s *State) roots() []treeKey {
 	if len(s.trees) == 1 {
+		if tr := s.trees[0]; tr.project.File != "" {
+			// A project of one document is that document's row: a node above
+			// it would show the same name twice.
+			return []treeKey{{project: tr.project.ID, path: tr.project.Name}}
+		}
 		return s.children(treeKey{project: s.trees[0].project.ID})
 	}
 	roots := make([]treeKey, 0, len(s.trees))
@@ -54,7 +59,11 @@ func (s *State) roots() []treeKey {
 			// The phrase reaches nothing in this project: no empty node.
 			continue
 		}
-		roots = append(roots, treeKey{project: tr.project.ID})
+		key := treeKey{project: tr.project.ID}
+		if tr.project.File != "" {
+			key.path = tr.project.Name
+		}
+		roots = append(roots, key)
 	}
 	return roots
 }
@@ -92,7 +101,7 @@ func (s *State) treeNode(k treeKey) (*workspace.Node, bool) {
 	if !ok || tr.root == nil {
 		return nil, false
 	}
-	if k.path == "" {
+	if k.path == "" || (!tr.root.IsDir && tr.root.Path == k.path) {
 		return tr.root, true
 	}
 	return findNode(tr.root, k.path)
