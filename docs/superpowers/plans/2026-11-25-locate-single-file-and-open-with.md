@@ -850,3 +850,8 @@ D4 的两种底色改成一层、树容器从 `ui.Tree` 换成 `ui.Outline`（`s
    改完界面必须看图、Tester 的时钟是虚拟的（`Advance` + `Sleep` 才让异步扫描落地）。
    本轮就是靠这 9 张图核对的行底色、箭头/图标同列、loading 大小与折叠后的样子。
 10. **loading 定稿 20 DIP**（`loading.DefaultSize`）：12 太小、原来的 32 太大。
+11. **loading 要跟在项目名后面**：以前它落在名字与右边两个按钮的中间——因为名字 `Text` 带 `Grow(1)`，
+    和 `projectActions` 里的 `Spacer` 平分了剩余空间。现在名字不 Grow，行尾自己放 `ui.Spacer(c)`，
+    loading 紧贴名字（`MarginStart(Space(0.5))`）。
+12. **项目文件夹图标放大**：`Rem(1.25)`（20）+ `AlignSelf(ui.Center)` + `MarginEnd(Space(1))`，
+    以前 `Rem(1)` 且只靠行的 2 DIP gap，贴着名字。

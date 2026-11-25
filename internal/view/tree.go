@@ -210,13 +210,18 @@ func (s *State) treeRow(c *ui.Context, k treeKey) {
 		s.treeMark(c, k, n, branch, mark)
 		ui.Box(c).Width(t.Space(0.5)).Shrink(0)
 		if project && tr.project.File == "" {
-			components.Icon(c, lucide.Folder()).Size(t.Rem(1), t.Rem(1)).TextColor(mark)
+			components.Icon(c, lucide.Folder()).Size(t.Rem(1.25), t.Rem(1.25)).
+				AlignSelf(ui.Center).MarginEnd(t.Space(1)).TextColor(mark)
 		}
-		components.Text(c, name).SingleLine().Grow(1).TextColor(text)
+		// The name does not grow: what follows it — the loading mark while the
+		// window reads the project — sits right after the name, and the rest of
+		// the row is the spacer's.
+		components.Text(c, name).SingleLine().TextColor(text)
 		if project && s.scanning[tr.project.ID] {
 			loading.Snake(c, loading.Options{Size: loading.DefaultSize, Color: t.TextMuted}).
-				Label("正在扫描 " + tr.project.Name)
+				MarginStart(t.Space(0.5)).Label("正在扫描 " + tr.project.Name)
 		}
+		ui.Spacer(c)
 	})
 	if project {
 		s.projectActions(c, row, tr)

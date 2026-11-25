@@ -240,10 +240,13 @@ GUI 要真实窗口；**无头环境里验证视图一律用 `ui.NewTester`，�
   `Hovered()` 在构建期读，它会让 mygo 为悬停变化重建一帧（`hoverBuilt`），不要改成读上一帧的 `st`。
 - **箭头与文件图标都在 `treeMark` 里自绘**（`treeMark` 的 box = `Size(Space(4))`，与 `ui.TreeItem` 的 arrow box 同尺寸）：
   目录/项目行画三角（`p.StrokePath`）并 `OnClick` 切换，文件夹在名字前，文档的图标就在 arrow box 里。
+  项目节点的文件夹图标是 `Rem(1.25)` + `AlignSelf(Center)` + `MarginEnd(Space(1))`（比名字大一号，别贴在一起）。
   代价：mygo 的 `OutlineRow.Arrow()`（带 Alt/Option「全部展开」）不能用，左/右键与读屏的展开仍由 Outline 自己接。
   行本身也有 `OnClick`，靠「最内层可点击元素赢得点击」保证只切换一次（`TestClickingTheArrowOfADirectoryOpensItOnce`）。
-- **loading 用 `plugins/loading.Snake`**（`loading.Options{Size: t.Space(3)}`，约 12 DIP）：`components.Spinner`
-  的默认直径是 `Space(8)`，放在树的行里太大。
+- **loading 用 `plugins/loading.Snake`**（`loading.Options{Size: loading.DefaultSize}` = 20 DIP，
+  `MarginStart(Space(0.5))`）：`components.Spinner` 的默认直径是 `Space(8)`（32），放在树的行里太大。
+  它要**紧跟名字**：行的名字 `Text` **不要 `Grow(1)`**，行尾放 `ui.Spacer(c)` 把 `projectActions` 的按钮推到右边——
+  名字一 Grow，loading 就被挤到名字与按钮的中间。
 - **任何树的变化都要 `bumpTree()`**：`OutlineState` 会把上一帧的行走一遍的结果缓存起来，只有 `Generation` /
   `Open` 的 stamp / roots 之一变了才重走。扫描结果落地只换内容（roots 与 Open 都不变），漏掉 `bumpTree` 就会出现
   「项目没有子项、没有箭头，点一下才有」——`afterTreesChanged` 里必须调它。
