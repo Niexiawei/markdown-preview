@@ -869,3 +869,22 @@ git commit -m "docs: 侧栏多选与项目复制菜单（README / AGENTS / CHANG
 - [ ] 除正文外全是原生 UI：树 / 标签 / 标题行 / 项目面板的焦点上 `Cmd/Ctrl+C` 走原生快捷键，两种渲染模式下都成立；
       只有焦点在正文页面（WebView 渲染）里时 `Cmd+C` 归页面（复制选中文字），这是预期。
 - [ ] `go vet ./... && gofmt -l . && go test ./...` 干净；`TestScreenshots` 的 `tree-multi-select` 已人工看过。
+
+## 执行后的修订（2026-11-27，实施时记下，不回改上面的任务）
+
+- **测试归属重排**：计划把四个「点击」类测试放在任务 1，但它们要等任务 2 的行路由才可能通过。
+  执行时任务 1 = 选择模型 + 同步/剪枝（测试直接调 `selectRow`），任务 2 = 点击路由与底色（那几个点击测试）。
+  测试一条没少。
+- **`tt.Menu()` 用不了**：`components.ContextMenu` 画的是窗口内菜单，`ui.Tester.Menu()` 对它返回 nil。
+  菜单项的断言改用 `tt.HasText(...)`；点击菜单项照旧 `tt.Click`。
+- **面板行菜单的顺序**没按 D12 把复制整块提到最前，而是在「在文件管理器中打开」之后、「复制项目路径」之前插入两条，
+  少动已发布的菜单顺序；树里项目节点的顺序按 D12 执行（复制三条 → 打开 → 展开/折叠）。
+- **单文件项目的复制项**：树里那种节点走的是 `nodeMenu`（本来就有复制文件），新增代码落在**项目面板**那一行，
+  所以计划里的 `TestProjectNodeOfOneFileOffersTheFile` 改成 `TestTheProjectPanelCopiesAProjectOfOneFile`。
+- **一条测试改为口径统一的写法**：`TestCtrlClickPicksSeveralRowsAndDoesNotOpenThem` 原先假设选择是空的，
+  但「显示中的文档自己也在选择里」是 D 条的口径，于是拆成「不显示文档时 Ctrl 点只选不打开」与
+  `TestCtrlClickAddsToTheDocumentShown` 两条。
+- **`ClickModifiers()` 在读的时候取**：写在 `OnClick` 回调里（`pickRow`），不要提前到构建期存进变量。
+  行与 `treeMark` 的箭头都走 `pickRow`，否则 Ctrl 点箭头会顺手折叠目录。
+- **真窗口验证（任务 7）留给人工**：Ctrl+点多选、`Ctrl+C` 贴进 agent、右键「复制文件夹」后到资源管理器粘贴、
+  WebView 渲染下先点树再 `Ctrl+C`——这几条没有在无头环境里做。

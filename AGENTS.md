@@ -60,7 +60,7 @@ GUI 要真实窗口；**无头环境里验证视图一律用 `ui.NewTester`，�
 | `internal/mcp` | `POST /mcp` JSON-RPC 2.0，四个只读工具 |
 | `internal/notices` | 消息账本与 `notices.json`（最新在前、无上限、未读标记）；原子写，**不 import ui**，可无窗口测试 |
 | `internal/session` | 会话快照 `session.json`（标签页与活动标签、树里被折叠的目录）；原子写，**不 import ui**，可无窗口测试 |
-| `internal/view` | Onevra 主题（`theme.go`）与外壳各区域：侧栏顶栏（项目面板 + 右键菜单；macOS 上面板下沉为 `panelRow`，槽位留空）、树（`tree.go` 的 `treeKey` / `roots` / `children` / `rowOf` / 自绘行，`scan.go` 的异步扫描与上限，`locate.go` 的 crosshair 定位）、侧栏工具栏（含铃铛）、标签栏（`tabs.go`，占 shell 的标题槽位）、页面第一行的路径与渲染开关（`titleRow`）、预览、消息历史浮层（`notices.go`）、MCP 设置面板；`find.go` 是悬浮搜索（三块浮岛 + 两块数据岛各自的可拖拽高度 `findGripBand`）与跳转，`native.go` 是原生正文与跳转（`jumpToBlock` / `jumpMarker`），`zoom.go` 是正文缩放；`system.go` 是桌面动作接口 |
+| `internal/view` | Onevra 主题（`theme.go`）与外壳各区域：侧栏顶栏（项目面板 + 右键菜单；macOS 上面板下沉为 `panelRow`，槽位留空）、树（`tree.go` 的 `treeKey` / `roots` / `children` / `rowOf` / 自绘行，`scan.go` 的异步扫描与上限，`locate.go` 的 crosshair 定位）、选择与按行复制（`treesel.go` 的 `treeSel` / `selectRow` / `menuTargets` / `copyRow*`）、侧栏工具栏（含铃铛）、标签栏（`tabs.go`，占 shell 的标题槽位）、页面第一行的路径与渲染开关（`titleRow`）、预览、消息历史浮层（`notices.go`）、MCP 设置面板；`find.go` 是悬浮搜索（三块浮岛 + 两块数据岛各自的可拖拽高度 `findGripBand`）与跳转，`native.go` 是原生正文与跳转（`jumpToBlock` / `jumpMarker`），`zoom.go` 是正文缩放；`system.go` 是桌面动作接口 |
 | `internal/tray` | 托盘：图标与两条菜单（打开主页面 / 退出）、关闭窗口即隐藏、`Show`（托盘与第二次启动共用）、窗口/任务栏图标。图片在 `assets/`，用 `go:embed` 打包；纯逻辑（菜单项、关闭决策、图标尺寸）无窗口可测 |
 | `.github/workflows/build.yml` | CI：gofmt / vet / 测试（Ubuntu，带 Pango），再在 macOS / Ubuntu 上交叉编译三平台安装包；推 `v*` 标签时把产物挂到 Release |
 
@@ -133,6 +133,13 @@ GUI 要真实窗口；**无头环境里验证视图一律用 `ui.NewTester`，�
   三个入口是 `view.go` 的 `treeBulkActions`（`leftHeader`，项目选择按钮左边）、项目节点的 `projectActions`
   （项目名后面那两个行内小按钮，label 带项目名以便区分）与 `projectMenu` + 项目面板每行的右键菜单。
   label 不得与目录工具条重名（树是 `展开全部目录树`，目录是 `展开全部目录`），重名会让 `tt.Find`、读屏与快捷键提示都分不清。
+- **改多选与按行复制**：选择模型与复制动作只在 `internal/view/treesel.go`（`selectRow` 的普通点=单选、
+  修饰键=加/减且不执行行的动作；`menuTargets` 决定右键菜单作用于整组还是那一行；`copyRows` / `copyRowNames` /
+  `copyRowPaths` 吃 `[]treeKey`，路径一行一个）。行的入口是 `tree.go` 的 `treeRow` 与 `treeMark`（**两个都调
+  `pickRow`**，否则按住 Ctrl 点箭头会顺手折叠目录）；`Cmd+C` 的先后在 `fileacts.go` 的 `handleShortcuts`
+  （有选中走 `copyTreeSelection`，没有才 `copyDocPath`）。剪枝在 `afterTreesChanged` / `dropTree` / `dropTabsOf` /
+  `closeTab`，**折叠目录不清选择**。补 `TestCtrl*`、`TestCmdCCopies*`、`TestTheTreeMenuActsOn*`、
+  `TestPickedRows*`，并在 `screenshots_test.go` 的 `11-multi-select` 里看一眼底色。
 - **改会话记忆（重启恢复什么）**：改 `internal/view/state.go` 的 `restoreSession`（恢复）与 `saveSession`（快照），
 补 `TestRestart*`、`TestTabChangesAreWrittenBack` / `TestFoldChangesAreWrittenBack`。写盘点 = 五个标签变更点
 （`openTab` / `closeTab` / `dropTab` / `dropTabsOf` / `renameTab`）+ `toggleTreeKey` / `setTreeOpen` / `locateDoc`；
@@ -392,6 +399,22 @@ GUI 要真实窗口；**无头环境里验证视图一律用 `ui.NewTester`，�
 - **标签栏宽度是算出来的**（`tabWidth` + `visibleTabs`）：可见集合以活动标签为锚点、先右后左装满；不溢出时不预留
   溢出按钮的宽度。改布局要同步 `Content` 与 `View` 两处。
 - **`Cmd+F` 的 Escape 有先后**：有查询先清空、空查询才关面板（`SearchField` 自己也会清空，所以顺序不能交给它）。
+- **多选靠 `ClickModifiers()` 读「这次点击」的修饰键**：它读的是点击那一刻记在行上的状态，所以在
+  `OnClick` 回调里读（不要提前到构建期存进变量）；修饰键的掩码是 `ui.Ctrl|ui.Cmd`（macOS 上 Cmd 也进得来，
+  Windows 的 Win 键顺带落进来，无害），**不要**写 `runtime.GOOS` 分支。
+- **修饰键点击绝不能执行行自己的动作**：`pickRow` 返回 true 就 `return`。否则按住 Ctrl 选目录会把它折叠、
+  选文档会开标签，用户刚选的那几行会在他眼前消失。
+- **选中行在 `openTab` 的早退分支之前就要同步**（`syncTreeSelToDoc`）：点的是已经显示着的那份文档时
+  `openTab` 会提前返回，不同步的话「点目录 → 点已打开的标签 → Ctrl+C」会复制到那个目录的路径。
+  选择**不落盘**（`session.json` 里没有它）：它是一次会话语境，重启后为空，此时 `Cmd+C` 回落到当前文档路径。
+- **测试点项目节点要用「非活动项目」的名字**（`twoProjects` 里是 `beta`）：项目面板的按钮显示的是**活动项目**
+  的名字，同名标签有两个，`Tester` 按文本找元素会先碰上按钮（点成「切换项目」）。同理，单文件项目的名字在
+  标签栏、标题行、面板按钮上都有一份——要右键它的树行/面板行，就用带前缀的 `文件：<名字>` 或先换活动项目。
+- **本项目除正文的 WebView 渲染外全是原生 UI**：树、标签栏、标题行、项目面板都是 `ui` 画的，焦点在它们身上时
+  `Cmd/Ctrl+C` 走原生快捷键（`routeKey` 落到窗口的 `Shortcut`），与当前是哪种渲染模式无关；只有焦点在正文页面里时
+  `Cmd+C` 是页面自己的（复制选中文字）。别因为「WebView 模式下复制不出来」去改页面或快捷键。
+- **`tt.Menu()` 对这个应用的右键菜单返回 nil**：`components.ContextMenu` 画的是窗口内菜单，Tester 的
+  `Menu()` 只认平台菜单。断言菜单内容用 `tt.HasText(...)`（或 `tt.Texts()`），点菜单项照旧用 `tt.Click`。
 - **测试看不到 shell**：`sidebar.NewShell` 会真的建窗口，测试里不能用。`View` 是给测试用的并排近似布局，
   shell 的各槽位各自导出（`Left`/`LeftHeader`/`LeftToolbar`/`ContentTitle`/`Content`），
   `TestShellSlotsBuild` 逐个构建它们——改布局时保持这两条路径同步。
