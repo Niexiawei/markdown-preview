@@ -382,3 +382,104 @@ func TestCmdCCopiesAProjectNodesPath(t *testing.T) {
 		t.Errorf("copied = %q, want %q", sys.copied, betaRoot)
 	}
 }
+
+// TestProjectNodeMenuCopiesTheFolderNameAndPath pins the project's own row: it
+// is a folder, so it offers the same copies a directory does.
+func TestProjectNodeMenuCopiesTheFolderNameAndPath(t *testing.T) {
+	s, _, betaRoot := twoProjects(t)
+	writeDoc(t, betaRoot, "docs/a.md", "# A\n")
+	s.Refresh()
+	sys := &fakeSystem{}
+	s.SetSystem(sys)
+	tt := newTester(s)
+
+	if err := tt.RightClick("beta"); err != nil {
+		t.Fatalf("RightClick: %v", err)
+	}
+	for _, want := range []string{"复制文件夹", "复制文件名称", "复制文件路径", "在文件管理器中打开",
+		"展开此项目的全部目录", "折叠此项目的全部目录"} {
+		if !tt.HasText(want) {
+			t.Fatalf("texts = %q, want %q among them", tt.Texts(), want)
+		}
+	}
+	if err := tt.Click("复制文件夹"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if want := []string{betaRoot}; !slices.Equal(sys.files, want) {
+		t.Errorf("files = %v, want %v", sys.files, want)
+	}
+
+	if err := tt.RightClick("beta"); err != nil {
+		t.Fatalf("RightClick: %v", err)
+	}
+	if err := tt.Click("复制文件名称"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if want := filepath.Base(betaRoot); sys.copied != want {
+		t.Errorf("copied = %q, want the folder's own name %q", sys.copied, want)
+	}
+
+	if err := tt.RightClick("beta"); err != nil {
+		t.Fatalf("RightClick: %v", err)
+	}
+	if err := tt.Click("复制文件路径"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if sys.copied != betaRoot {
+		t.Errorf("copied = %q, want %q", sys.copied, betaRoot)
+	}
+}
+
+// TestTheProjectPanelCopiesAProjectOfOneFile pins the file project's entry: the
+// panel says 复制文件 and puts the document itself on the clipboard, not the
+// directory it sits in.
+func TestTheProjectPanelCopiesAProjectOfOneFile(t *testing.T) {
+	s, _ := newState(t)
+	file := looseDoc(t, "# Loose\n")
+	s.OpenDocument(file)
+	sys := &fakeSystem{}
+	s.SetSystem(sys)
+	tt := newTester(s)
+
+	openPanel(t, tt)
+	if err := tt.RightClick("文件：loose.md"); err != nil {
+		t.Fatalf("RightClick: %v", err)
+	}
+	if !tt.HasText("复制文件") {
+		t.Fatalf("texts = %q, want 复制文件 among them", tt.Texts())
+	}
+	if err := tt.Click("复制文件"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if want := []string{file}; !slices.Equal(sys.files, want) {
+		t.Errorf("files = %v, want %v", sys.files, want)
+	}
+}
+
+// TestTheProjectPanelCopiesTheFolderOfALoneProject pins the other way to reach
+// a project's folder: a window of one project has no node in the tree, so the
+// panel's row carries the copies.
+func TestTheProjectPanelCopiesTheFolderOfALoneProject(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "docs/a.md", "# A\n")
+	s.Refresh()
+	sys := &fakeSystem{}
+	s.SetSystem(sys)
+	tt := newTester(s)
+
+	openPanel(t, tt)
+	if err := tt.RightClick("项目：alpha"); err != nil {
+		t.Fatalf("RightClick: %v", err)
+	}
+	for _, want := range []string{"复制文件夹", "复制文件名称", "复制项目路径", "移除项目…"} {
+		if !tt.HasText(want) {
+			t.Fatalf("texts = %q, want %q among them", tt.Texts(), want)
+		}
+	}
+	if err := tt.Click("复制文件夹"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if want := []string{root}; !slices.Equal(sys.files, want) {
+		t.Errorf("files = %v, want %v", sys.files, want)
+	}
+}

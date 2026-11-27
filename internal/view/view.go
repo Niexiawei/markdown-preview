@@ -234,6 +234,20 @@ func (s *State) projectSwitcher(c *ui.Context) {
 					if m.Item("在文件管理器中打开").Chosen() {
 						s.revealProject(p)
 					}
+					// The panel is the only place a window of one project can
+					// reach the project's own folder, so it carries the same
+					// copies the tree's node does.
+					key := projectRowKey(p)
+					copyFile := "复制文件夹"
+					if s.isFileKey(key) {
+						copyFile = "复制文件"
+					}
+					if m.Item(copyFile).Chosen() {
+						s.copyRows([]treeKey{key})
+					}
+					if m.Item("复制文件名称").Chosen() {
+						s.copyRowNames([]treeKey{key})
+					}
 					if m.Item("复制项目路径").Chosen() {
 						s.copyProjectPath(p)
 					}
@@ -375,11 +389,31 @@ func (s *State) projectActions(c *ui.Context, item ui.Element, tr projectTree) {
 	})
 }
 
-// projectMenu gives a project node its right click: folding and unfolding every
-// directory of that project alone. A window with one project has no such node,
-// so the project panel's rows carry the same two entries.
+// projectMenu gives a project node its right click: the copies a directory
+// offers — the project is one — showing it in the file manager, and folding and
+// unfolding every directory of that project alone. A window with one project
+// has no such node, so the project panel's rows carry the same entries.
 func (s *State) projectMenu(c *ui.Context, item ui.Element, tr projectTree) {
+	k := projectRowKey(tr.project)
 	components.ContextMenu(c, item, func(m *components.Menu) {
+		copyFile := "复制文件夹"
+		if s.isFileKey(k) {
+			copyFile = "复制文件"
+		}
+		if m.Item(copyFile).Chosen() {
+			s.copyRows([]treeKey{k})
+		}
+		if m.Item("复制文件名称").Chosen() {
+			s.copyRowNames([]treeKey{k})
+		}
+		if m.Item("复制文件路径").Chosen() {
+			s.copyRowPaths([]treeKey{k})
+		}
+		m.Separator()
+		if m.Item("在文件管理器中打开").Chosen() {
+			s.revealRow(k)
+		}
+		m.Separator()
 		if m.Item("展开此项目的全部目录").Chosen() {
 			s.setTreeOpen(tr.project.ID, true)
 		}
