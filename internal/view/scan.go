@@ -147,6 +147,7 @@ func (s *State) dropTree(id string) {
 		}
 	}
 	s.trees = kept
+	s.dropTreeSelOf(id)
 	for k := range s.treeSeen {
 		if k.project == id {
 			delete(s.treeSeen, k)
@@ -188,6 +189,7 @@ func (s *State) afterTreesChanged() {
 	// differ: a tree read for a project that had none, as the scan of a big
 	// directory does, changes them without changing what is open.
 	s.bumpTree()
+	s.pruneTreeSel()
 	if s.sel.empty() {
 		return
 	}

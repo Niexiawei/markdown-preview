@@ -12,7 +12,14 @@ import (
 // there already. Every way of showing a document — the tree, a link in it, a
 // search hit — comes through here, so that one document is one tab.
 func (s *State) openTab(sel docSel) {
-	if sel.empty() || sel == s.sel {
+	if sel.empty() {
+		return
+	}
+	// Showing a document is picking it: Cmd+C then copies what the user just
+	// opened, not the folder picked before it. It comes before the early return
+	// so that a click on the tab already shown picks it too.
+	s.syncTreeSelToDoc(sel)
+	if sel == s.sel {
 		return
 	}
 	if !s.hasTab(sel) {
@@ -30,6 +37,7 @@ func (s *State) openTab(sel docSel) {
 // activateTab makes sel the document shown, without adding a tab.
 func (s *State) activateTab(sel docSel) {
 	s.sel = sel
+	s.syncTreeSelToDoc(sel)
 	// Another document's outline starts at its top, not where the last
 	// one's scroll was left, and no heading of it is the one last jumped
 	// to. A reload of the same document keeps both.
@@ -71,6 +79,7 @@ func (s *State) closeTab(sel docSel) {
 		s.activateTab(s.tabs[i-1])
 	default:
 		s.sel = docSel{}
+		s.clearTreeSel()
 		s.onDocChanged()
 	}
 	s.saveSession()
@@ -98,6 +107,7 @@ func (s *State) dropTabsOf(projectID string) {
 		kept = append(kept, tab)
 	}
 	s.tabs = kept
+	s.dropTreeSelOf(projectID)
 	if s.sel.project == projectID {
 		s.sel = docSel{}
 		s.onDocChanged()

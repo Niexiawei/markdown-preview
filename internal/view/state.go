@@ -111,6 +111,11 @@ type State struct {
 	// it was not.
 	treeSearch  treeSearchState
 	treeFocused bool
+	// treeSel is the rows of the tree the user picked with the pointer, in the
+	// order they were picked: Cmd+C copies their paths, and a context menu
+	// opened on one of them acts on all of them. Apart from the document shown
+	// and never saved.
+	treeSel []treeKey
 	// panelDown sinks the project panel into the sidebar's body as its first
 	// row, leaving the shell's header slot to the collapse toggle, which then
 	// trails at the header's end (main.go): the macOS arrangement, so that
