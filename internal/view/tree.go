@@ -191,8 +191,13 @@ func (s *State) treeRow(c *ui.Context, k treeKey) {
 		row.Background(t.Accent)
 	case s.isRowSelected(k):
 		// The rows picked for Cmd+C: the theme's wash, under the accent of the
-		// document shown, so that the two never read as the same thing.
-		row.Background(t.Selection)
+		// document shown, so that the two never read as the same thing. The
+		// fill stops short of the row's edges, so that several picked rows read
+		// as rows rather than as one tall block.
+		row.Draw(func(p *ui.Painter, r ui.Rect) {
+			inset := t.Space(0.5)
+			p.Fill(ui.Rect{X: r.X, Y: r.Y + inset, W: r.W, H: r.H - 2*inset}, t.Selection, t.Radius)
+		})
 	case row.Hovered():
 		row.Background(t.SurfaceHover)
 	}

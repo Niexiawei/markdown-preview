@@ -94,7 +94,9 @@ GUI 要真实窗口；**无头环境里验证视图一律用 `ui.NewTester`，�
   托盘是 `TrayOptions.Icon` + `IconIsTemplate: true`（`assets/tray.png`，32，墨色剪影 + 透明），明暗由系统
   自己涂色，**不要**再按 `Dark()` 换图、也不要打包 `tray-on-dark`。
 - **颜色从 `AppTheme` 取**（`internal/view/theme.go`）：不要在别处写死十六进制色值；需要主色就
-  `c.Theme().Accent`，需要警示色就 `c.Theme().Warning`。
+  `c.Theme().Accent`，需要警示色就 `c.Theme().Warning`。**`t.Selection` 由 `AppTheme` 覆盖成主色的洗淡版**：
+  onevra 的调色板给它留的是**橙色**（`RGBA(230,101,43,0.22)`），不覆盖的话多选底色会是橙的；
+  `t.Selection` 同时是正文里选中文字的高亮，所以这一条也让它跟着主色。
 - **图标只用 `icons/lucide`**，用 `components.Icon` / `components.IconButton`；图标按钮必须给 `label`
   （无障碍名，也是测试定位的唯一方式，图标本身不是文本）。侧栏底部的动作按钮用
   `IconButtonPlain`（32 DIP 方块 / 20 DIP 图形），**不要**用 `IconButtonCompact`：用户反馈太小。
@@ -133,7 +135,8 @@ GUI 要真实窗口；**无头环境里验证视图一律用 `ui.NewTester`，�
   三个入口是 `view.go` 的 `treeBulkActions`（`leftHeader`，项目选择按钮左边）、项目节点的 `projectActions`
   （项目名后面那两个行内小按钮，label 带项目名以便区分）与 `projectMenu` + 项目面板每行的右键菜单。
   label 不得与目录工具条重名（树是 `展开全部目录树`，目录是 `展开全部目录`），重名会让 `tt.Find`、读屏与快捷键提示都分不清。
-- **改多选与按行复制**：选择模型与复制动作只在 `internal/view/treesel.go`（`selectRow` 的普通点=单选、
+- **改多选与按行复制**：底色是 `treeRow` 里自绘的一层（见「已知的坑」里那条：选中行比行矮一点，
+  避免多选连成一块；颜色是 `AppTheme` 的 `t.Selection`，它被覆盖成主色的洗淡版）。选择模型与复制动作只在 `internal/view/treesel.go`（`selectRow` 的普通点=单选、
   修饰键=加/减且不执行行的动作；`menuTargets` 决定右键菜单作用于整组还是那一行；`copyRows` / `copyRowNames` /
   `copyRowPaths` 吃 `[]treeKey`，路径一行一个）。行的入口是 `tree.go` 的 `treeRow` 与 `treeMark`（**两个都调
   `pickRow`**，否则按住 Ctrl 点箭头会顺手折叠目录）；`Cmd+C` 的先后在 `fileacts.go` 的 `handleShortcuts`
@@ -260,6 +263,10 @@ GUI 要真实窗口；**无头环境里验证视图一律用 `ui.NewTester`，�
   时 `ui.Outline` 的行没有内边距、没有 gap、也不画箭头，只剩「一个居中的容器」，所以行是自己画的整条
   （`Height(Space(7))` + `Radius` + `Padding(0, Space(1))`）：悬停 `t.SurfaceHover`、当前文档 `t.Accent` 底 +
   `t.AccentText` 字，底色因此**铺满整行**（这块以前栽过：底色只盖文字那一块，因为颜色画在 Outline 的内边距内侧）。
+  **唯一的例外是多选**：选中的行用 `row.Draw` 自绘一层比行矮 `Space(0.5)` 的圆角填色（`p.Fill`），
+  上下各留一点缝，否则相邻的选中行会连成一大块（用户 2026-11-27 提的）；悬停与当前文档仍是整行高。
+  别改成「再包一层内容容器再给它上底色」：右键菜单与 `OnClick` 挂在行上时会收不到（菜单打不开、
+  行也点不动），而 `IgnoreInput` 又会让 `tt.Click` 找不到行里的文字。
   `Hovered()` 在构建期读，它会让 mygo 为悬停变化重建一帧（`hoverBuilt`），不要改成读上一帧的 `st`。
 - **箭头与文件图标都在 `treeMark` 里自绘**（`treeMark` 的 box = `Size(Space(4))`，与 `ui.TreeItem` 的 arrow box 同尺寸）：
   目录/项目行画三角（`p.StrokePath`）并 `OnClick` 切换，文件夹在名字前，文档的图标就在 arrow box 里。

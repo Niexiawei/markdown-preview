@@ -560,3 +560,25 @@ func TestTheProjectNodeMenuActsOnEveryPickedRow(t *testing.T) {
 		t.Errorf("files = %v, want %v", sys.files, want)
 	}
 }
+
+// TestTheSelectionWashIsTheAppAccent pins the colour of the picked rows: the
+// app's own accent, not the palette's. Onevra's theme keeps an orange for
+// selections, so a picked row would otherwise read as another app's highlight.
+func TestTheSelectionWashIsTheAppAccent(t *testing.T) {
+	var wash, accent ui.Color
+	tt := ui.NewTester(func(c *ui.Context) {
+		th := AppTheme(c)
+		wash, accent = th.Selection, th.Accent
+	}, 200, 200)
+	tt.Frame()
+
+	if wash == accent {
+		t.Fatalf("selection = %v, want the accent washed out, not the accent itself", wash)
+	}
+	if wash.R != accent.R || wash.G != accent.G || wash.B != accent.B {
+		t.Errorf("selection = %v, want the accent %v's hue", wash, accent)
+	}
+	if wash.A >= accent.A {
+		t.Errorf("selection = %v, want it washed out under the accent %v", wash, accent)
+	}
+}
