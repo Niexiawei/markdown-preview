@@ -159,3 +159,159 @@ func TestPickedRowsSurviveACollapsedDirectory(t *testing.T) {
 		t.Errorf("treeSel = %v, want the folded row still picked", s.treeSel)
 	}
 }
+
+// TestAPlainClickMakesTheRowTheOnlyOneSelected pins the pointer: a plain click
+// picks the row it hits, whichever row was picked before.
+func TestAPlainClickMakesTheRowTheOnlyOneSelected(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "docs/a.md", "# A\n")
+	writeDoc(t, root, "b.md", "# B\n")
+	s.Refresh()
+
+	tt := newTester(s)
+	if err := tt.Click("a.md"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if err := tt.Click("docs"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if want := []treeKey{rowOfPath(s, "docs")}; !slices.Equal(s.treeSel, want) {
+		t.Errorf("treeSel = %v, want %v", s.treeSel, want)
+	}
+}
+
+// TestCtrlClickPicksSeveralRowsAndDoesNotOpenThem pins the modifier on the
+// pointer: the row is picked, and the document it names is not shown.
+func TestCtrlClickPicksSeveralRowsAndDoesNotOpenThem(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "docs/a.md", "# A\n")
+	writeDoc(t, root, "docs/b.md", "# B\n")
+	s.Refresh()
+
+	tt := newTester(s)
+	if err := tt.ClickWith(ui.Ctrl, "b.md"); err != nil {
+		t.Fatalf("ClickWith: %v", err)
+	}
+	if !s.sel.empty() {
+		t.Errorf("sel = %+v, want no document shown", s.sel)
+	}
+	if want := []treeKey{rowOfPath(s, "docs/b.md")}; !slices.Equal(s.treeSel, want) {
+		t.Errorf("treeSel = %v, want %v", s.treeSel, want)
+	}
+	// The same click again takes it out.
+	if err := tt.ClickWith(ui.Ctrl, "b.md"); err != nil {
+		t.Fatalf("ClickWith: %v", err)
+	}
+	if len(s.treeSel) != 0 {
+		t.Errorf("treeSel = %v, want nothing picked", s.treeSel)
+	}
+}
+
+// TestCtrlClickAddsToTheDocumentShown pins that the document shown is already
+// one of the picked rows, so that picking another adds to it.
+func TestCtrlClickAddsToTheDocumentShown(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "docs/a.md", "# A\n")
+	writeDoc(t, root, "docs/b.md", "# B\n")
+	s.Refresh()
+	s.selectDoc("docs/a.md")
+
+	tt := newTester(s)
+	if err := tt.ClickWith(ui.Ctrl, "b.md"); err != nil {
+		t.Fatalf("ClickWith: %v", err)
+	}
+	want := []treeKey{rowOfPath(s, "docs/a.md"), rowOfPath(s, "docs/b.md")}
+	if !slices.Equal(s.treeSel, want) {
+		t.Errorf("treeSel = %v, want the shown document and the picked row", s.treeSel)
+	}
+	if s.sel.path != "docs/a.md" {
+		t.Errorf("sel = %+v, want the document shown unchanged", s.sel)
+	}
+}
+
+// TestCtrlClickDoesNotFoldADirectory pins the same for a directory: picking it
+// must not fold it, or the rows the user is picking would vanish.
+func TestCtrlClickDoesNotFoldADirectory(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "docs/a.md", "# A\n")
+	s.Refresh()
+	key := rowOfPath(s, "docs")
+	if !s.treeOpen.Open.Has(key) {
+		t.Fatal("the directory should start open")
+	}
+
+	tt := newTester(s)
+	if err := tt.ClickWith(ui.Ctrl, "docs"); err != nil {
+		t.Fatalf("ClickWith: %v", err)
+	}
+	if !s.treeOpen.Open.Has(key) {
+		t.Error("a Ctrl-click folded the directory; it should only pick it")
+	}
+	if want := []treeKey{key}; !slices.Equal(s.treeSel, want) {
+		t.Errorf("treeSel = %v, want %v", s.treeSel, want)
+	}
+}
+
+// TestOpeningADocumentMovesTheSelection pins the selection following a click on
+// a document: it leaves the directory picked before.
+func TestOpeningADocumentMovesTheSelection(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "docs/a.md", "# A\n")
+	writeDoc(t, root, "b.md", "# B\n")
+	s.Refresh()
+
+	tt := newTester(s)
+	if err := tt.Click("docs"); err != nil { // picks the directory, folds it
+		t.Fatalf("Click: %v", err)
+	}
+	if err := tt.Click("b.md"); err != nil { // opens the document
+		t.Fatalf("Click: %v", err)
+	}
+	if want := []treeKey{rowOfPath(s, "b.md")}; !slices.Equal(s.treeSel, want) {
+		t.Errorf("treeSel = %v, want the document just opened", s.treeSel)
+	}
+}
+
+// TestCtrlClickPicksAProjectNodeToo pins the project's own row: it is a folder
+// like any other, and can be picked to copy its path.
+func TestCtrlClickPicksAProjectNodeToo(t *testing.T) {
+	s, _, betaRoot := twoProjects(t)
+	writeDoc(t, betaRoot, "docs/a.md", "# A\n")
+	s.Refresh()
+	key := treeKeyOfProject(s, "beta")
+
+	tt := newTester(s)
+	if err := tt.ClickWith(ui.Ctrl, "beta"); err != nil {
+		t.Fatalf("ClickWith: %v", err)
+	}
+	if want := []treeKey{key}; !slices.Equal(s.treeSel, want) {
+		t.Errorf("treeSel = %v, want the project node picked", s.treeSel)
+	}
+}
+
+// The project-node tests click "beta", never "alpha": the panel's button shows
+// the *active* project's name, so "alpha" names two labels and the Tester would
+// hit the button first. "beta" names one label in the window: the tree's row.
+
+// TestAPlainClickOnAProjectNodeStillFoldsIt pins that picking did not take the
+// row's own action away.
+func TestAPlainClickOnAProjectNodeStillFoldsIt(t *testing.T) {
+	s, alphaRoot, _ := twoProjects(t)
+	writeDoc(t, alphaRoot, "a.md", "# A\n")
+	s.Refresh()
+	key := treeKeyOfProject(s, "beta")
+	if !s.treeOpen.Open.Has(key) {
+		t.Fatal("the project node should start open")
+	}
+
+	tt := newTester(s)
+	if err := tt.Click("beta"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if s.treeOpen.Open.Has(key) {
+		t.Error("a plain click should have folded the project node")
+	}
+	if want := []treeKey{key}; !slices.Equal(s.treeSel, want) {
+		t.Errorf("treeSel = %v, want %v", s.treeSel, want)
+	}
+}

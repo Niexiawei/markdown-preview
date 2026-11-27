@@ -189,6 +189,10 @@ func (s *State) treeRow(c *ui.Context, k treeKey) {
 	case shown:
 		// The document shown, as the theme paints the row of a list chosen.
 		row.Background(t.Accent)
+	case s.isRowSelected(k):
+		// The rows picked for Cmd+C: the theme's wash, under the accent of the
+		// document shown, so that the two never read as the same thing.
+		row.Background(t.Selection)
 	case row.Hovered():
 		row.Background(t.SurfaceHover)
 	}
@@ -226,15 +230,28 @@ func (s *State) treeRow(c *ui.Context, k treeKey) {
 	if project {
 		s.projectActions(c, row, tr)
 		s.projectMenu(c, row, tr)
-		row.OnClick(func() { s.toggleTreeKey(k) })
+		row.OnClick(func() {
+			if s.pickRow(k, row) {
+				return
+			}
+			s.toggleTreeKey(k)
+		})
 		return
 	}
 	s.nodeMenu(c, row, tr, n)
 	if n.IsDir {
-		row.OnClick(func() { s.toggleTreeKey(k) })
+		row.OnClick(func() {
+			if s.pickRow(k, row) {
+				return
+			}
+			s.toggleTreeKey(k)
+		})
 		return
 	}
 	row.OnClick(func() {
+		if s.pickRow(k, row) {
+			return
+		}
 		if i := s.candidateIndex(k.project, k.path); i >= 0 {
 			s.gotoCandidate(i)
 		}
@@ -261,7 +278,12 @@ func (s *State) treeMark(c *ui.Context, k treeKey, n *workspace.Node, branch boo
 			}
 			p.StrokePath(&path, 1.5, color)
 		})
-		box.OnClick(func() { s.toggleTreeKey(k) })
+		box.OnClick(func() {
+			if s.pickRow(k, box) {
+				return
+			}
+			s.toggleTreeKey(k)
+		})
 	case n != nil && !n.IsDir:
 		components.Icon(c, lucide.FileText()).Size(t.Space(4), t.Space(4)).TextColor(color)
 	}

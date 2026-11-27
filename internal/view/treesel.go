@@ -36,6 +36,14 @@ func (s *State) selectRow(k treeKey, mods ui.Modifiers) {
 	s.treeSel = append(s.treeSel, k)
 }
 
+// pickRow picks the row a click hit, and reports whether the click carried the
+// multi-select modifier: the row's own action runs only when it did not.
+func (s *State) pickRow(k treeKey, el ui.Element) bool {
+	mods := el.ClickModifiers()
+	s.selectRow(k, mods)
+	return mods&multiClick != 0
+}
+
 // isRowSelected reports whether the row is one of the picked ones.
 func (s *State) isRowSelected(k treeKey) bool {
 	for _, picked := range s.treeSel {
