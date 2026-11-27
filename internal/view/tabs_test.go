@@ -491,11 +491,21 @@ func TestTabStripScrollsWithTheWheel(t *testing.T) {
 		t.Fatalf("X = %v, want the strip at its start", s.tabScroll.X)
 	}
 
-	tt.Wheel(300, 20, 0, -120)
+	// A notch down moves toward the tabs after the one shown, as it scrolls a
+	// column down; a notch up comes back. The strip must follow the wheel, not
+	// run away from it.
+	tt.Wheel(300, 20, 0, 120)
 	tt.Frame()
 	tt.Frame()
 	if s.tabScroll.X <= 0 {
-		t.Errorf("X = %v, want the wheel to scroll the strip sideways", s.tabScroll.X)
+		t.Fatalf("X = %v after a notch down, want the strip to move toward its end", s.tabScroll.X)
+	}
+	far := s.tabScroll.X
+	tt.Wheel(300, 20, 0, -60)
+	tt.Frame()
+	tt.Frame()
+	if s.tabScroll.X >= far {
+		t.Errorf("X = %v after a notch up, want less than the %v it had", s.tabScroll.X, far)
 	}
 }
 

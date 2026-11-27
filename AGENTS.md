@@ -371,8 +371,10 @@ GUI 要真实窗口；**无头环境里验证视图一律用 `ui.NewTester`，�
 - **标签条的滚动条只有 2 DIP**：`ScrollbarStyle{ThumbWidth: 2, TrackWidth: 2}`。默认是 `拇指 + 6` 的命中区，
   压在标签底部会吃掉点击（用户报过误触）。改这里要同时想清楚命中区。
 - **鼠标滚轮滚动标签条**要自己接：mygo 的滚动容器只把 **Shift**+滚轮转成横向，普通滚轮会漏到外层去滚页面。
-  所以滚动容器上挂了 `HandleInput`：`InputScroll` 且没按 Shift 时 `tabScroll.X -= ev.DY` 并返回 true
-  （`DY` 为负是向下滚，与 mygo 内部 `scrollY -= dy` 一致）。
+  所以滚动容器上挂了 `HandleInput`：`InputScroll` 且没按 Shift 时 `tabScroll.X += ev.DY` 并返回 true。
+  **符号别搞反**：mygo 的容器是 `scrollBy` 里的 `x + dx` / `y + dy`，也就是 **`DY` 为正 = 向下（向前）滚**；
+  写成 `-=` 会「往上滚、标签往前走」（用户 2026-11-27 报的就是这个），`Shift`+滚轮那条路是外壳自己按
+  `dx, dy = dy, 0` 转的，两边必须同向。
 - **标签宽度要按「上一帧的槽宽」算，不是 `windowWidth()`**：shell 在标题栏里给窗口按钮留了位置，
   用内容宽度算会让最后几个标签和溢出按钮压到窗口按钮底下。`tabBar` 用 `row.Bounds().W`（首帧回落到
   `windowWidth()`），`tabWidth` / `tabTextWidth` / `fitText` 三者共用同一套尺寸，名字超长就省略，

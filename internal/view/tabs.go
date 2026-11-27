@@ -327,11 +327,14 @@ func (s *State) tabBar(c *ui.Context) {
 					if ev.Kind != ui.InputScroll || ev.Mods&ui.Shift != 0 || ev.DY == 0 {
 						return false
 					}
-					// A notch down moves the strip on, as it scrolls a column down.
-					// The user takes the strip from here: a place still asked for
-					// by a tab chosen a frame ago gives way to their scrolling.
+					// A notch down moves the strip on, as it scrolls a column
+					// down: mygo's containers add the wheel's DY to their
+					// offset, so the strip does the same rather than running the
+					// other way under the wheel. The user takes the strip from
+					// here: a place still asked for by a tab chosen a frame ago
+					// gives way to their scrolling.
 					s.tabPending = false
-					s.tabScroll.X -= ev.DY
+					s.tabScroll.X += ev.DY
 					return true
 				}).Children(func() {
 				ui.Row(c).Height(tabBarHeight - 2*t.Space(1)).Gap(t.Space(0.5)).
