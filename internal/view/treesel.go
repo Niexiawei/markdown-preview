@@ -1,6 +1,11 @@
 package view
 
-import "github.com/egoist/mygo/ui"
+import (
+	"fmt"
+	"strings"
+
+	"github.com/egoist/mygo/ui"
+)
 
 // The sidebar's picked rows: what Cmd+C copies, and what a context menu opened
 // on one of them acts on. Picking is apart from showing — the document shown
@@ -85,6 +90,35 @@ func (s *State) pruneTreeSel() {
 		kept = append(kept, k)
 	}
 	s.treeSel = kept
+}
+
+// absOfKey is a row's absolute path on disk: the project's own directory for a
+// project node, the file itself for a document.
+func (s *State) absOfKey(k treeKey) (string, error) { return s.ws.AbsOf(k.project, k.path) }
+
+// copyTreeSelection puts the picked rows' absolute paths on the clipboard, one
+// per line, and reports whether there was a row to copy: Cmd+C falls back to
+// the document shown when there was none.
+func (s *State) copyTreeSelection() bool {
+	if s.sys == nil || len(s.treeSel) == 0 {
+		return false
+	}
+	paths := make([]string, 0, len(s.treeSel))
+	for _, k := range s.treeSel {
+		abs, err := s.absOfKey(k)
+		if err != nil {
+			s.notifyErr("无法复制文件路径：" + err.Error())
+			return true
+		}
+		paths = append(paths, abs)
+	}
+	s.sys.CopyText(strings.Join(paths, "\n"))
+	if len(paths) == 1 {
+		s.notifyDone("已复制文件路径：" + paths[0])
+		return true
+	}
+	s.notifyDone(fmt.Sprintf("已复制 %d 个路径", len(paths)))
+	return true
 }
 
 // dropTreeSelOf drops the picked rows of a project the window closed or

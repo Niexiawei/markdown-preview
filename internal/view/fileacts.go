@@ -94,13 +94,16 @@ func (s *State) absOf(tr projectTree, n *workspace.Node) (string, error) {
 	return s.ws.AbsOf(tr.project.ID, n.Path)
 }
 
-// handleShortcuts copies the document shown for the platform's Cmd+C, which
-// the title bar's button does too.
+// handleShortcuts copies what the user is pointing at for the platform's
+// Cmd+C: the rows picked in the tree, and the document shown when none is, as
+// the title bar's button copies it too.
 func (s *State) handleShortcuts(c *ui.Context) {
 	s.searchShortcuts(c)
 	switch {
 	case c.Shortcut(ui.Cmd, ui.KeyC):
-		s.copyDocPath()
+		if !s.copyTreeSelection() {
+			s.copyDocPath()
+		}
 	case c.Shortcut(ui.Cmd, ui.KeyW):
 		s.closeTab(s.sel)
 	case c.Shortcut(ui.Cmd, ui.KeyEqual):

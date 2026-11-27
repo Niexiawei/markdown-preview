@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/egoist/mygo/ui"
@@ -313,5 +314,71 @@ func TestAPlainClickOnAProjectNodeStillFoldsIt(t *testing.T) {
 	}
 	if want := []treeKey{key}; !slices.Equal(s.treeSel, want) {
 		t.Errorf("treeSel = %v, want %v", s.treeSel, want)
+	}
+}
+
+// TestCmdCCopiesEveryPickedPath pins the shortcut over a selection: the picked
+// rows' absolute paths, one per line, in the order they were picked.
+func TestCmdCCopiesEveryPickedPath(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "docs/a.md", "# A\n")
+	writeDoc(t, root, "b.md", "# B\n")
+	s.Refresh()
+	sys := &fakeSystem{}
+	s.SetSystem(sys)
+	s.selectRow(rowOfPath(s, "docs/a.md"), ui.Ctrl)
+	s.selectRow(rowOfPath(s, "b.md"), ui.Ctrl)
+
+	tt := newTester(s)
+	tt.Key(ui.Cmd, ui.KeyC)
+
+	want := filepath.Join(root, "docs", "a.md") + "\n" + filepath.Join(root, "b.md")
+	if sys.copied != want {
+		t.Errorf("copied = %q, want %q", sys.copied, want)
+	}
+	if !strings.Contains(s.Status(), "已复制 2 个路径") {
+		t.Errorf("status = %q, want the count reported", s.Status())
+	}
+}
+
+// TestCmdCCopiesADirectoryTheUserPicked pins the gap this feature closes: a
+// picked folder is what Cmd+C copies, not the document the window shows.
+func TestCmdCCopiesADirectoryTheUserPicked(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "docs/a.md", "# A\n")
+	s.Refresh()
+	s.selectDoc("docs/a.md")
+	sys := &fakeSystem{}
+	s.SetSystem(sys)
+
+	tt := newTester(s)
+	if err := tt.Click("docs"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	tt.Key(ui.Cmd, ui.KeyC)
+	if want := filepath.Join(root, "docs"); sys.copied != want {
+		t.Errorf("copied = %q, want the folder picked, not the document shown", sys.copied)
+	}
+	if !strings.Contains(s.Status(), "已复制文件路径") {
+		t.Errorf("status = %q, want one path reported as a path", s.Status())
+	}
+}
+
+// TestCmdCCopiesAProjectNodesPath pins the project's own row: Cmd+C copies its
+// directory, as the panel's entry does.
+func TestCmdCCopiesAProjectNodesPath(t *testing.T) {
+	s, _, betaRoot := twoProjects(t)
+	writeDoc(t, betaRoot, "a.md", "# A\n")
+	s.Refresh()
+	sys := &fakeSystem{}
+	s.SetSystem(sys)
+
+	tt := newTester(s)
+	if err := tt.Click("beta"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	tt.Key(ui.Cmd, ui.KeyC)
+	if sys.copied != betaRoot {
+		t.Errorf("copied = %q, want %q", sys.copied, betaRoot)
 	}
 }
