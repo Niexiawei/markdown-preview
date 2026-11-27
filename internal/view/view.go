@@ -396,18 +396,19 @@ func (s *State) projectActions(c *ui.Context, item ui.Element, tr projectTree) {
 func (s *State) projectMenu(c *ui.Context, item ui.Element, tr projectTree) {
 	k := projectRowKey(tr.project)
 	components.ContextMenu(c, item, func(m *components.Menu) {
+		keys := s.menuTargets(k)
 		copyFile := "复制文件夹"
 		if s.isFileKey(k) {
 			copyFile = "复制文件"
 		}
 		if m.Item(copyFile).Chosen() {
-			s.copyRows([]treeKey{k})
+			s.copyRows(keys)
 		}
 		if m.Item("复制文件名称").Chosen() {
-			s.copyRowNames([]treeKey{k})
+			s.copyRowNames(keys)
 		}
 		if m.Item("复制文件路径").Chosen() {
-			s.copyRowPaths([]treeKey{k})
+			s.copyRowPaths(keys)
 		}
 		m.Separator()
 		if m.Item("在文件管理器中打开").Chosen() {
@@ -425,29 +426,32 @@ func (s *State) projectMenu(c *ui.Context, item ui.Element, tr projectTree) {
 
 // nodeMenu gives a tree entry its right click: the entry itself on the
 // clipboard for another application to paste, its name or its path as text,
-// and for a directory, showing it in the file manager.
+// and for a directory, showing it in the file manager. Opened on a picked row
+// it acts on every picked row, as a file manager's menu does.
 func (s *State) nodeMenu(c *ui.Context, item ui.Element, tr projectTree, n *workspace.Node) {
+	k := treeKey{project: tr.project.ID, path: n.Path}
 	components.ContextMenu(c, item, func(m *components.Menu) {
+		keys := s.menuTargets(k)
 		copyFile := "复制文件"
 		if n.IsDir {
 			copyFile = "复制文件夹"
 		}
 		if m.Item(copyFile).Chosen() {
-			s.copyNodeFile(tr, n)
+			s.copyRows(keys)
 		}
 		m.Separator()
 		if m.Item("复制文件名称").Chosen() {
-			s.copyNodeName(n)
+			s.copyRowNames(keys)
 		}
 		if m.Item("复制文件路径").Chosen() {
-			s.copyNodePath(tr, n)
+			s.copyRowPaths(keys)
 		}
 		if !n.IsDir {
 			return
 		}
 		m.Separator()
 		if m.Item("在文件管理器中打开").Chosen() {
-			s.revealNode(tr, n)
+			s.revealRow(k)
 		}
 	})
 }

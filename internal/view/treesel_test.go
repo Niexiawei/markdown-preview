@@ -483,3 +483,80 @@ func TestTheProjectPanelCopiesTheFolderOfALoneProject(t *testing.T) {
 		t.Errorf("files = %v, want %v", sys.files, want)
 	}
 }
+
+// TestTheTreeMenuActsOnEveryPickedRow pins a menu opened on a picked row: it
+// copies every picked row, not only the one it opened on.
+func TestTheTreeMenuActsOnEveryPickedRow(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "docs/a.md", "# A\n")
+	writeDoc(t, root, "docs/b.md", "# B\n")
+	s.Refresh()
+	sys := &fakeSystem{}
+	s.SetSystem(sys)
+	s.selectRow(rowOfPath(s, "docs/a.md"), ui.Ctrl)
+	s.selectRow(rowOfPath(s, "docs/b.md"), ui.Ctrl)
+
+	tt := newTester(s)
+	if err := tt.RightClick("b.md"); err != nil {
+		t.Fatalf("RightClick: %v", err)
+	}
+	if err := tt.Click("复制文件路径"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	want := filepath.Join(root, "docs", "a.md") + "\n" + filepath.Join(root, "docs", "b.md")
+	if sys.copied != want {
+		t.Errorf("copied = %q, want both rows in the order picked", sys.copied)
+	}
+	if !strings.Contains(s.Status(), "已复制 2 个路径") {
+		t.Errorf("status = %q, want the count reported", s.Status())
+	}
+}
+
+// TestTheMenuOfARowOutsideThePickCopiesOnlyThatRow pins the other side: a menu
+// opened on a row that is not picked acts on that row alone.
+func TestTheMenuOfARowOutsideThePickCopiesOnlyThatRow(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "docs/a.md", "# A\n")
+	writeDoc(t, root, "docs/b.md", "# B\n")
+	s.Refresh()
+	sys := &fakeSystem{}
+	s.SetSystem(sys)
+	s.selectRow(rowOfPath(s, "docs/a.md"), 0)
+
+	tt := newTester(s)
+	if err := tt.RightClick("b.md"); err != nil {
+		t.Fatalf("RightClick: %v", err)
+	}
+	if err := tt.Click("复制文件路径"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if want := filepath.Join(root, "docs", "b.md"); sys.copied != want {
+		t.Errorf("copied = %q, want only the row the menu opened on", sys.copied)
+	}
+}
+
+// TestTheProjectNodeMenuActsOnEveryPickedRow pins the same for a project's own
+// row: several picked rows are what its menu copies.
+func TestTheProjectNodeMenuActsOnEveryPickedRow(t *testing.T) {
+	s, _, betaRoot := twoProjects(t)
+	writeDoc(t, betaRoot, "docs/a.md", "# A\n")
+	s.Refresh()
+	sys := &fakeSystem{}
+	s.SetSystem(sys)
+	node := treeKeyOfProject(s, "beta")
+	doc := treeKey{project: node.project, path: "docs/a.md"}
+	s.selectRow(node, ui.Ctrl)
+	s.selectRow(doc, ui.Ctrl)
+
+	tt := newTester(s)
+	if err := tt.RightClick("beta"); err != nil {
+		t.Fatalf("RightClick: %v", err)
+	}
+	if err := tt.Click("复制文件夹"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	want := []string{betaRoot, filepath.Join(betaRoot, "docs", "a.md")}
+	if !slices.Equal(sys.files, want) {
+		t.Errorf("files = %v, want %v", sys.files, want)
+	}
+}

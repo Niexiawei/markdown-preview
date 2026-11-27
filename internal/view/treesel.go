@@ -3,6 +3,7 @@ package view
 import (
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/egoist/mygo/ui"
@@ -93,6 +94,16 @@ func (s *State) pruneTreeSel() {
 		kept = append(kept, k)
 	}
 	s.treeSel = kept
+}
+
+// menuTargets are the rows a context menu acts on: every picked row when the
+// row it opened on is one of them, else the row alone, as a file manager's
+// menu does.
+func (s *State) menuTargets(k treeKey) []treeKey {
+	if len(s.treeSel) > 1 && s.isRowSelected(k) {
+		return slices.Clone(s.treeSel)
+	}
+	return []treeKey{k}
 }
 
 // projectRowKey is a project's own row: a project of one document is that

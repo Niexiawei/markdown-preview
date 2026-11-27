@@ -1,18 +1,11 @@
 package view
 
-import (
-	"github.com/egoist/mygo/ui"
-
-	"mdpreview/internal/workspace"
-)
-
-// The window's file actions: copying a document's path, and from the file
-// tree, an entry's name or path, and showing a directory in the file manager.
-// They ask the desktop through System, so that the tests need no clipboard
-// and no window.
+import "github.com/egoist/mygo/ui"
 
 // copyDocPath puts the absolute path of the document shown in the clipboard,
-// as the title bar's button and Cmd+C do.
+// as the title bar's button and Cmd+C do when no tree row is picked. The tree's
+// rows are copied by treesel.go, and ask the desktop through System, so that
+// the tests need no clipboard and no window.
 func (s *State) copyDocPath() {
 	p, ok := s.SelectedProject()
 	if !ok || s.sel.empty() || s.sys == nil {
@@ -25,73 +18,6 @@ func (s *State) copyDocPath() {
 	}
 	s.sys.CopyText(abs)
 	s.notifyDone("已复制文件路径：" + abs)
-}
-
-// copyNodeFile puts a tree entry itself on the clipboard, as the file manager
-// copies it: another application pastes the file, not a path to it.
-func (s *State) copyNodeFile(tr projectTree, n *workspace.Node) {
-	if s.sys == nil {
-		return
-	}
-	abs, err := s.absOf(tr, n)
-	if err != nil {
-		s.notifyErr("无法复制：" + err.Error())
-		return
-	}
-	if err := s.sys.CopyFiles(abs); err != nil {
-		s.notifyErr("无法复制：" + err.Error())
-		return
-	}
-	if n.IsDir {
-		s.notifyDone("已复制文件夹：" + abs)
-		return
-	}
-	s.notifyDone("已复制文件：" + abs)
-}
-
-// copyNodeName puts a tree entry's name in the clipboard.
-func (s *State) copyNodeName(n *workspace.Node) {
-	if s.sys == nil {
-		return
-	}
-	s.sys.CopyText(n.Name)
-	s.notifyDone("已复制文件名称：" + n.Name)
-}
-
-// copyNodePath puts a tree entry's absolute path in the clipboard.
-func (s *State) copyNodePath(tr projectTree, n *workspace.Node) {
-	if s.sys == nil {
-		return
-	}
-	abs, err := s.absOf(tr, n)
-	if err != nil {
-		s.notifyErr("无法复制文件路径：" + err.Error())
-		return
-	}
-	s.sys.CopyText(abs)
-	s.notifyDone("已复制文件路径：" + abs)
-}
-
-// revealNode shows a directory of the tree in the file manager.
-func (s *State) revealNode(tr projectTree, n *workspace.Node) {
-	if s.sys == nil {
-		return
-	}
-	abs, err := s.absOf(tr, n)
-	if err != nil {
-		s.notifyErr("无法打开文件管理器：" + err.Error())
-		return
-	}
-	if err := s.sys.Reveal(abs); err != nil {
-		s.notifyErr("无法打开文件管理器：" + err.Error())
-		return
-	}
-	s.notify("已在文件管理器中打开：" + abs)
-}
-
-// absOf is a tree entry's absolute path on disk.
-func (s *State) absOf(tr projectTree, n *workspace.Node) (string, error) {
-	return s.ws.AbsOf(tr.project.ID, n.Path)
 }
 
 // handleShortcuts copies what the user is pointing at for the platform's
