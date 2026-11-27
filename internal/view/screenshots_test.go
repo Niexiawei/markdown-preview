@@ -221,5 +221,19 @@ func shotCases() []shotCase {
 				return s
 			},
 		},
+		{
+			name: "11-multi-select",
+			build: func(t *testing.T) *State {
+				s := shotTree(t)
+				// The document shown keeps the accent: what is picked around it
+				// must read as a different thing, not as three shown documents.
+				s.clearTreeSel()
+				id := s.Trees()[0].project.ID
+				s.selectRow(treeKey{project: id, path: "docs"}, ui.Ctrl)
+				s.selectRow(treeKey{project: id, path: "docs/notes.md"}, ui.Ctrl)
+				s.selectRow(treeKey{project: id, path: "README.md"}, ui.Ctrl)
+				return s
+			},
+		},
 	}
 }
