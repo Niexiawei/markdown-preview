@@ -123,7 +123,7 @@ GUI 要真实窗口；**无头环境里验证视图一律用 `ui.NewTester`，�
 - **改跳转落点（顶部/居中/是否平滑）**：只改 `view/native.go` 的 `jumpMarker`（`ScrollIntoViewOptions`）与
   `view/webview.go` 的 `headingScrollJS`，两边要一致；不要在调用处各写一套滚动。
 - **改渲染样式**：原生在 `markdown.Options`（`loadDoc` 里装配）；webview 在 `webview.go` 的 `docCSS`。
-- **改标签栏/标题行/侧栏**：`tabs.go` 的 `tabBarAt`（标签、⌄ 列表）挂在 shell 的 `ContentTitle` 槽位；
+- **改标签栏/标题行/侧栏**：`tabs.go` 的 `tabBar`（标签、⌄ 列表）挂在 shell 的 `ContentTitle` 槽位（内距由外壳的 `TitleInsetLeft/Right` 提供，取值见 `view` 的共享常量）；
   `view.go` 的 `titleRow` → `contentTitle`（路径 + 复制 + `modeToggle`）是 `Content` 的第一行；
   `leftHeader`（项目面板：点一行开/关、右键打开/复制/移除；macOS 上它让位给 `panelRow`——主体首行，
   两者共用 `panelItems`，改面板内容两处一起变，测试见 `panel_test.go`）、`leftToolbar`（动作图标 + 铃铛）各就各位。
@@ -297,13 +297,8 @@ GUI 要真实窗口；**无头环境里验证视图一律用 `ui.NewTester`，�
   `updateToasts` 三步顺序要一致。
 - **`view.New(…, "")` 表示无用户数据目录**：账本只在内存里，`Save` 是 no-op。`dir` 非空时是 `notices.json`
   所在目录（与 `config.json` 同目录）。测试一律传 `t.TempDir()`，不要在仓库根目录写出文件。
-- **macOS 的头部是「面板下沉 + 按钮尾随」，两件事必须同源**：`State.panelDown`（`New` 里 `runtime.GOOS == "darwin"`，`MDPREVIEW_PANEL_DOWN=1` 可在任何机器上预览）同时驱动面板位置与 main.go 的 `LeftToggleTrailing: state.PanelDown()`。面板内容只有一份：`panelItems` 同时喂标题栏槽位的 `leftHeader`（macOS 上构建为空）与主体首行的 `panelRow`（高 `panelRowHeight` = 40），改面板内容两处一起变，`Left` 与 `View` 两条拼装路径都按 `panelDown` 分叉。折叠与展开动画期间 onevra 把折叠按钮放回标题栏左端（交通灯之后），动画结束才跳到右端——这是 onevra 的设计，不是 bug。标签条起点在三种模式下不变（onevra 的 trailing 分支不改变 `titleInset`），`-12` 拉回照旧。面板测试显式设置 `s.panelDown`，不依赖 GOOS（darwin 机器上跑测试也要绿）。
-- **标题槽的 24 DIP 首部间距是 onevra 写死的**（`shells/sidebar/shell.go` 里 `titleInset = 24`，`ShellOptions`
-  没有对应字段）。本项目要 12，所以 `ContentTitle` 调 `tabBarAt(c, -12)`，只把**标签条**（不含 ⌄ 按钮）往左拉，
-  ⌄ 留在标题槽自带的右侧内边距上——整行平移会让右边多出 16 的空档（用户报过「移动太过头」）。
-  **标签条自己不加左右内边距**（留白交给标题槽，否则是双层留白）。两个常量 `titleInsetGap`（24，onevra 的）
-  与 `titleInsetWanted`（本项目的 12）在 `view.go`；用 `Translate` 而不是负 `Margin`，因为后者会改布局宽度、
-  把标签条量宽量错。onevra 升级后若新增了间距选项，改用那个选项并删掉常量。
+- **macOS 的头部是「面板下沉 + 按钮尾随」，两件事必须同源**：`State.panelDown`（`New` 里 `runtime.GOOS == "darwin"`，`MDPREVIEW_PANEL_DOWN=1` 可在任何机器上预览）同时驱动面板位置与 main.go 的 `LeftToggleTrailing: state.PanelDown()`。面板内容只有一份：`panelItems` 同时喂标题栏槽位的 `leftHeader`（macOS 上构建为空）与主体首行的 `panelRow`（高 `panelRowHeight` = 40），改面板内容两处一起变，`Left` 与 `View` 两条拼装路径都按 `panelDown` 分叉。折叠与展开动画期间 onevra 把折叠按钮放回标题栏左端（交通灯之后），动画结束才跳到右端——这是 onevra 的设计，不是 bug。标签条起点在两种模式下不变（onevra 的 trailing 分支与 leading 分支都按 `TitleInsetLeft` 偏移）。面板测试显式设置 `s.panelDown`，不依赖 GOOS（darwin 机器上跑测试也要绿）。
+- **标题槽的内距来自 onevra 的 `TitleInsetLeft` / `TitleInsetRight`**（默认 24 / 8，非正值取默认；偏移随展开进度渐变——折叠/动画中保持外壳原公式，展开后全量，标题不会压进 toggle）。本项目的取值是 `view.go` 导出的 `TitleInsetLeft`（16）/ `TitleInsetRight`（8）：`main.go` 传给 `ShellOptions`，`View` 的仿垫行用同一组常量——**单一来源，别在两处写字面量**（改了外壳忘仿垫、测试又抓不到，就是漂移）。`tabBar` 不再自己管内距：`tabBarAt` / `Translate(-12)` / `titleInsetGap` / `titleInsetWanted` 已删。**标签条自己不加左右内边距**（留白交给标题槽，否则是双层留白）。钉位测试 `TestTabsStartAtTheShellInset` 用字面量 316（300 侧栏 + 16），改常量它会红，逼你有意识地更新预期。
 - **标签栏在 shell 的 `ContentTitle` 槽位**（标题栏那 48 DIP），文档路径 + 复制 + 渲染开关是 `Content` 的第一行
   （`titleRow`，高 `titleRowHeight`）。别再把这些塞回彼此的槽位：用户要求 tab 在文件名字那一行之上；
   `View` 与 `Content` 的拼装要保持一致（`TestTabsSitAboveTheTitle`）。

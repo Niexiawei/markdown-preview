@@ -279,3 +279,5 @@ git commit -m "feat: notify the left sidebar's expanded state via ShellOptions.O
 （执行过程中追加。）
 
 - **标题槽 shift 改为随展开进度渐变**（用户 2026-11-25 实机反馈：折叠态标题压进 toggle −4 DIP 不能要）：fork 的 `titleInset += (inset - 24) * leftProgress`——折叠/动画中保持外壳原公式（无偏移），展开后全量偏移，动画中平滑渐变；回调无需参与（外壳自己知道状态）。应用侧 `TitleInsetLeft` 由 12 改 **16**（展开态标题在 leftWidth+8，折叠态回到 toggle 后 8 DIP），View 仿垫同步、测试钉 316。fork 提交 `872742f`。
+- **16/8 提为 view 导出常量 `TitleInsetLeft` / `TitleInsetRight`**（用户问「到底谁在显示 tab」时暴露的漂移隐患）：`main.go` 的 shell 选项与 `View` 的仿垫同源，单一来源。
+- **文档回写提前备好**（用户指示）：AGENTS.md「标题槽」条目改写（选项语义 + 共享常量 + 删除旧适配）、「macOS 头部」与「改标签栏/标题行/侧栏」两处同步、CHANGELOG 修复条目；这些改动**随任务 4 一并提交**（文档先行提交会描述尚未入库的代码），任务 4 时记得同步 bump AGENTS.md 头部的 onevra 版本号。

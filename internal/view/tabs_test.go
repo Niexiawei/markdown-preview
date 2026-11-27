@@ -789,3 +789,22 @@ func TestDroppingTabsOfAProjectUpdatesTheSession(t *testing.T) {
 		t.Errorf("session tabs = %v, want renamed.md", out.Tabs)
 	}
 }
+
+func TestTabsStartAtTheShellInset(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "alpha.md", "# A\n\n正文标记\n")
+	s.Refresh()
+	s.selectDoc("alpha.md")
+
+	tt := newTester(s)
+	tab, ok := tt.Find("文档：alpha.md")
+	if !ok {
+		t.Fatalf("texts = %q, want the tab", tt.Texts())
+	}
+	// The shell pads the title slot by its TitleInsetLeft (12 in main.go); the
+	// View mimics that padding on its own tab row, after the 300-wide sidebar
+	// column this approximation puts first.
+	if tab.X != 316 {
+		t.Fatalf("first tab at %v, want 316 (sidebar 300 + inset 16)", tab.X)
+	}
+}

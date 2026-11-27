@@ -95,13 +95,18 @@ func main() {
 			// panel stays in the header beside the leading toggle, as it always
 			// has. PanelDown keeps this and the sunk panel one decision.
 			LeftToggleTrailing: state.PanelDown(),
-			Left:               state.Left,
-			LeftHeader:         state.LeftHeader,
-			LeftToolbar:        state.LeftToolbar,
-			ContentTitle:       state.ContentTitle,
-			Content:            state.Content,
-			Toasts:             view.ToastOptions(),
-			Theme:              view.AppTheme,
+			// The title slot's insets: what the old tabBarAt pull used to work
+			// around, now the shell's own option, sourced from view so the
+			// test's View mimic can never drift from it.
+			TitleInsetLeft:  view.TitleInsetLeft,
+			TitleInsetRight: view.TitleInsetRight,
+			Left:            state.Left,
+			LeftHeader:      state.LeftHeader,
+			LeftToolbar:     state.LeftToolbar,
+			ContentTitle:    state.ContentTitle,
+			Content:         state.Content,
+			Toasts:          view.ToastOptions(),
+			Theme:           view.AppTheme,
 		})
 		win := shell.Window()
 		mainWindow = win

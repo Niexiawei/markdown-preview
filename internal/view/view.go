@@ -36,9 +36,10 @@ func (s *State) View(c *ui.Context) {
 			s.leftToolbar(c)
 		})
 		ui.Column(c).Grow(1).MinWidth(0).FillHeight().Clip().Children(func() {
-			// As the shell's header row: the tabs sit in it, and the title
-			// row is the first thing the page shows under it.
-			ui.Row(c).Height(sidebar.HeaderHeight(c)).Children(func() { s.ContentTitle(c) })
+			// As the shell's header row: the tabs sit in a slot the shell pads
+			// by TitleInsetLeft/Right, which this approximation pads by the
+			// same shared numbers.
+			ui.Row(c).Height(sidebar.HeaderHeight(c)).Padding(0, TitleInsetRight, 0, TitleInsetLeft).Children(func() { s.ContentTitle(c) })
 			s.titleRow(c)
 			s.preview(c)
 		})
@@ -75,20 +76,20 @@ func (s *State) PanelDown() bool { return s.panelDown }
 // open, reload and serve documents.
 func (s *State) LeftToolbar(c *ui.Context) { s.leftToolbar(c) }
 
-// titleInsetGap is the room onevra's sidebar leaves between its sidebar header
-// and this slot, and titleInsetWanted the room this app wants there: the number
-// is hardcoded in shells/sidebar (`titleInset = 24`) and no option exposes it,
-// so the strip is pulled back by the difference. 8 read as flush against the
-// sidebar; 12 leaves the first tab's corner visible.
+// TitleInsetLeft and TitleInsetRight are the tab strip's insets in the
+// shell's title slot: main.go passes them to sidebar.NewShell as its
+// TitleInsetLeft and TitleInsetRight, and View pads its own tab row by the
+// same numbers — one source of truth for both layouts, the shell's and the
+// test's.
 const (
-	titleInsetGap    float32 = 24
-	titleInsetWanted float32 = 12
+	TitleInsetLeft  float32 = 16
+	TitleInsetRight float32 = 8
 )
 
 // ContentTitle is the shell's titlebar area: the tabs of the documents the
 // window has open. The title row under them is the page's own.
 func (s *State) ContentTitle(c *ui.Context) {
-	s.tabBarAt(c, titleInsetWanted-titleInsetGap)
+	s.tabBar(c)
 }
 
 // Content is the shell's page: the outline and the body, filling the page.

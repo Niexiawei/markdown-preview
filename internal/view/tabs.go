@@ -270,13 +270,9 @@ func (s *State) tabFade(p *ui.Painter, r ui.Rect, bg ui.Color) {
 
 // tabBar builds the header's row: the tabs of the open documents, scrolling
 // sideways when they do not all fit, and the button listing all of them beside
-// the strip. A click on a tab shows it, and its close button closes it.
-func (s *State) tabBar(c *ui.Context) { s.tabBarAt(c, 0) }
-
-// tabBarAt is tabBar with the strip pulled left by pull DIPs, as the shell's
-// title slot pads its content by a gap onevra hardcodes and exposes no option
-// for.
-func (s *State) tabBarAt(c *ui.Context, pull float32) {
+// the strip. A click on a tab shows it, and its close button closes it. The
+// leading inset is the shell's TitleInsetLeft, not this row's business.
+func (s *State) tabBar(c *ui.Context) {
 	t := c.Theme()
 	row := ui.Row(c).Key("tab-bar").FillWidth().Height(tabBarHeight).
 		AlignItems(ui.Center).Gap(t.Space(0.5))
@@ -314,10 +310,7 @@ func (s *State) tabBarAt(c *ui.Context, pull float32) {
 		s.tabShown, s.tabView, s.tabTotal = s.sel, strip, total
 	}
 	row.Children(func() {
-		// The strip is pulled to the inset the app asks for, and the list
-		// button keeps the shell's trailing one: pulling the whole row would
-		// leave that room doubled at the far end.
-		ui.Row(c).Grow(1).MinWidth(0).Translate(pull, 0).Children(func() {
+		ui.Row(c).Grow(1).MinWidth(0).Children(func() {
 			// The strip scrolls sideways rather than dropping tabs: the list
 			// beside it is a shortcut to a tab, not the only way to reach one.
 			ui.ScrollHorizontal(c).Grow(1).MinWidth(0).TrackScroll(&s.tabScroll).
