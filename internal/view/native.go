@@ -20,13 +20,26 @@ import (
 // markdown view at its directory, so that its images and links resolve.
 func (s *State) loadDoc() {
 	s.doc, s.headings, s.src, s.docErr = nil, nil, "", nil
+	// Another document is another place: nothing of the last one's outline
+	// follow — its current heading or the boxes it measured — survives it.
+	s.anchor, s.bodyPane, s.headMarks = "", ui.Element{}, nil
 	if s.sel.empty() {
+		s.tocW, s.seenTOC = defaultTOCWidth, defaultTOCWidth
 		return
 	}
 	p, ok := s.SelectedProject()
 	if !ok {
 		return
 	}
+	// The document's own outline width, if the user ever chose one: a long
+	// outline takes more room than a short one.
+	if w, remembered := s.tocWidthOf(s.sel); remembered {
+		s.tocW = w
+		s.noteTOCWidth(s.sel, w) // the ones left longest go first when the list is cut
+	} else {
+		s.tocW = defaultTOCWidth // a default is not a choice: it is not written down
+	}
+	s.seenTOC = s.tocW
 	doc, headings, err := s.ws.Parse(p.ID, s.sel.path)
 	if err != nil {
 		s.docErr = err

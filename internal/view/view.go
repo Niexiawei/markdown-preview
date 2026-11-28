@@ -20,9 +20,12 @@ func (s *State) View(c *ui.Context) {
 	s.drain()
 	s.handleShortcuts(c)
 	s.updateToasts(c)
+	s.trackWidths(c)
 	s.openURL = func(url string) { c.Services().OpenURL(url) }
 	t := c.Theme()
 	ui.Row(c).Fill().Background(t.Background).Children(func() {
+		// The sidebar's width in this approximation is fixed: the real one is
+		// the shell's, which only main.go can read.
 		ui.Column(c).Width(300).FillHeight().Background(t.Surface).Children(func() {
 			if s.panelDown {
 				s.panelRow(c)
@@ -97,6 +100,7 @@ func (s *State) Content(c *ui.Context) {
 	s.drain()
 	s.handleShortcuts(c)
 	s.updateToasts(c)
+	s.trackWidths(c)
 	ui.Column(c).Fill().Children(func() {
 		// The header, which holds the tabs, floats over the top of the page.
 		ui.Row(c).Height(sidebar.HeaderHeight(c))

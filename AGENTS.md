@@ -148,7 +148,11 @@ GUI 要真实窗口；**无头环境里验证视图一律用 `ui.NewTester`，�
 （`openTab` / `closeTab` / `dropTab` / `dropTabsOf` / `renameTab`）+ `toggleTreeKey` / `setTreeOpen` / `locateDoc`；
 **`setTreeKeyOpen` 里绝不写盘**（`setTreeOpen` 循环调它上万次，写盘只在入口尾部一次）。恢复必须在 `New` 里
 `reloadTree` **之前**（closed 键要先进 `treeSeen`，否则扫描落地时 `noteNewDirectories` 把折叠目录全部展开）；
-活动标签无效就空着（不擅自挑一个）。
+活动标签无效就空着（不擅自挑一个）。**宽度也在这份快照里**（`session.Session.Sidebar` 与 `TOC`）：
+侧栏一个数，目录按 `docSel` 一条、上限 `maxTOCWidths` 200 条（最近用过的在尾）、只保存已打开项目的条目；
+写盘不是每个变更点，而是 `trackWidths` 的**停手 400 ms**（`widthQuiet`，`View` / `Content` 各一行）+ 退出时
+`FlushWidths`（`main.go` 的 `App.OnWillQuit`）。拖动中每帧都变，别在 `trackWidths` 里直接 `saveSession`，
+也不要把 `noteTOCWidth` 塞进每帧的路径里（切文档时调一次就够，`loadDoc` 里那两行）。
 - **改提示消息**：写入只调 `internal/view/notices.go` 的 `notify` / `notifyDone` / `notifyWarn` / `notifyErr`，
   不要直接在 view 里 `c.AddToast`（绕过了账本、去重与历史）；浮层与铃铛也在这个文件（`bellButton` /
   `noticePanel` / `noticeRow` / `noticeBadgeText` / `noticeTime`）。账本自己的行为（落盘、上限、未读）改
@@ -297,6 +301,11 @@ GUI 要真实窗口；**无头环境里验证视图一律用 `ui.NewTester`，�
   `updateToasts` 三步顺序要一致。
 - **`view.New(…, "")` 表示无用户数据目录**：账本只在内存里，`Save` 是 no-op。`dir` 非空时是 `notices.json`
   所在目录（与 `config.json` 同目录）。测试一律传 `t.TempDir()`，不要在仓库根目录写出文件。
+- **onevra 的 shell 只给 `LeftWidth()`，不发事件，也不持久化它**（`StateKey` 只管窗口位置/大小）：侧栏宽度要在每帧
+  读一次（`main.go` 给 `State.SetSidebarWidth` 一个闭包，`trackWidths` 比较变化），不能指望回调。`ShellOptions.LeftWidth`
+  **同时是双击分隔条的复位目标**，所以启动时先给它 `view.DefaultSidebarWidth`（280），建好 shell 再用
+  `shell.SetLeftWidth(state.SidebarWidth())` 把记忆值放回去——直接把记忆值写进 `LeftWidth` 会让双击变成空操作。
+  `View`（测试布局）的侧栏是写死的 300，与真实宽度无关，`TestTabsStartAtTheShellInset` 的 316 依赖它。
 - **macOS 的头部是「面板下沉 + 按钮尾随」，两件事必须同源**：`State.panelDown`（`New` 里 `runtime.GOOS == "darwin"`，`MDPREVIEW_PANEL_DOWN=1` 可在任何机器上预览）同时驱动面板位置与 main.go 的 `LeftToggleTrailing: state.PanelDown()`。面板内容只有一份：`panelItems` 同时喂标题栏槽位的 `leftHeader`（macOS 上构建为空）与主体首行的 `panelRow`（高 `panelRowHeight` = 40），改面板内容两处一起变，`Left` 与 `View` 两条拼装路径都按 `panelDown` 分叉。折叠与展开动画期间 onevra 把折叠按钮放回标题栏左端（交通灯之后），动画结束才跳到右端——这是 onevra 的设计，不是 bug。标签条起点在两种模式下不变（onevra 的 trailing 分支与 leading 分支都按 `TitleInsetLeft` 偏移）。面板测试显式设置 `s.panelDown`，不依赖 GOOS（darwin 机器上跑测试也要绿）。
 - **标题槽的内距来自 onevra 的 `TitleInsetLeft` / `TitleInsetRight`**（默认 24 / 8，非正值取默认；偏移随展开进度渐变——折叠/动画中保持外壳原公式，展开后全量，标题不会压进 toggle）。本项目的取值是 `view.go` 导出的 `TitleInsetLeft`（16）/ `TitleInsetRight`（8）：`main.go` 传给 `ShellOptions`，`View` 的仿垫行用同一组常量——**单一来源，别在两处写字面量**（改了外壳忘仿垫、测试又抓不到，就是漂移）。`tabBar` 不再自己管内距：`tabBarAt` / `Translate(-12)` / `titleInsetGap` / `titleInsetWanted` 已删。**标签条自己不加左右内边距**（留白交给标题槽，否则是双层留白）。钉位测试 `TestTabsStartAtTheShellInset` 用字面量 316（300 侧栏 + 16），改常量它会红，逼你有意识地更新预期。
 - **标签栏在 shell 的 `ContentTitle` 槽位**（标题栏那 48 DIP），文档路径 + 复制 + 渲染开关是 `Content` 的第一行

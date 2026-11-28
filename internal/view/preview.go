@@ -25,7 +25,7 @@ func (s *State) preview(c *ui.Context) {
 		body = func() { s.webPreview(c) }
 	}
 	ui.Split(c, &s.tocW, func() { s.toc(c) }, body).
-		Grow(1).SplitReset(240)
+		Grow(1).SplitReset(defaultTOCWidth)
 	s.findPanel(c)
 }
 

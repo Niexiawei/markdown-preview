@@ -87,7 +87,7 @@ func main() {
 			MinWidth:     760,
 			MinHeight:    520,
 			StateKey:     "markdown-preview.main",
-			LeftWidth:    280,
+			LeftWidth:    int(view.DefaultSidebarWidth),
 			LeftMinWidth: 200,
 			// macOS sinks the project panel into the sidebar's body (view),
 			// leaving the header to the traffic lights and the collapse toggle,
@@ -110,6 +110,10 @@ func main() {
 		})
 		win := shell.Window()
 		mainWindow = win
+		// The width the last run left, after the default was set: the shell's
+		// LeftWidth option is also what a double click on its divider puts back,
+		// so the remembered width is restored rather than made the default.
+		shell.SetLeftWidth(state.SidebarWidth())
 		state.SetWindow(win)
 		// The binary's own mark, set at run time: `go build -o mp.exe .` writes
 		// no icon resource, so the window's and taskbar's icon comes from here.
@@ -141,6 +145,12 @@ func main() {
 			_, height := win.ContentSize()
 			return float32(height)
 		})
+		// The sidebar resizes without telling anyone: the view reads its width
+		// every frame and writes it once the drag stops.
+		state.SetSidebarWidth(func() float32 { return shell.LeftWidth() })
+		// The widths of the panes are the last thing the window has to say: a
+		// drag may end closer to the quit than its quiet period.
+		mygo.App.OnWillQuit(func(*mygo.QuitEvent) { state.FlushWidths() })
 		state.StartWatching()
 		wd, _ := os.Getwd()
 		openDocuments(launch.Documents(os.Args[1:], wd))

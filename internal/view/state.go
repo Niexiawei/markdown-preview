@@ -32,6 +32,13 @@ type docSel struct {
 	path    string
 }
 
+// headingMark is where a heading of the body sat in the last frame's layout:
+// the outline follows the reader by the topmost one of these.
+type headingMark struct {
+	slug string
+	el   ui.Element
+}
+
 // empty reports whether no document is selected.
 func (d docSel) empty() bool { return d.path == "" }
 
@@ -40,6 +47,29 @@ type projectTree struct {
 	project workspace.Project
 	root    *workspace.Node
 }
+
+// DefaultSidebarWidth is the width the sidebar opens at when nothing was
+// remembered, and the width a double click on its divider puts back.
+const DefaultSidebarWidth float32 = 280
+
+const (
+	// defaultTOCWidth is the width the document's outline opens at when it was
+	// never resized, and what its divider's double click puts back.
+	defaultTOCWidth float32 = 240
+	// maxTOCWidths is how many outlines' widths the window keeps: the oldest go
+	// first, so that browsing a project never grows the snapshot without end.
+	maxTOCWidths = 200
+	// widthQuiet is how long a width has to stay put before it is written: a
+	// drag then writes once, when the hand lets go, rather than every frame.
+	widthQuiet = 400 * time.Millisecond
+	// followHold is how long the outline keeps a heading chosen by a click or a
+	// search while the body glides there, so that the sections the body passes
+	// on the way do not paint it.
+	followHold = 400 * time.Millisecond
+	// followSlop is how far below the pane's top edge a heading still counts as
+	// the one being read, in DIPs.
+	followSlop float32 = 4
+)
 
 // State is what the window shows, and what the app keeps of it.
 type State struct {
@@ -194,8 +224,32 @@ type State struct {
 	// tests that do not care.
 	sys System
 
-	sidebarW float32
-	tocW     float32
+	// sidebarWidth is the width the sidebar opens at: the one the last run
+	// left, or DefaultSidebarWidth. sidebarOf reads the shell's live width,
+	// which the shell changes without telling anyone — main.go hands it over.
+	sidebarWidth float32
+	sidebarOf    func() float32
+	tocW         float32
+	// widths are the widths chosen for the outlines, the most recently used
+	// last: a document nobody resized opens at defaultTOCWidth. seenTOC is the
+	// width last seen, so that a change is noticed once; widthsDirty says a
+	// change still has to be written, widthsChangedAt when it last moved.
+	widths          []session.DocWidth
+	seenTOC         float32
+	widthsDirty     bool
+	widthsChangedAt time.Time
+	// frameNow is the time of the frame being built: the clock the widths and
+	// the follow measure quiet periods by, so that tests move it with Advance.
+	frameNow    time.Time
+	followUntil time.Time
+	// headMarks are where the headings of the body sat in the last frame's
+	// layout, in reading order; nextMarks is being filled by this frame's
+	// build. bodyPane is the body's scroll container.
+	headMarks []headingMark
+	nextMarks []headingMark
+	bodyPane  ui.Element
+	// tocShownAnchor is the heading the outline was last scrolled to show.
+	tocShownAnchor string
 	// tocScroll is how far the document's outline scrolls, both ways.
 	tocScroll ui.ScrollState
 	// contentWidth, when set, says how wide the window's content is on either
@@ -235,10 +289,11 @@ func New(ws *workspace.Workspace, cfg config.Config, dir string) *State {
 		notes:        book,
 		// The messages the last run left are history, not news: they show in
 		// the bell's list without popping up again.
-		noticeShown: book.Last(),
-		sidebarW:    300,
-		tocW:        240,
-		inbox:       make(chan func(), 1024),
+		noticeShown:  book.Last(),
+		sidebarWidth: DefaultSidebarWidth,
+		seenTOC:      defaultTOCWidth,
+		tocW:         defaultTOCWidth,
+		inbox:        make(chan func(), 1024),
 	}
 	// macOS puts the project panel in the sidebar's body and the collapse
 	// toggle at the header's trailing end; elsewhere the panel stays in the
@@ -262,12 +317,24 @@ func New(ws *workspace.Workspace, cfg config.Config, dir string) *State {
 }
 
 // restoreSession puts the snapshot of the last run back in place: the tabs it
-// names, the active one among them, and the directories the user had folded.
-// It is silent — no "opened" message — and drops what no longer explains
-// itself: tabs of projects the window does not show, and folded rows of them.
-// The active one is only taken when it is one of the tabs; the pruning of
-// files that went away is afterTreesChanged's, which reloadTree calls next.
+// names, the active one among them, the directories the user had folded, and
+// the widths the panes had. It is silent — no "opened" message — and drops
+// what no longer explains itself: tabs of projects the window does not show,
+// folded rows of them, and widths no pane could have. The active one is only
+// taken when it is one of the tabs; the pruning of files that went away is
+// afterTreesChanged's, which reloadTree calls next.
 func (s *State) restoreSession(sess session.Session) {
+	if sess.Sidebar > 0 && sess.Sidebar <= 4000 {
+		s.sidebarWidth = sess.Sidebar
+	}
+	for _, w := range sess.TOC {
+		// A width the file cannot explain is no width: the outline opens at its
+		// own rather than pinched to a line.
+		if w.Project == "" || w.Path == "" || w.Width <= 0 || w.Width > 4000 || !s.cfg.IsOpen(w.Project) {
+			continue
+		}
+		s.noteTOCWidth(docSel{project: w.Project, path: w.Path}, w.Width)
+	}
 	for _, ref := range sess.TreeClosed {
 		if ref.Project == "" || !s.cfg.IsOpen(ref.Project) {
 			continue
@@ -613,10 +680,85 @@ func (s *State) save() {
 	_ = s.cfg.Save(s.cfgDir)
 }
 
+// SidebarWidth reports the width the sidebar opens at: the one the last run
+// left, or the default.
+func (s *State) SidebarWidth() float32 {
+	if s.sidebarWidth <= 0 {
+		return DefaultSidebarWidth
+	}
+	return s.sidebarWidth
+}
+
+// SetSidebarWidth gives the window the shell's live width, which the shell
+// changes on a drag without telling anyone: the app hands it over and the next
+// frame notices.
+func (s *State) SetSidebarWidth(fn func() float32) { s.sidebarOf = fn }
+
+// FlushWidths writes a width change that has yet to wait out its quiet period,
+// as the app does on its way out.
+func (s *State) FlushWidths() {
+	if s.widthsDirty {
+		s.saveSession()
+	}
+}
+
+// tocWidthOf returns the width remembered for sel, and whether it was
+// remembered at all: a document nobody resized opens at the default.
+func (s *State) tocWidthOf(sel docSel) (float32, bool) {
+	for _, w := range s.widths {
+		if w.Project == sel.project && w.Path == sel.path && w.Width > 0 {
+			return w.Width, true
+		}
+	}
+	return defaultTOCWidth, false
+}
+
+// noteTOCWidth records w as the width of sel's outline, the most recently used
+// last, so that the ones dropped at the limit are the ones left longest.
+func (s *State) noteTOCWidth(sel docSel, w float32) {
+	if sel.empty() || w <= 0 {
+		return
+	}
+	kept := s.widths[:0]
+	for _, e := range s.widths {
+		if e.Project == sel.project && e.Path == sel.path {
+			continue
+		}
+		kept = append(kept, e)
+	}
+	kept = append(kept, session.DocWidth{Project: sel.project, Path: sel.path, Width: w})
+	if n := len(kept); n > maxTOCWidths {
+		kept = append([]session.DocWidth(nil), kept[n-maxTOCWidths:]...)
+	}
+	s.widths = kept
+}
+
+// trackWidths notices a width the user moved, and writes it once the hand stops:
+// a drag changes the width every frame, and the snapshot is not to be written
+// as often.
+func (s *State) trackWidths(c *ui.Context) {
+	s.frameNow = c.Now()
+	if s.sidebarOf != nil {
+		if w := s.sidebarOf(); w != s.sidebarWidth && w > 0 {
+			s.sidebarWidth = w
+			s.widthsDirty, s.widthsChangedAt = true, c.Now()
+		}
+	}
+	if !s.sel.empty() && s.tocW != s.seenTOC {
+		s.seenTOC = s.tocW
+		s.noteTOCWidth(s.sel, s.tocW)
+		s.widthsDirty, s.widthsChangedAt = true, c.Now()
+	}
+	if s.widthsDirty && c.Now().Sub(s.widthsChangedAt) >= widthQuiet {
+		s.saveSession()
+	}
+}
+
 // saveSession writes the snapshot of what the window shows now: the tabs in
-// their order, the active one, and the directories the user folded. It runs
-// on the window's thread after the user acted — once per action, never inside
-// a loop — and when the scans prune a tab of a file that went away.
+// their order, the active one, the directories the user folded, and the widths
+// the panes have. It runs on the window's thread after the user acted — once
+// per action, never inside a loop — and when the scans prune a tab of a file
+// that went away; a width it writes also ends that width's quiet period.
 func (s *State) saveSession() {
 	closed := make([]session.Ref, 0, len(s.treeClosed))
 	for k := range s.treeClosed {
@@ -634,11 +776,23 @@ func (s *State) saveSession() {
 	for i, tab := range s.tabs {
 		tabs[i] = session.Ref{Project: tab.project, Path: tab.path}
 	}
+	widths := make([]session.DocWidth, 0, len(s.widths))
+	for _, w := range s.widths {
+		if s.cfg.IsOpen(w.Project) {
+			widths = append(widths, w)
+		}
+	}
+	if n := len(widths); n > maxTOCWidths {
+		widths = widths[n-maxTOCWidths:]
+	}
 	_ = session.Save(s.cfgDir, session.Session{
 		Tabs:       tabs,
 		Active:     session.Ref{Project: s.sel.project, Path: s.sel.path},
 		TreeClosed: closed,
+		Sidebar:    s.SidebarWidth(),
+		TOC:        widths,
 	})
+	s.widthsDirty = false
 }
 
 // reloadTree lines the trees up with the open projects: the trees of the ones
