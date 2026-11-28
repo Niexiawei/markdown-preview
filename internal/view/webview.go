@@ -1,6 +1,7 @@
 package view
 
 import (
+	"context"
 	"mime"
 	"net/http"
 	"net/url"
@@ -9,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -264,7 +266,92 @@ func (s *State) ensureWebView() bool {
 	s.wv = wv
 	s.webOK = true
 	s.wvURL = s.docURL()
+	// The page knows where it is scrolled; nothing tells the app, so it asks.
+	s.startPageFollow()
 	return true
+}
+
+// followPoll is how often the page is asked where the reader is: often enough
+// that a scroll is followed by the next blink, rare enough to cost nothing.
+const followPoll = 200 * time.Millisecond
+
+// webFollowJS is the page's answer to where the reader is: the id of the last
+// heading whose top is above the page's own top edge, and the revision of the
+// document it belongs to, which changes with the document. It is the rule
+// followNative applies to the native body, in the page's own pixels; the
+// revision tells a new document apart even when its first heading is the same.
+const webFollowJS = `(() => {
+  const scale = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--md-scale')) || 1;
+  const top = 24 * scale;
+  const heads = document.querySelectorAll('article h1,article h2,article h3,article h4,article h5,article h6');
+  let slug = '';
+  for (const h of heads) {
+    if (h.getBoundingClientRect().top <= top) slug = h.id; else break;
+  }
+  const meta = document.querySelector('meta[name="rev"]');
+  return [meta ? meta.getAttribute('content') : '', slug];
+})()`
+
+// startPageFollow asks the page where the reader is, for as long as the web
+// view lives: the embedded view has no channel to say it by itself. A poll that
+// changed nothing posts nothing, so an idle window is not woken every 200 ms.
+func (s *State) startPageFollow() {
+	if s.wv == nil || s.pageFollow {
+		return
+	}
+	s.pageFollow = true
+	wv := s.wv
+	go func() {
+		last := ""
+		for {
+			time.Sleep(followPoll)
+			if wv.IsDestroyed() {
+				return
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			v, err := wv.Page().EvalContext(ctx, webFollowJS)
+			cancel()
+			if err != nil {
+				continue
+			}
+			pair, ok := v.([]any)
+			if !ok || len(pair) != 2 {
+				continue
+			}
+			rev, _ := pair[0].(string)
+			slug, _ := pair[1].(string)
+			key := rev + "/" + slug
+			if slug == "" || key == last {
+				continue
+			}
+			last = key
+			s.Post(func() { s.followTo(slug) })
+		}
+	}()
+}
+
+// followTo makes the heading of slug the outline's current one, as the page
+// reports where the reader is. A heading above the page's first one is not
+// reported as none: at the top of its document the first section is the one
+// being read, as in the native body.
+func (s *State) followTo(slug string) {
+	if s.mode() != config.RenderWebView {
+		return
+	}
+	// The page glides where a click sent it: until it lands, where it passes is
+	// not where it is going.
+	if s.frameNow.Before(s.followUntil) {
+		return
+	}
+	if slug == "" {
+		if len(s.headings) == 0 {
+			return
+		}
+		slug = s.headings[0].Slug
+	}
+	if slug != s.anchor {
+		s.anchor = slug
+	}
 }
 
 // docURL is the address the web view loads the document shown from. The

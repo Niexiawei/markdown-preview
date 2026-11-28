@@ -310,6 +310,12 @@ GUI 要真实窗口；**无头环境里验证视图一律用 `ui.NewTester`，�
 - **`followNative` 量的是上一帧的布局**：`Bounds()` 给的是上一帧提交的矩形，所以滚动一帧、跟随再一帧才落地，
   测试里要连跑两帧；跳转期间靠 `followHold` 顶住。正文第一个标题在文档顶端时它的 `y` 本就低于窗格顶边
   （路径行 + 内边距），所以「顶边之上没有标题」要取 `headMarks[0]`，不能当成「没有当前章节」。
+- **WebView 的跟随是轮询，不是事件**：内嵌 WebView 没有 mygo 的 bridge（那只给窗口自己的页面），所以
+  `startPageFollow` 每 200 ms `EvalContext`（2 s 超时）问一次 `webFollowJS`。脚本返回 `[rev, slug]`：
+  `rev` 来自 `docHTML` 写进页面的 `<meta name="rev">`，换文档时哪怕顶部标题同名也会重报一次；
+  **只在 `slug` 变了才 `Post`**（否则空闲时每 200 ms 让窗口重画一帧），循环在 `IsDestroyed()` 退出。
+  `followTo` 只认 WebView 模式、且跳过 `followUntil` 静默期；页面报空（在第一个标题之上）当作文档第一章节。
+  页面脚本本身没有测试（Tester 里没有真 WebView），改动只能靠真窗口手动验证。
 - **`Content` 必须 `drain()`**：shell 只有它这一条构建路径，漏了它，`Post` 投递的 watcher 变更在真实窗口里
   永不生效（历史 bug，2026-11-24 修）。`View`（测试用）与 `Content` 的 `drain` → `handleShortcuts` →
   `updateToasts` 三步顺序要一致。

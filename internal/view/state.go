@@ -259,6 +259,9 @@ type State struct {
 	bodyBox   ui.Rect
 	// tocShownAnchor is the heading the outline was last scrolled to show.
 	tocShownAnchor string
+	// pageFollow says the web view's poll loop runs: it is made once, with the
+	// first page.
+	pageFollow bool
 	// tocScroll is how far the document's outline scrolls, both ways.
 	tocScroll ui.ScrollState
 	// contentWidth, when set, says how wide the window's content is on either

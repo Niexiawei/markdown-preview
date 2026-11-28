@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"mdpreview/internal/config"
 )
@@ -234,5 +235,50 @@ func TestDocHTMLLeavesRoomAboveHeadings(t *testing.T) {
 	html := docHTML(t.TempDir(), "# A\n", "1", 1)
 	if !strings.Contains(html, "scroll-margin-top") {
 		t.Errorf("page = %q, want room above the headings", html)
+	}
+}
+
+// TestThePageTellsTheOutlineWhereTheReaderIs pins the WebView path: the page
+// reports the heading at its top, and that becomes the outline's current one.
+func TestThePageTellsTheOutlineWhereTheReaderIs(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", "# 一\n\n## 二\n\n正文\n")
+	s.Refresh()
+	s.selectDoc("a.md")
+	s.setMode(config.RenderWebView)
+
+	s.followTo("二")
+	if s.anchor != "二" {
+		t.Errorf("anchor = %q, want the heading the page reported", s.anchor)
+	}
+}
+
+// TestThePageCannotMoveTheNativeOutline pins the guard: the page of a web view
+// nobody shows must not repaint the outline of the native body.
+func TestThePageCannotMoveTheNativeOutline(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", "# 一\n\n## 二\n")
+	s.Refresh()
+	s.selectDoc("a.md") // 原生
+
+	s.followTo("二")
+	if s.anchor != "" {
+		t.Errorf("anchor = %q, want the native body's own state", s.anchor)
+	}
+}
+
+// TestAPageReportDoesNotCutAJumpShort pins the hold for the page too.
+func TestAPageReportDoesNotCutAJumpShort(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", "# 一\n\n## 二\n")
+	s.Refresh()
+	s.selectDoc("a.md")
+	s.setMode(config.RenderWebView)
+	s.frameNow = time.Now()
+	s.followUntil = s.frameNow.Add(followHold)
+
+	s.followTo("二")
+	if s.anchor != "" {
+		t.Errorf("anchor = %q during the hold, want it left alone", s.anchor)
 	}
 }
