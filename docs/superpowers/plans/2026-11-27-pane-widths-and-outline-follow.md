@@ -919,7 +919,7 @@ git commit -m "test: 目录跟随的截图用例与规格回写"
   计划里的测试写法写成标题文字了。
 - **`tocWidthOf` 返回 `(float32, bool)`**：`loadDoc` 要区分「记过 240」与「没记过」，否则每个翻过的文档都会
   在快照里留一条 240，与 D2 的「不囤垃圾」相反。
-- **页面脚本的 `rev` / `slug` 用 `/` 连接**做去重键（原稿写 ` `）：`rev` 是数字，slug 里没有 `/`，
+- **页面脚本的 `rev` / `slug` 用 `/` 连接**做去重键（原稿写 `\x00`）：`rev` 是数字，slug 里没有 `/`，
   足够区分，也不必在源码里写控制字符。
 - **截图用例 `12-outline-follow` 滚到文档底部**（`tt.Scroll(..., 0, 20000)`）：滚到中段时当前章节往往还在目录
   视野内，看不出「目录自己跟着滚」。看图确认：当前行是主色底、铺满整行，目录已滚到 `第 17 节` 起、当前
@@ -952,4 +952,5 @@ git commit -m "test: 目录跟随的截图用例与规格回写"
   `jumpPatience` 从 1 s 放宽到 3 s（页面的滑动可能比原生慢，耐心期只该在「被打断」时才用完）。
   新增 `TestAPageReportOfItsGlideKeepsThePinnedHeading`、`TestAPageTakeOverLetsTheOutlineFollow`、
   `TestHeadingScrollJSMarksItsTarget`、`TestDocHTMLDropsTheTargetWhenTheReaderScrolls`；
-  另用用户的 `data-verify-plan.md`（12 个标题）在原生路径上手动跑过：点最后三个标题（其中两个落在 `MaxY`）高亮都不再回跳。
+  另用用户的 `data-verify-plan.md`（12 个标题）在原生路径上手动跑过：点最后三个标题（其中两个落在 `MaxY`）高亮都不再回跳；
+  WebView 下由用户 2026-11-28 用同一份文档复验通过（点末尾章节不再回跳）。

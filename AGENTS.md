@@ -331,6 +331,9 @@ GUI 要真实窗口；**无头环境里验证视图一律用 `ui.NewTester`，�
 - **`Content` 必须 `drain()`**：shell 只有它这一条构建路径，漏了它，`Post` 投递的 watcher 变更在真实窗口里
   永不生效（历史 bug，2026-11-24 修）。`View`（测试用）与 `Content` 的 `drain` → `handleShortcuts` →
   `updateToasts` 三步顺序要一致。
+- **测试文件名别踩 GOOS 后缀**：`*_<GOOS>_test.go` 会被当成该平台专用文件。`js` 是合法 GOOS（wasm），
+  所以 `zz_js_test.go` 在 Windows 上**根本不编译**，`go test` 报「no tests to run」而不是报错（2026-11-28 踩过，
+  一个 JS 语法检查的临时测试被默默跳过）。用 `go list -f '{{.IgnoredGoFiles}}' ./internal/view` 查漏掉的测试文件。
 - **`view.New(…, "")` 表示无用户数据目录**：账本只在内存里，`Save` 是 no-op。`dir` 非空时是 `notices.json`
   所在目录（与 `config.json` 同目录）。测试一律传 `t.TempDir()`，不要在仓库根目录写出文件。
 - **仓库里是 LF，别让脚本写回 CRLF**：用 Python 的文本模式（或任何默认 CRLF 的工具）改写 `.go` / `.md` 会把**整个文件**
