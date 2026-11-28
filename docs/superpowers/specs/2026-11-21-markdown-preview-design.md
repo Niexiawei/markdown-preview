@@ -27,7 +27,8 @@
   见 `docs/superpowers/plans/2026-11-22-tabs-find-toc-actions-zoom.md`）
 - 多窗口
 - 非 md 文件预览（图片、代码、PDF）
-- TOC 滚动跟随（scroll spy）——点击 TOC 能跳，但滚动正文不会高亮目录项
+- ~~TOC 滚动跟随（scroll spy）~~（2026-11-27 实现：正文滚动时目录高亮当前章节并滚到那一行，
+  原生与 WebView 都跟随；见 `docs/superpowers/plans/2026-11-27-pane-widths-and-outline-follow.md`）
 - 代码块语法高亮（原生 `ui/markdown` 的 `DefaultCodeBlock` 不带高亮；本期接受单色等宽）
 - ~~应用打包~~（后来做了：`.github/workflows/build.yml` 出三平台的安装包）、签名、自动更新（签名与自动更新仍不做）
 

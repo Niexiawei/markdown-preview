@@ -564,3 +564,12 @@ git commit -m "feat: 重启恢复会话现场——树折叠写回快照并回�
 - **类型一致性**：`session.Ref` / `session.Session` / `treeClosed map[treeKey]bool` / `saveSession` / `restoreSession` / `treeKeyOf`（既有测试助手）在各任务一致。
 - **审查重点**：1→任务 1 坏文件测试；2→任务 2 剪枝测试 + 任务 4 僵尸键（`dropTree`）测试；3→任务 5 搜索测试；4→任务 4 的单文件/多项目节点（`Path: ""`）由 `TestRestartKeepsTheFoldedDirectoriesFolded` 的键形覆盖，多项目节点用例在任务 5 的 `setTreeOpen` 断言（单项目无项目节点）与 `tree_test.go` 既有折叠测试中覆盖；5→任务 5 写盘点结构 + `setTreeOpen` 测试。
 - **比例**：计划约为既有计划平均长度，代码块只有测试与签名，无实现照抄。
+
+## 执行后的修订（2026-11-27）
+
+- **D3 的半条被推翻**：侧栏宽度与每个文档的目录宽度现在也进 `session.json`（`sidebar` 与 `toc` 两个字段，
+  `Version` 升到 2）。原因：onevra 的 shell 只给 `LeftWidth()`、不持久化也不发事件，`StateKey` 只管窗口位置，
+  所以「用户每次都要重新拖」成了实际抱怨。实现见
+  `docs/superpowers/plans/2026-11-27-pane-widths-and-outline-follow.md`。
+- D3 里其余几条仍然成立：目录窗格的展开状态、标签的正文滚动位置、搜索面板与消息面板的开合、树搜索查询
+  依旧不持久化。

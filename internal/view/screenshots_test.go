@@ -235,5 +235,25 @@ func shotCases() []shotCase {
 				return s
 			},
 		},
+		{
+			name: "12-outline-follow",
+			build: func(t *testing.T) *State {
+				s := shotTree(t)
+				writeDoc(t, s.Trees()[0].project.Root, "docs/long.md", sections(40))
+				s.Refresh()
+				s.selectDoc("docs/long.md")
+				return s
+			},
+			settle: 2,
+			act: func(t *testing.T, s *State, tt *ui.Tester) {
+				// Scroll far down, where both the accent of the current section
+				// and the outline's own scrolling show.
+				tt.Scroll(700, 400, 0, 20000)
+				for range 3 {
+					tt.Advance(20 * time.Millisecond)
+					tt.Frame()
+				}
+			},
+		},
 	}
 }
