@@ -924,6 +924,9 @@ git commit -m "test: 目录跟随的截图用例与规格回写"
 - **截图用例 `12-outline-follow` 滚到文档底部**（`tt.Scroll(..., 0, 20000)`）：滚到中段时当前章节往往还在目录
   视野内，看不出「目录自己跟着滚」。看图确认：当前行是主色底、铺满整行，目录已滚到 `第 17 节` 起、当前
   `第 39 节` 在视野底部边上。
+- **`followHold` 是 600 ms，不是计划的 400 ms**（最终审查抓到）：mygo 的 `ui.Smooth` 是 500 ms 的弹簧，
+  400 ms 的静默期在滑行最后约 100 ms 就会过期，高亮会在落点前的章节上闪一下。新增
+  `TestTheHoldOutlastsTheGlide`（断言静默期 ≥ `ui.Smooth.Spring.Duration`）钉住它。
 - **测试视图里的正文横向滚动条是既有现象，不是本次改动**：`View`（测试布局）的侧栏写死 300，
   而 `bodyPaneWidth()` 用 `windowWidth()-tocW`（不减侧栏），长文档因此比窗格宽；真实 shell 里
   `SetContentWidth` 已经减掉侧栏宽度，不会有这条滚动条。

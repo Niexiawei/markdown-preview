@@ -156,7 +156,8 @@ GUI 要真实窗口；**无头环境里验证视图一律用 `ui.NewTester`，�
 - **改目录跟随（正文滚到哪，目录高亮哪）**：规则是「正文窗格顶端之上最后一个标题」，两边各一份实现——
   `native.go` 的 `followNative`（读上一帧量下的 `headMarks` 数字）与 `webview.go` 的 `webFollowJS`（页面自己算
   `rect.top <= 24 * --md-scale`），改一处必须改另一处。中间状态只有一个 `State.anchor`（目录行 `Selected` 的判据），
-  点击、链接、搜索命中与滚动都写它；`gotoHeading` 会设 `followUntil = frameNow + followHold`（400 ms），
+  点击、链接、搜索命中与滚动都写它；`gotoHeading` 会设 `followUntil = frameNow + followHold`（600 ms，
+  **必须大于 mygo `ui.Smooth` 的 500 ms**，否则滑行最后几帧会把路上的章节点亮——`TestTheHoldOutlastsTheGlide` 钉住这条），
   否则平滑滚动的中间帧会把高亮刷成路上的邻居。目录只在 `anchor` 变化时 `revealCurrentRow` 滚一次，
   每帧都滚会把用户手动滚走的目录拉回来；滚不到的（折在分支里的）不展开、也不重试。
   补 `TestTheOutlineFollows*` / `TestTheOutlineKeeps*` / `TestAJumpKeeps*`。

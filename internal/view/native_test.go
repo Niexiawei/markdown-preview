@@ -511,3 +511,23 @@ func TestTheOutlineKeepsTheCurrentHeadingInSight(t *testing.T) {
 		t.Errorf("row at %v, outline %v: the current row is not in sight", row, list)
 	}
 }
+
+// TestTheHoldOutlastsTheGlide pins that the outline is not repainted while the
+// body is still moving: the hold has to cover MyGo's smooth scroll, or the last
+// frames of a jump mark the section the body is passing rather than the one it
+// was sent to.
+func TestTheHoldOutlastsTheGlide(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", sections(8))
+	s.Refresh()
+	s.selectDoc("a.md")
+
+	tt := newTester(s)
+	if err := tt.Click("第 6 节"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	tt.Frame()
+	if got := s.followUntil.Sub(s.frameNow); got < ui.Smooth.Spring.Duration {
+		t.Errorf("hold = %v, want at least the %v the glide takes", got, ui.Smooth.Spring.Duration)
+	}
+}

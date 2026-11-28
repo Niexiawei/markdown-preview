@@ -73,8 +73,9 @@ const (
 	widthQuiet = 400 * time.Millisecond
 	// followHold is how long the outline keeps a heading chosen by a click or a
 	// search while the body glides there, so that the sections the body passes
-	// on the way do not paint it.
-	followHold = 400 * time.Millisecond
+	// on the way do not paint it. It is longer than the glide Ui.Smooth asks
+	// for (500 ms), which the body is still taking when it ends.
+	followHold = 600 * time.Millisecond
 	// followSlop is how far below the pane's top edge a heading still counts as
 	// the one being read, in DIPs.
 	followSlop float32 = 4
