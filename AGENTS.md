@@ -322,6 +322,10 @@ GUI 要真实窗口；**无头环境里验证视图一律用 `ui.NewTester`，�
   `updateToasts` 三步顺序要一致。
 - **`view.New(…, "")` 表示无用户数据目录**：账本只在内存里，`Save` 是 no-op。`dir` 非空时是 `notices.json`
   所在目录（与 `config.json` 同目录）。测试一律传 `t.TempDir()`，不要在仓库根目录写出文件。
+- **仓库里是 LF，别让脚本写回 CRLF**：用 Python 的文本模式（或任何默认 CRLF 的工具）改写 `.go` / `.md` 会把**整个文件**
+  算成一次改动（`git diff` 全绿、`gofmt -l` 报整个文件、review 全是噪音）。改写时用二进制模式（`open(p,"rb")` /
+  `"wb"`）或写完 `sed -i 's/\r$//'` 一次；已经提交但还没推送的话，`git filter-branch --tree-filter` 只对这些文件
+  去 CR 就能保住每个提交的内容（2026-11-27 踩过，`git diff --ignore-cr-at-eol` 用来验证等价）。
 - **onevra 的 shell 只给 `LeftWidth()`，不发事件，也不持久化它**（`StateKey` 只管窗口位置/大小）：侧栏宽度要在每帧
   读一次（`main.go` 给 `State.SetSidebarWidth` 一个闭包，`trackWidths` 比较变化），不能指望回调。`ShellOptions.LeftWidth`
   **同时是双击分隔条的复位目标**，所以启动时先给它 `view.DefaultSidebarWidth`（280），建好 shell 再用
