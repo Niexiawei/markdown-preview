@@ -21,8 +21,9 @@ import (
 func (s *State) loadDoc() {
 	s.doc, s.headings, s.src, s.docErr = nil, nil, "", nil
 	// Another document is another place: nothing of the last one's outline
-	// follow — its current heading or the boxes it measured — survives it.
-	s.anchor, s.bodyBox, s.headMarks = "", ui.Rect{}, nil
+	// follow — its current heading, its pin or the boxes it measured —
+	// survives it.
+	s.anchor, s.pinSlug, s.bodyBox, s.headMarks = "", "", ui.Rect{}, nil
 	if s.sel.empty() {
 		s.tocW, s.seenTOC = defaultTOCWidth, defaultTOCWidth
 		return
@@ -83,6 +84,11 @@ func (s *State) gotoHeading(slug string) {
 	// The body glides there: until it lands, the sections it passes are not the
 	// one being read, and must not repaint the outline.
 	s.followUntil = s.frameNow.Add(followHold)
+	// And once it lands, the heading stays the current one for as long as the
+	// body stays where it stopped: a jump the document cannot finish — the end
+	// arrives before the heading rises to the top — must not be undone by the
+	// follow reading the section at the top edge.
+	s.pinSlug, s.pinSeen, s.pinY, s.pinDeadline = slug, false, 0, s.frameNow.Add(jumpPatience)
 	if s.mode() == config.RenderWebView && s.wv != nil {
 		// The page has no block to jump to: webview.go scrolls it by id.
 		s.scrollWebTo(slug)
@@ -175,6 +181,9 @@ func (s *State) followNative(c *ui.Context) {
 		return
 	}
 	if s.bodyBox.H == 0 || len(s.headMarks) == 0 {
+		return
+	}
+	if s.pinned(s.docScroll().Y, s.jumpLanded()) {
 		return
 	}
 	top := s.bodyBox.Y + bodyJumpGap

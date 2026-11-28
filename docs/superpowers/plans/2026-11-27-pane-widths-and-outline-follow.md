@@ -931,3 +931,12 @@ git commit -m "test: 目录跟随的截图用例与规格回写"
   而 `bodyPaneWidth()` 用 `windowWidth()-tocW`（不减侧栏），长文档因此比窗格宽；真实 shell 里
   `SetContentWidth` 已经减掉侧栏宽度，不会有这条滚动条。
 
+## 执行后的修订（用户 2026-11-28 报的问题，已修）
+
+- **点靠末尾的章节时高亮会跳回上一节**：跳转把目标顶不到页面顶部（正文被 `MaxY` 钳住）时，跟随按「窗格顶边之上最后一个标题」
+  会选中上一节，静默期一过就跳一次。修法 = 给跳转选中的章节一个 pin：`State.pinSlug` / `pinY` / `pinSeen` / `pinDeadline`，
+  `pinned(y, landed)` 在落点之前一直当它是当前章节，落点之后正文一动（>0.5 DIP）就释放；`jumpLanded` 认「标记到了顶边」
+  或「正文已在 `MaxY`」两种落点。WebView 侧同一套（页面在静默期之后的第一条报告就是落点，`webFollowJS` 顺手多报
+  `window.scrollY`，去重键带上它，这样「标题没变但页面动了」也能报上来）。新增
+  `TestAJumpThatCannotReachTheTopKeepsItsHeading`、`TestAPinnedHeadingLetsGoWhenTheBodyIsDragged`、
+  `TestAWheelAtTheEndKeepsThePinnedHeading`、`TestThePageCannotTakeTheOutlineOffAClammedJump`。

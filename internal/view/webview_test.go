@@ -247,7 +247,7 @@ func TestThePageTellsTheOutlineWhereTheReaderIs(t *testing.T) {
 	s.selectDoc("a.md")
 	s.setMode(config.RenderWebView)
 
-	s.followTo("二")
+	s.followTo("二", 0)
 	if s.anchor != "二" {
 		t.Errorf("anchor = %q, want the heading the page reported", s.anchor)
 	}
@@ -261,7 +261,7 @@ func TestThePageCannotMoveTheNativeOutline(t *testing.T) {
 	s.Refresh()
 	s.selectDoc("a.md") // 原生
 
-	s.followTo("二")
+	s.followTo("二", 0)
 	if s.anchor != "" {
 		t.Errorf("anchor = %q, want the native body's own state", s.anchor)
 	}
@@ -277,8 +277,36 @@ func TestAPageReportDoesNotCutAJumpShort(t *testing.T) {
 	s.frameNow = time.Now()
 	s.followUntil = s.frameNow.Add(followHold)
 
-	s.followTo("二")
+	s.followTo("二", 0)
 	if s.anchor != "" {
 		t.Errorf("anchor = %q during the hold, want it left alone", s.anchor)
+	}
+}
+
+// TestThePageCannotTakeTheOutlineOffAClammedJump pins the same for the page:
+// while the page still sits where a jump left it, the heading it reports from
+// the top edge does not replace the one the jump chose.
+func TestThePageCannotTakeTheOutlineOffAClammedJump(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", "# 一\n\n## 二\n\n正文\n")
+	s.Refresh()
+	s.selectDoc("a.md")
+	s.setMode(config.RenderWebView)
+	tt := newTester(s)
+	s.gotoHeading("二") // what a click on the outline does
+	tt.Frame()
+	tt.Advance(time.Second) // past the hold: the jump has landed
+	tt.Frame()
+
+	// The page cannot lift 二 to its top (the document ends first), so it
+	// reports 一; it has not moved since the jump though.
+	s.followTo("一", 120)
+	if s.anchor != "二" {
+		t.Fatalf("anchor = %q, want 二: the page did not move", s.anchor)
+	}
+	// The reader scrolls: the report is theirs now.
+	s.followTo("一", 40)
+	if s.anchor != "一" {
+		t.Errorf("anchor = %q after the page moved, want 一", s.anchor)
 	}
 }

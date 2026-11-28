@@ -276,10 +276,12 @@ func (s *State) ensureWebView() bool {
 const followPoll = 200 * time.Millisecond
 
 // webFollowJS is the page's answer to where the reader is: the id of the last
-// heading whose top is above the page's own top edge, and the revision of the
-// document it belongs to, which changes with the document. It is the rule
-// followNative applies to the native body, in the page's own pixels; the
-// revision tells a new document apart even when its first heading is the same.
+// heading whose top is above the page's own top edge, the revision of the
+// document it belongs to, which changes with the document, and how far it is
+// scrolled. It is the rule followNative applies to the native body, in the
+// page's own pixels; the revision tells a new document apart even when its
+// first heading is the same, and the offset tells a page that has moved from
+// one that a jump left where it is.
 const webFollowJS = `(() => {
   const scale = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--md-scale')) || 1;
   const top = 24 * scale;
@@ -289,7 +291,7 @@ const webFollowJS = `(() => {
     if (h.getBoundingClientRect().top <= top) slug = h.id; else break;
   }
   const meta = document.querySelector('meta[name="rev"]');
-  return [meta ? meta.getAttribute('content') : '', slug];
+  return [meta ? meta.getAttribute('content') : '', slug, Math.round(window.scrollY)];
 })()`
 
 // startPageFollow asks the page where the reader is, for as long as the web
@@ -315,17 +317,20 @@ func (s *State) startPageFollow() {
 				continue
 			}
 			pair, ok := v.([]any)
-			if !ok || len(pair) != 2 {
+			if !ok || len(pair) != 3 {
 				continue
 			}
 			rev, _ := pair[0].(string)
 			slug, _ := pair[1].(string)
-			key := rev + "/" + slug
+			at, _ := pair[2].(float64)
+			// A page that moved without a new heading still has to say so: the
+			// offset is what tells a jump's landing from the reader scrolling.
+			key := rev + "/" + slug + "/" + itoa(int(at))
 			if slug == "" || key == last {
 				continue
 			}
 			last = key
-			s.Post(func() { s.followTo(slug) })
+			s.Post(func() { s.followTo(slug, float32(at)) })
 		}
 	}()
 }
@@ -334,13 +339,19 @@ func (s *State) startPageFollow() {
 // reports where the reader is. A heading above the page's first one is not
 // reported as none: at the top of its document the first section is the one
 // being read, as in the native body.
-func (s *State) followTo(slug string) {
+func (s *State) followTo(slug string, y float32) {
 	if s.mode() != config.RenderWebView {
 		return
 	}
 	// The page glides where a click sent it: until it lands, where it passes is
 	// not where it is going.
 	if s.frameNow.Before(s.followUntil) {
+		return
+	}
+	// The page's own smooth scroll is over by the time the hold lets its
+	// reports through, so the first one is where a jump landed: there is no
+	// glide to wait out here.
+	if s.pinned(y, true) {
 		return
 	}
 	if slug == "" {

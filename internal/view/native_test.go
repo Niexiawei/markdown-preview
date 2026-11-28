@@ -531,3 +531,126 @@ func TestTheHoldOutlastsTheGlide(t *testing.T) {
 		t.Errorf("hold = %v, want at least the %v the glide takes", got, ui.Smooth.Spring.Duration)
 	}
 }
+
+// TestAJumpThatCannotReachTheTopKeepsItsHeading pins what a reader hits at the
+// end of a document: the body stops where it can, so the heading the outline
+// was asked to show never reaches the pane's top. It must stay the outline's
+// current one — not fall back to the section whose text happens to be at the
+// top edge — until the reader moves the body.
+func TestAJumpThatCannotReachTheTopKeepsItsHeading(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", sections(8))
+	s.Refresh()
+	s.selectDoc("a.md")
+
+	tt := newTester(s)
+	if err := tt.Click("第 8 节"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	tt.Frame()
+	tt.Advance(time.Second)
+	tt.Frame()
+	tt.Frame()
+
+	want := workspace.Slug("第 8 节")
+	if s.anchor != want {
+		t.Fatalf("anchor = %q after the jump, want %q", s.anchor, want)
+	}
+	// The hand moves the body: the follow takes over again, even for a scroll
+	// too short to have dragged the body away from where the jump left it.
+	tt.Scroll(700, 400, 0, -20)
+	tt.Frame()
+	tt.Frame()
+	if s.anchor == want {
+		t.Errorf("anchor = %q after scrolling up, want the section now at the top", s.anchor)
+	}
+}
+
+// TestAPinnedHeadingLetsGoWhenTheBodyIsDragged pins the other way the body
+// moves without a wheel under the pointer: a scrollbar dragged far enough, or a
+// jump asked for elsewhere, releases the heading the outline was pinned to.
+func TestAPinnedHeadingLetsGoWhenTheBodyIsDragged(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", sections(8))
+	s.Refresh()
+	s.selectDoc("a.md")
+
+	tt := newTester(s)
+	if err := tt.Click("第 8 节"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	tt.Frame()
+	tt.Advance(time.Second)
+	tt.Frame()
+	tt.Frame()
+	want := workspace.Slug("第 8 节")
+	if s.anchor != want {
+		t.Fatalf("anchor = %q after the jump, want %q", s.anchor, want)
+	}
+
+	s.docScroll().Y -= 300 // a drag, not a wheel: bodyPress never runs
+	tt.Frame()
+	tt.Frame()
+	if s.anchor == want {
+		t.Errorf("anchor = %q after the body was dragged away, want the section at the top", s.anchor)
+	}
+}
+
+// TestAWheelAtTheEndKeepsThePinnedHeading pins the edge that makes the pin
+// usable: at the end of a document a wheel down has nowhere to go, so it must
+// not be taken as the reader leaving the section the jump chose.
+func TestAWheelAtTheEndKeepsThePinnedHeading(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", sections(8))
+	s.Refresh()
+	s.selectDoc("a.md")
+
+	tt := newTester(s)
+	if err := tt.Click("第 8 节"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	tt.Frame()
+	tt.Advance(time.Second)
+	tt.Frame()
+	// Let the glide settle to its last DIP before the wheel: a body still
+	// creeping would move, and a wheel that moves is the reader's.
+	tt.Advance(time.Second)
+	tt.Frame()
+	tt.Frame()
+
+	at := s.docScroll().Y
+	tt.Scroll(700, 400, 0, 200) // down, with the body already at its end
+	tt.Frame()
+	tt.Frame()
+	if s.docScroll().Y != at {
+		t.Fatalf("Y = %v, want %v: the body was at its end", s.docScroll().Y, at)
+	}
+	if want := workspace.Slug("第 8 节"); s.anchor != want {
+		t.Errorf("anchor = %q after a wheel that moved nothing, want %q", s.anchor, want)
+	}
+}
+
+// TestAPinTimesOutWhenTheJumpNeverLands pins the patience of a pin: a jump
+// whose body never arrives — the wheel did not stop the glide, or something
+// else moved the body — must not keep the outline on a heading nobody is at.
+func TestAPinTimesOutWhenTheJumpNeverLands(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", "# 一\n\n## 二\n")
+	s.Refresh()
+	s.selectDoc("a.md")
+
+	s.gotoHeading("二")
+	if s.anchor != "二" {
+		t.Fatalf("anchor = %q, want the heading the jump chose", s.anchor)
+	}
+	if !s.pinned(0, false) {
+		t.Fatal("the pin let go before the jump landed")
+	}
+	s.frameNow = s.pinDeadline.Add(time.Second)
+	if s.pinned(0, false) {
+		t.Error("the pin outlived its patience with the jump never landing")
+	}
+	if s.pinSlug != "" {
+		t.Errorf("pin = %q, want it released", s.pinSlug)
+	}
+}

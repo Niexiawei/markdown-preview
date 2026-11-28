@@ -79,6 +79,10 @@ const (
 	// followSlop is how far below the pane's top edge a heading still counts as
 	// the one being read, in DIPs.
 	followSlop float32 = 4
+	// jumpPatience is how long the outline keeps a heading a jump chose while
+	// the body has not arrived: a glide takes half a second, so this only runs
+	// out when the reader interrupted the jump.
+	jumpPatience = time.Second
 )
 
 // State is what the window shows, and what the app keeps of it.
@@ -260,6 +264,14 @@ type State struct {
 	bodyBox   ui.Rect
 	// tocShownAnchor is the heading the outline was last scrolled to show.
 	tocShownAnchor string
+	// pinSlug is the heading a click, a link or a search sent the body to, with
+	// the place it came to rest (pinY) once the body is there: while the body
+	// stays put, that heading is the current one, which the follow must not
+	// undo when the document ends too soon to lift it to the top.
+	pinSlug     string
+	pinY        float32
+	pinSeen     bool
+	pinDeadline time.Time
 	// pageFollow says the web view's poll loop runs: it is made once, with the
 	// first page.
 	pageFollow bool
@@ -713,6 +725,57 @@ func (s *State) FlushWidths() {
 	if s.widthsDirty {
 		s.saveSession()
 	}
+}
+
+// pinned reports whether the heading a jump chose is still the outline's
+// current one: the body has not moved since the jump left it there. A jump the
+// document cannot finish — its heading cannot reach the pane's top, because the
+// document ends first — would otherwise be undone by the follow, which reads
+// the section at the top edge.
+func (s *State) pinned(y float32, landed bool) bool {
+	if s.pinSlug == "" {
+		return false
+	}
+	if !s.pinSeen {
+		switch {
+		case landed:
+			s.pinY, s.pinSeen = y, true
+		case !s.pinDeadline.IsZero() && !s.frameNow.Before(s.pinDeadline):
+			// The jump was interrupted and never arrived: the outline follows
+			// the reader again rather than staying where nobody is.
+			s.pinSlug = ""
+			return false
+		default:
+			// Still gliding: the body is not to be read yet.
+			s.anchor = s.pinSlug
+			return true
+		}
+	}
+	// A body that moved from where the jump left it is the reader's again.
+	if d := y - s.pinY; d <= 0.5 && d >= -0.5 {
+		s.anchor = s.pinSlug
+		return true
+	}
+	s.pinSlug = ""
+	return false
+}
+
+// jumpLanded reports whether the body has arrived where a jump sent it: its
+// heading at the pane's top, or the document's end when that comes first. It is
+// how the pin tells the glide — which is not to be read — from the landing.
+func (s *State) jumpLanded() bool {
+	w := s.docScroll()
+	if w.MaxY > 0 && w.Y >= w.MaxY-0.5 {
+		// The document ends before the heading reaches the top: this is as far
+		// as the jump goes.
+		return true
+	}
+	for _, m := range s.headMarks {
+		if m.slug == s.pinSlug {
+			return m.y <= s.bodyBox.Y+bodyJumpGap+0.5
+		}
+	}
+	return true
 }
 
 // tocWidthOf returns the width remembered for sel, and whether it was

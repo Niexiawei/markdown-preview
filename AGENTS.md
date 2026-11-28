@@ -160,7 +160,12 @@ GUI 要真实窗口；**无头环境里验证视图一律用 `ui.NewTester`，�
   **必须大于 mygo `ui.Smooth` 的 500 ms**，否则滑行最后几帧会把路上的章节点亮——`TestTheHoldOutlastsTheGlide` 钉住这条），
   否则平滑滚动的中间帧会把高亮刷成路上的邻居。目录只在 `anchor` 变化时 `revealCurrentRow` 滚一次，
   每帧都滚会把用户手动滚走的目录拉回来；滚不到的（折在分支里的）不展开、也不重试。
-  补 `TestTheOutlineFollows*` / `TestTheOutlineKeeps*` / `TestAJumpKeeps*`。
+  跳转选中的章节还要 **pin** 住（`State.pinned` / `jumpLanded`）：`gotoHeading` 记 `pinSlug` 与 `pinDeadline`，
+  正文没到落点之前一律当它还是当前章节；落点之后正文一动（>0.5 DIP）就释放。`jumpLanded` 有两条判据：
+  标题的标记到了窗格顶边，**或**正文已经在 `MaxY`（文档末尾顶不到顶部的那种跳转，正文被钳住）。
+  没有这条，点靠末尾的章节会被跟随按「顶边之上的最后标题」改成上一节（用户 2026-11-28 报的「跳变」）。
+  WebView 侧同一套（页面在静默期之后报的第一条就是落点）。补 `TestTheOutlineFollows*` / `TestTheOutlineKeeps*` /
+  `TestAJumpKeeps*` / `TestAJumpThatCannotReachTheTop*` / `TestAPinnedHeading*` / `TestAWheelAtTheEnd*` / `TestThePageCannotTake*`。
 - **改提示消息**：写入只调 `internal/view/notices.go` 的 `notify` / `notifyDone` / `notifyWarn` / `notifyErr`，
   不要直接在 view 里 `c.AddToast`（绕过了账本、去重与历史）；浮层与铃铛也在这个文件（`bellButton` /
   `noticePanel` / `noticeRow` / `noticeBadgeText` / `noticeTime`）。账本自己的行为（落盘、上限、未读）改
@@ -309,7 +314,7 @@ GUI 要真实窗口；**无头环境里验证视图一律用 `ui.NewTester`，�
   `headingMark{slug, y}` 与 `bodyBox`（`native.go` 的 `nativePreview` 尾部），下一帧的 `toc` 只比数字。
   同理：需要跨帧的控件用 `ui.Handle` + `Bind` / `c.Resolve`，不要留 Element。
 - **`followNative` 量的是上一帧的布局**：`Bounds()` 给的是上一帧提交的矩形，所以滚动一帧、跟随再一帧才落地，
-  测试里要连跑两帧；跳转期间靠 `followHold` 顶住。正文第一个标题在文档顶端时它的 `y` 本就低于窗格顶边
+  测试里要连跑两帧；跳转期间靠 `followHold` 与 `pinned` 顶住（前者管滑动，后者管落点）。正文第一个标题在文档顶端时它的 `y` 本就低于窗格顶边
   （路径行 + 内边距），所以「顶边之上没有标题」要取 `headMarks[0]`，不能当成「没有当前章节」。
 - **WebView 的跟随是轮询，不是事件**：内嵌 WebView 没有 mygo 的 bridge（那只给窗口自己的页面），所以
   `startPageFollow` 每 200 ms `EvalContext`（2 s 超时）问一次 `webFollowJS`。脚本返回 `[rev, slug]`：
