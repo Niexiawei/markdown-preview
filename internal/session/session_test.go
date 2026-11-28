@@ -64,3 +64,39 @@ func TestSaveLeavesNoTempFilesBehind(t *testing.T) {
 		t.Errorf("dir holds %v; want only %s", names, FileName)
 	}
 }
+
+func TestWidthsRoundTrips(t *testing.T) {
+	dir := t.TempDir()
+	in := Session{Version: Version,
+		Sidebar: 312,
+		TOC: []DocWidth{
+			{Project: "a", Path: "docs/x.md", Width: 180},
+			{Project: "b", Path: "docs/x.md", Width: 320},
+		},
+	}
+	if err := Save(dir, in); err != nil {
+		t.Fatal(err)
+	}
+	out, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Sidebar != 312 || !slices.Equal(out.TOC, in.TOC) {
+		t.Errorf("widths = %v %+v, want 312 %+v", out.Sidebar, out.TOC, in.TOC)
+	}
+}
+
+func TestAFileWithoutWidthsLeavesThemEmpty(t *testing.T) {
+	dir := t.TempDir()
+	old := `{"version":1,"tabs":[{"project":"a","path":"x.md"}],"active":{},"tree_closed":[]}`
+	if err := os.WriteFile(filepath.Join(dir, FileName), []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Sidebar != 0 || len(out.TOC) != 0 || len(out.Tabs) != 1 {
+		t.Errorf("session = %+v, want the tabs kept and no widths", out)
+	}
+}

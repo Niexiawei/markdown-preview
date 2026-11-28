@@ -59,7 +59,7 @@ GUI 要真实窗口；**无头环境里验证视图一律用 `ui.NewTester`，�
 | `internal/watch` | `mygo.WatchFiles` → `ChangeSet`（新增 / 删除 / 重命名 / 写入）；单文件监听（`WatchFile` + `FoldFile`）、监听上限 |
 | `internal/mcp` | `POST /mcp` JSON-RPC 2.0，四个只读工具 |
 | `internal/notices` | 消息账本与 `notices.json`（最新在前、无上限、未读标记）；原子写，**不 import ui**，可无窗口测试 |
-| `internal/session` | 会话快照 `session.json`（标签页与活动标签、树里被折叠的目录）；原子写，**不 import ui**，可无窗口测试 |
+| `internal/session` | 会话快照 `session.json`（标签页与活动标签、树里被折叠的目录、侧栏与每个文档的目录宽度）；原子写，**不 import ui**，可无窗口测试 |
 | `internal/view` | Onevra 主题（`theme.go`）与外壳各区域：侧栏顶栏（项目面板 + 右键菜单；macOS 上面板下沉为 `panelRow`，槽位留空）、树（`tree.go` 的 `treeKey` / `roots` / `children` / `rowOf` / 自绘行，`scan.go` 的异步扫描与上限，`locate.go` 的 crosshair 定位）、选择与按行复制（`treesel.go` 的 `treeSel` / `selectRow` / `menuTargets` / `copyRow*`）、侧栏工具栏（含铃铛）、标签栏（`tabs.go`，占 shell 的标题槽位）、页面第一行的路径与渲染开关（`titleRow`）、预览、消息历史浮层（`notices.go`）、MCP 设置面板；`find.go` 是悬浮搜索（三块浮岛 + 两块数据岛各自的可拖拽高度 `findGripBand`）与跳转，`native.go` 是原生正文与跳转（`jumpToBlock` / `jumpMarker`），`zoom.go` 是正文缩放；`system.go` 是桌面动作接口 |
 | `internal/tray` | 托盘：图标与两条菜单（打开主页面 / 退出）、关闭窗口即隐藏、`Show`（托盘与第二次启动共用）、窗口/任务栏图标。图片在 `assets/`，用 `go:embed` 打包；纯逻辑（菜单项、关闭决策、图标尺寸）无窗口可测 |
 | `.github/workflows/build.yml` | CI：gofmt / vet / 测试（Ubuntu，带 Pango），再在 macOS / Ubuntu 上交叉编译三平台安装包；推 `v*` 标签时把产物挂到 Release |

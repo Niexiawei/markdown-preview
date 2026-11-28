@@ -11,8 +11,9 @@ import (
 	"path/filepath"
 )
 
-// Version is the schema version of the file Save writes.
-const Version = 1
+// Version is the schema version of the file Save writes. Version 2 added the
+// widths of the sidebar and of each document's outline.
+const Version = 2
 
 // FileName is the name of the file Load reads and Save writes.
 const FileName = "session.json"
@@ -25,13 +26,24 @@ type Ref struct {
 	Path    string `json:"path"`
 }
 
+// DocWidth is the width the window remembers for one document's outline: the
+// documents of a project differ in how deep their outlines run.
+type DocWidth struct {
+	Project string  `json:"project"`
+	Path    string  `json:"path"`
+	Width   float32 `json:"width"`
+}
+
 // Session is the snapshot of the window's last session: the tabs in the order
-// they sat in the bar, the active one, and the directories the user folded.
+// they sat in the bar, the active one, the directories the user folded, and the
+// widths the user chose for the panes.
 type Session struct {
-	Version    int   `json:"version"`
-	Tabs       []Ref `json:"tabs"`
-	Active     Ref   `json:"active"`
-	TreeClosed []Ref `json:"tree_closed"`
+	Version    int        `json:"version"`
+	Tabs       []Ref      `json:"tabs"`
+	Active     Ref        `json:"active"`
+	TreeClosed []Ref      `json:"tree_closed"`
+	Sidebar    float32    `json:"sidebar,omitempty"`
+	TOC        []DocWidth `json:"toc,omitempty"`
 }
 
 // Load reads the session in dir. A directory without one, an empty dir, and a
