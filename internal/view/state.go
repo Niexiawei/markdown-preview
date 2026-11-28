@@ -33,8 +33,17 @@ type docSel struct {
 }
 
 // headingMark is where a heading of the body sat in the last frame's layout:
-// the outline follows the reader by the topmost one of these.
+// the outline follows the reader by the topmost one of these. It holds a
+// number rather than the element, which MyGo expires at the end of the pass
+// that built it.
 type headingMark struct {
+	slug string
+	y    float32
+}
+
+// blockMark is a heading the build just marked: its element is this pass's,
+// and its place is read once the body is laid out.
+type blockMark struct {
 	slug string
 	el   ui.Element
 }
@@ -243,11 +252,11 @@ type State struct {
 	frameNow    time.Time
 	followUntil time.Time
 	// headMarks are where the headings of the body sat in the last frame's
-	// layout, in reading order; nextMarks is being filled by this frame's
-	// build. bodyPane is the body's scroll container.
+	// layout, in reading order; marks is being filled by this frame's build,
+	// and bodyBox is the body's pane, measured with them.
 	headMarks []headingMark
-	nextMarks []headingMark
-	bodyPane  ui.Element
+	marks     []blockMark
+	bodyBox   ui.Rect
 	// tocShownAnchor is the heading the outline was last scrolled to show.
 	tocShownAnchor string
 	// tocScroll is how far the document's outline scrolls, both ways.

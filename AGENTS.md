@@ -153,6 +153,13 @@ GUI 要真实窗口；**无头环境里验证视图一律用 `ui.NewTester`，�
 写盘不是每个变更点，而是 `trackWidths` 的**停手 400 ms**（`widthQuiet`，`View` / `Content` 各一行）+ 退出时
 `FlushWidths`（`main.go` 的 `App.OnWillQuit`）。拖动中每帧都变，别在 `trackWidths` 里直接 `saveSession`，
 也不要把 `noteTOCWidth` 塞进每帧的路径里（切文档时调一次就够，`loadDoc` 里那两行）。
+- **改目录跟随（正文滚到哪，目录高亮哪）**：规则是「正文窗格顶端之上最后一个标题」，两边各一份实现——
+  `native.go` 的 `followNative`（读上一帧量下的 `headMarks` 数字）与 `webview.go` 的 `webFollowJS`（页面自己算
+  `rect.top <= 24 * --md-scale`），改一处必须改另一处。中间状态只有一个 `State.anchor`（目录行 `Selected` 的判据），
+  点击、链接、搜索命中与滚动都写它；`gotoHeading` 会设 `followUntil = frameNow + followHold`（400 ms），
+  否则平滑滚动的中间帧会把高亮刷成路上的邻居。目录只在 `anchor` 变化时 `revealCurrentRow` 滚一次，
+  每帧都滚会把用户手动滚走的目录拉回来；滚不到的（折在分支里的）不展开、也不重试。
+  补 `TestTheOutlineFollows*` / `TestTheOutlineKeeps*` / `TestAJumpKeeps*`。
 - **改提示消息**：写入只调 `internal/view/notices.go` 的 `notify` / `notifyDone` / `notifyWarn` / `notifyErr`，
   不要直接在 view 里 `c.AddToast`（绕过了账本、去重与历史）；浮层与铃铛也在这个文件（`bellButton` /
   `noticePanel` / `noticeRow` / `noticeBadgeText` / `noticeTime`）。账本自己的行为（落盘、上限、未读）改
@@ -296,6 +303,13 @@ GUI 要真实窗口；**无头环境里验证视图一律用 `ui.NewTester`，�
   不会在正显示着的列表上冒出角标。
 - **Toast 按 `noticeShown` 水位线去重**：一次点击会建两遍视图（同下面那条坑），不去重会弹两个、读屏还会念两遍。
   `New` 里把水位线对到账本最新一条，否则重启会把上次的旧消息全部重播一遍（历史要留，Toast 不要）。
+- **跨帧的尺寸要存数字，不能存 `ui.Element`**：MyGo 每个 pass 结束就作废上一 pass 的 Element（跨 pass 用会
+  panic `element from pass N used in pass N+1`）。所以正文的标题位置在**同一 pass、正文构建完之后**读成
+  `headingMark{slug, y}` 与 `bodyBox`（`native.go` 的 `nativePreview` 尾部），下一帧的 `toc` 只比数字。
+  同理：需要跨帧的控件用 `ui.Handle` + `Bind` / `c.Resolve`，不要留 Element。
+- **`followNative` 量的是上一帧的布局**：`Bounds()` 给的是上一帧提交的矩形，所以滚动一帧、跟随再一帧才落地，
+  测试里要连跑两帧；跳转期间靠 `followHold` 顶住。正文第一个标题在文档顶端时它的 `y` 本就低于窗格顶边
+  （路径行 + 内边距），所以「顶边之上没有标题」要取 `headMarks[0]`，不能当成「没有当前章节」。
 - **`Content` 必须 `drain()`**：shell 只有它这一条构建路径，漏了它，`Post` 投递的 watcher 变更在真实窗口里
   永不生效（历史 bug，2026-11-24 修）。`View`（测试用）与 `Content` 的 `drain` → `handleShortcuts` →
   `updateToasts` 三步顺序要一致。

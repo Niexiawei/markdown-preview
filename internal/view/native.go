@@ -22,7 +22,7 @@ func (s *State) loadDoc() {
 	s.doc, s.headings, s.src, s.docErr = nil, nil, "", nil
 	// Another document is another place: nothing of the last one's outline
 	// follow — its current heading or the boxes it measured — survives it.
-	s.anchor, s.bodyPane, s.headMarks = "", ui.Element{}, nil
+	s.anchor, s.bodyBox, s.headMarks = "", ui.Rect{}, nil
 	if s.sel.empty() {
 		s.tocW, s.seenTOC = defaultTOCWidth, defaultTOCWidth
 		return
@@ -80,6 +80,9 @@ func (s *State) gotoHeading(slug string) {
 		return
 	}
 	s.anchor = slug
+	// The body glides there: until it lands, the sections it passes are not the
+	// one being read, and must not repaint the outline.
+	s.followUntil = s.frameNow.Add(followHold)
 	if s.mode() == config.RenderWebView && s.wv != nil {
 		// The page has no block to jump to: webview.go scrolls it by id.
 		s.scrollWebTo(slug)
@@ -132,24 +135,57 @@ func blockOfHeading(d *parser.Document, slug string) int {
 	return 0
 }
 
-// jumpMarker is the markdown view's Block hook: for the block the body is to
-// bring to the top it builds a marker of no size at that block's own start,
-// which asks the pane to line its top up with the block's, gliding. The block
-// itself is the view's to build, so it reports false.
+// blockHook is the markdown view's Block hook: it marks the block a jump is to
+// bring to the top, and notes where every heading of the document sits, which
+// is how the outline follows the reader. The block itself is the view's to
+// build, so it reports false either way.
 //
-// The marker is how a jump lines a block up with the pane's top rather than
-// merely showing it: Options.Anchor, which the view follows itself, scrolls as
-// little as shows the block, at once.
-func (s *State) jumpMarker(c *ui.Context, d *parser.Document, i int) bool {
-	if s.jump <= 0 || i != s.jump {
-		return false
+// The jump's marker is how a jump lines a block up with the pane's top rather
+// than merely showing it: Options.Anchor, which the view follows itself,
+// scrolls as little as shows the block, at once.
+func (s *State) blockHook(c *ui.Context, d *parser.Document, i int) bool {
+	if s.jump > 0 && i == s.jump {
+		s.jumpSeen = c.Now()
+		ui.Box(c).Width(0).Height(0).ScrollIntoView(ui.ScrollIntoViewOptions{
+			Block:     ui.ScrollStart,
+			Animation: &ui.Smooth,
+		})
 	}
-	s.jumpSeen = c.Now()
-	ui.Box(c).Width(0).Height(0).ScrollIntoView(ui.ScrollIntoViewOptions{
-		Block:     ui.ScrollStart,
-		Animation: &ui.Smooth,
-	})
+	// A mark takes no room: it only says where the heading starts, for the
+	// outline's follow to read from the next frame's layout.
+	if d.Block(i).Kind == parser.Heading {
+		el := ui.Box(c).Width(0).Height(0)
+		s.marks = append(s.marks, blockMark{
+			slug: markdown.Slug(parser.PlainText(d.Inlines(i))),
+			el:   el,
+		})
+	}
 	return false
+}
+
+// followNative makes the heading at the top of the body's pane the outline's
+// current one: the outline then highlights it and keeps it in sight. It reads
+// the last frame's layout, since this frame's is not placed yet.
+func (s *State) followNative(c *ui.Context) {
+	if s.mode() != config.RenderNative {
+		return
+	}
+	// A jump still on its way is the answer, not where the body happens to be.
+	if s.jump > 0 || !s.jumpSeen.IsZero() || c.Now().Before(s.followUntil) {
+		return
+	}
+	if s.bodyBox.H == 0 || len(s.headMarks) == 0 {
+		return
+	}
+	top := s.bodyBox.Y + bodyJumpGap
+	slug := s.headMarks[0].slug // above the first heading, the first one is read
+	for _, m := range s.headMarks {
+		if m.y > top+followSlop {
+			break
+		}
+		slug = m.slug
+	}
+	s.anchor = slug
 }
 
 // followLink opens what a link in the document points at: a heading of it, a
@@ -241,6 +277,10 @@ func (s *State) setTOC(open bool) {
 // heading. The outline scrolls both ways, and keeps its rows as wide as the
 // pane, so that a click on one lands wherever on it the pointer is.
 func (s *State) toc(c *ui.Context) {
+	s.followNative(c)
+	// Whatever the build makes of the current heading, the next frame knows it
+	// was shown: a row folded away is not asked for every frame.
+	defer func() { s.tocShownAnchor = s.anchor }()
 	t := c.Theme()
 	ui.Column(c).Fill().Children(func() {
 		// The header keeps the room around the outline; the scroll below does
@@ -305,12 +345,14 @@ func (s *State) tocItems(c *ui.Context, nodes []*tocNode) {
 			item := ui.TreeItem(c, n.h.Text, s.openOf(s.tocKey(n.h.Slug)), func() {
 				s.tocItems(c, n.children)
 			}).Selected(n.h.Slug == s.anchor)
+			s.revealCurrentRow(item, n.h.Slug)
 			if item.Clicked() {
 				s.gotoHeading(n.h.Slug)
 			}
 			continue
 		}
 		item := ui.TreeItem(c, n.h.Text, nil, nil).Selected(n.h.Slug == s.anchor)
+		s.revealCurrentRow(item, n.h.Slug)
 		if item.Clicked() {
 			s.gotoHeading(n.h.Slug)
 		}
@@ -356,12 +398,13 @@ func (s *State) nativePreview(c *ui.Context) {
 	// Hung for the frame that measures a jump alone, that room would go away
 	// with the hook, and the block would slide up out of the pane as the jump
 	// landed: the room is measured and spent in the same layout.
-	s.md.Block = s.jumpMarker
+	s.md.Block = s.blockHook
+	s.marks = s.marks[:0]
 	// The scroll fills the pane; the room around the text is the column's own,
 	// inside it, so that both bars lie against the pane's edges rather than
 	// inside its padding, where a reader pressing near the edge would drag a
 	// bar while aiming at the text, or miss the bar while aiming at it.
-	ui.ScrollBoth(c).TrackScroll(s.docScroll()).Fill().
+	pane := ui.ScrollBoth(c).TrackScroll(s.docScroll()).Fill().
 		HandleInput(s.bodyPress).
 		BorderWidth(bodyJumpGap, 0, 0, 0).BorderColor(ui.Transparent).
 		Children(func() {
@@ -372,4 +415,24 @@ func (s *State) nativePreview(c *ui.Context) {
 					markdown.View(c, s.src, &s.md)
 				})
 		})
+	// Where the marks are is a number of this pass, since MyGo expires the
+	// elements with the pass: the outline, which is built before the body,
+	// reads them from here next time.
+	s.headMarks = s.headMarks[:0]
+	for _, m := range s.marks {
+		s.headMarks = append(s.headMarks, headingMark{slug: m.slug, y: m.el.Bounds().Y})
+	}
+	s.bodyBox = pane.Bounds()
+}
+
+// revealCurrentRow scrolls the outline to the row of slug when that row became
+// the current one, so that the reader sees which section is being read. A row
+// that already was where it is asked to be does not move: the outline is only
+// brought along when the section changes, never on every frame.
+func (s *State) revealCurrentRow(item ui.Element, slug string) {
+	if s.anchor == "" || slug != s.anchor || slug == s.tocShownAnchor {
+		return
+	}
+	item.ScrollIntoView(ui.ScrollIntoViewOptions{Block: ui.ScrollNearest})
+	s.tocShownAnchor = s.anchor
 }

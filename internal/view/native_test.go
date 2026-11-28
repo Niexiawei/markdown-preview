@@ -10,6 +10,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"mdpreview/internal/config"
+	"mdpreview/internal/workspace"
 )
 
 func TestTOCListsHeadings(t *testing.T) {
@@ -397,5 +398,116 @@ func TestTOCJumpLandsRightAfterRules(t *testing.T) {
 	}
 	if rect.Y < 12 || rect.Y > 24 {
 		t.Errorf("heading at Y=%v, want the 16 DIP a jump leaves above it", rect.Y)
+	}
+}
+
+// TestTheOutlineFollowsTheBodyScroll pins the follow: the section at the top
+// of the body is the outline's current one, without a click.
+func TestTheOutlineFollowsTheBodyScroll(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", sections(8))
+	s.Refresh()
+	s.selectDoc("a.md")
+
+	tt := newTester(s)
+	tt.Frame() // 一帧之后标记与正文容器才有位置
+	pane := s.bodyBox
+	if pane.H == 0 || len(s.headMarks) < 5 {
+		t.Fatalf("pane %v, marks %d: the body did not lay out", pane, len(s.headMarks))
+	}
+	// 把第 5 节的标记顶到窗格顶边（bodyJumpGap 之下）。
+	s.docScroll().Y = s.headMarks[4].y - (pane.Y + bodyJumpGap) + 1
+	tt.Frame()
+	tt.Frame()
+
+	if want := workspace.Slug("第 5 节"); s.anchor != want {
+		t.Errorf("anchor = %q, want %q", s.anchor, want)
+	}
+}
+
+func TestScrollingBackToTheTopLeavesTheFirstHeadingCurrent(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", sections(8))
+	s.Refresh()
+	s.selectDoc("a.md")
+
+	tt := newTester(s)
+	tt.Frame()
+	s.docScroll().Y = 2000
+	tt.Frame()
+	tt.Frame()
+	first := workspace.Slug("第 1 节")
+	if s.anchor == first || s.anchor == "" {
+		t.Fatalf("anchor = %q, want a later section while scrolled", s.anchor)
+	}
+	s.docScroll().Y = 0
+	tt.Frame()
+	tt.Frame()
+	if want := workspace.Slug("第 1 节"); s.anchor != want {
+		t.Errorf("anchor = %q back at the top, want the follow to take over, %q", s.anchor, want)
+	}
+}
+
+// TestAJumpKeepsItsHighlightWhileItGlides pins the hold: the frames between
+// the click and the landing must not repaint the outline with the sections the
+// body is passing. It also pins that the follow resumes once the glide is over.
+func TestAJumpKeepsItsHighlightWhileItGlides(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", sections(8))
+	s.Refresh()
+	s.selectDoc("a.md")
+
+	tt := newTester(s)
+	if err := tt.Click("第 6 节"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	tt.Frame()
+	if want := workspace.Slug("第 6 节"); s.anchor != want {
+		t.Errorf("anchor = %q right after the click, want %q", s.anchor, want)
+	}
+	tt.Advance(time.Second)
+	tt.Frame()
+	s.docScroll().Y = 0
+	tt.Frame()
+	tt.Frame()
+	if want := workspace.Slug("第 1 节"); s.anchor != want {
+		t.Errorf("anchor = %q back at the top, want the follow to take over, %q", s.anchor, want)
+	}
+}
+
+// TestTheOutlineKeepsTheCurrentHeadingInSight pins that the outline scrolls to
+// the current row of a long document, rather than marking a row nobody sees.
+func TestTheOutlineKeepsTheCurrentHeadingInSight(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", sections(40))
+	s.Refresh()
+	s.selectDoc("a.md")
+
+	tt := newTester(s) // 1000x700
+	tt.Frame()
+	pane := s.bodyBox
+	if len(s.headMarks) < 30 {
+		t.Fatalf("marks = %d, want the whole outline measured", len(s.headMarks))
+	}
+	s.docScroll().Y = s.headMarks[29].y - (pane.Y + bodyJumpGap) + 1
+	for range 3 {
+		tt.Frame()
+	}
+	if want := workspace.Slug("第 30 节"); s.anchor != want {
+		t.Fatalf("anchor = %q, want %q", s.anchor, want)
+	}
+	if s.tocScroll.Y <= 0 {
+		t.Fatal("the outline did not scroll to the current row")
+	}
+	list, ok := tt.Find("目录列表")
+	if !ok {
+		t.Fatalf("texts = %q, want the outline's scroll container", tt.Texts())
+	}
+	row, ok := tt.Find("第 30 节")
+	if !ok {
+		t.Fatalf("texts = %q, want the current row built", tt.Texts())
+	}
+	if row.Y < list.Y || row.Y+row.H > list.Y+list.H {
+		t.Errorf("row at %v, outline %v: the current row is not in sight", row, list)
 	}
 }
