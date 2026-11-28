@@ -143,7 +143,7 @@ func docHTML(baseDir, src, rev string, zoom float32) string {
 	b.WriteString("<meta name=\"rev\" content=\"" + escapeAttr(rev) + "\">")
 	b.WriteString("<style>:root { --md-scale: " + formatScale(zoom) + "; }" + docCSS + "</style></head><body><article>")
 	b.WriteString(body)
-	b.WriteString("</article></body></html>\n")
+	b.WriteString("</article>" + pageInputJS + "</body></html>\n")
 	return b.String()
 }
 
@@ -291,7 +291,17 @@ const webFollowJS = `(() => {
     if (h.getBoundingClientRect().top <= top) slug = h.id; else break;
   }
   const meta = document.querySelector('meta[name="rev"]');
-  return [meta ? meta.getAttribute('content') : '', slug, Math.round(window.scrollY)];
+  // 1: a jump landed (or none is in flight); 0: still gliding; -1: the reader
+  // took the page over, so the glide was cancelled.
+  let state = 1;
+  if (window.__mdTaken) {
+    window.__mdTaken = false;
+    state = -1;
+  } else if (typeof window.__mdTarget === 'number') {
+    if (Math.abs(window.scrollY - window.__mdTarget) <= 2) window.__mdTarget = null;
+    else state = 0;
+  }
+  return [meta ? meta.getAttribute('content') : '', slug, Math.round(window.scrollY), state];
 })()`
 
 // startPageFollow asks the page where the reader is, for as long as the web
@@ -317,20 +327,24 @@ func (s *State) startPageFollow() {
 				continue
 			}
 			pair, ok := v.([]any)
-			if !ok || len(pair) != 3 {
+			if !ok || len(pair) != 4 {
 				continue
 			}
 			rev, _ := pair[0].(string)
 			slug, _ := pair[1].(string)
 			at, _ := pair[2].(float64)
+			state, _ := pair[3].(float64)
 			// A page that moved without a new heading still has to say so: the
-			// offset is what tells a jump's landing from the reader scrolling.
-			key := rev + "/" + slug + "/" + itoa(int(at))
+			// offset tells a jump's landing from the reader scrolling, and the
+			// state tells a glide from that landing.
+			key := rev + "/" + slug + "/" + itoa(int(at)) + "/" + itoa(int(state))
 			if slug == "" || key == last {
 				continue
 			}
 			last = key
-			s.Post(func() { s.followTo(slug, float32(at)) })
+			s.Post(func() {
+				s.followTo(slug, float32(at), state >= 0.5, state <= -0.5)
+			})
 		}
 	}()
 }
@@ -339,7 +353,7 @@ func (s *State) startPageFollow() {
 // reports where the reader is. A heading above the page's first one is not
 // reported as none: at the top of its document the first section is the one
 // being read, as in the native body.
-func (s *State) followTo(slug string, y float32) {
+func (s *State) followTo(slug string, y float32, landed, taken bool) {
 	if s.mode() != config.RenderWebView {
 		return
 	}
@@ -348,10 +362,12 @@ func (s *State) followTo(slug string, y float32) {
 	if s.frameNow.Before(s.followUntil) {
 		return
 	}
-	// The page's own smooth scroll is over by the time the hold lets its
-	// reports through, so the first one is where a jump landed: there is no
-	// glide to wait out here.
-	if s.pinned(y, true) {
+	if taken {
+		// The reader wheeled or keyed the page: the glide stopped where they
+		// left it, and what they look at is the page's to say.
+		s.pinSlug = ""
+	}
+	if s.pinned(y, landed) {
 		return
 	}
 	if slug == "" {
@@ -420,9 +436,21 @@ func (s *State) scrollWebTo(slug string) {
 // smooth scroll, which lines the heading up with the page's top and stops at
 // its end, as the native body stops at its own.
 func headingScrollJS(slug string) string {
-	return "(function(){var e=document.getElementById(" + strconv.Quote(slug) +
-		");if(e)e.scrollIntoView({behavior:'smooth',block:'start'});})()"
+	return "(function(){var e=document.getElementById(" + strconv.Quote(slug) + ");" +
+		"if(!e)return;" +
+		"var s=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--md-scale'))||1;" +
+		"var max=document.documentElement.scrollHeight-window.innerHeight;" +
+		"var top=e.getBoundingClientRect().top+window.scrollY-16*s;" +
+		"window.__mdTarget=Math.max(0,Math.min(top,max));" +
+		"e.scrollIntoView({behavior:'smooth',block:'start'});})()"
 }
+
+// pageInputJS lets the page say the reader took over: a wheel or a key cancels
+// a smooth scroll, and the jump's target is no longer where the page is going.
+const pageInputJS = "<script>(function(){var drop=function(){if(window.__mdTarget!=null){" +
+	"window.__mdTarget=null;window.__mdTaken=true;}};" +
+	"addEventListener('wheel',drop,{passive:true});addEventListener('touchstart',drop,{passive:true});" +
+	"addEventListener('keydown',drop);})()</script>"
 
 // itoa is strconv.Itoa, kept small for the one place the view needs it.
 func itoa(n int) string {

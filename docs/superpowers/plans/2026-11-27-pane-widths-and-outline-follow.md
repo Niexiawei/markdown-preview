@@ -940,3 +940,16 @@ git commit -m "test: 目录跟随的截图用例与规格回写"
   `window.scrollY`，去重键带上它，这样「标题没变但页面动了」也能报上来）。新增
   `TestAJumpThatCannotReachTheTopKeepsItsHeading`、`TestAPinnedHeadingLetsGoWhenTheBodyIsDragged`、
   `TestAWheelAtTheEndKeepsThePinnedHeading`、`TestThePageCannotTakeTheOutlineOffAClammedJump`。
+
+## 执行后的修订（WebView 的回跳，用户 2026-11-28 用 `data-verify-plan.md` 复现）
+
+- **WebView 里点靠末尾的章节仍会回跳**：页面的 `scrollIntoView({behavior:'smooth'})` 距离越长滑得越久，
+  可能超过 600 ms 静默期，于是「还在滑」的报告被当成落点：先 capture 在途中，下一条报告位置一变就释放，
+  跟随按页面顶边的章节重算，落到上一节。修法 = 让页面自己报落点：`headingScrollJS` 把目标写进
+  `window.__mdTarget`（16×scale 的 `scroll-margin-top`，钳到最大滚动），`webFollowJS` 每 200 ms 报
+  `[rev, slug, scrollY, state]`（1 落点 / 0 滑行 / -1 读者接管），`followTo` 把 state 交给 `pinned`。
+  页面的 wheel / touchstart / keydown（`pageInputJS`）清掉目标并报 -1，pin 立刻松开；
+  `jumpPatience` 从 1 s 放宽到 3 s（页面的滑动可能比原生慢，耐心期只该在「被打断」时才用完）。
+  新增 `TestAPageReportOfItsGlideKeepsThePinnedHeading`、`TestAPageTakeOverLetsTheOutlineFollow`、
+  `TestHeadingScrollJSMarksItsTarget`、`TestDocHTMLDropsTheTargetWhenTheReaderScrolls`；
+  另用用户的 `data-verify-plan.md`（12 个标题）在原生路径上手动跑过：点最后三个标题（其中两个落在 `MaxY`）高亮都不再回跳。

@@ -247,7 +247,7 @@ func TestThePageTellsTheOutlineWhereTheReaderIs(t *testing.T) {
 	s.selectDoc("a.md")
 	s.setMode(config.RenderWebView)
 
-	s.followTo("二", 0)
+	s.followTo("二", 0, true, false)
 	if s.anchor != "二" {
 		t.Errorf("anchor = %q, want the heading the page reported", s.anchor)
 	}
@@ -261,7 +261,7 @@ func TestThePageCannotMoveTheNativeOutline(t *testing.T) {
 	s.Refresh()
 	s.selectDoc("a.md") // 原生
 
-	s.followTo("二", 0)
+	s.followTo("二", 0, true, false)
 	if s.anchor != "" {
 		t.Errorf("anchor = %q, want the native body's own state", s.anchor)
 	}
@@ -277,7 +277,7 @@ func TestAPageReportDoesNotCutAJumpShort(t *testing.T) {
 	s.frameNow = time.Now()
 	s.followUntil = s.frameNow.Add(followHold)
 
-	s.followTo("二", 0)
+	s.followTo("二", 0, true, false)
 	if s.anchor != "" {
 		t.Errorf("anchor = %q during the hold, want it left alone", s.anchor)
 	}
@@ -300,13 +300,89 @@ func TestThePageCannotTakeTheOutlineOffAClammedJump(t *testing.T) {
 
 	// The page cannot lift 二 to its top (the document ends first), so it
 	// reports 一; it has not moved since the jump though.
-	s.followTo("一", 120)
+	s.followTo("一", 120, true, false)
 	if s.anchor != "二" {
 		t.Fatalf("anchor = %q, want 二: the page did not move", s.anchor)
 	}
 	// The reader scrolls: the report is theirs now.
-	s.followTo("一", 40)
+	s.followTo("一", 40, true, false)
 	if s.anchor != "一" {
 		t.Errorf("anchor = %q after the page moved, want 一", s.anchor)
+	}
+}
+
+// TestAPageReportOfItsGlideKeepsThePinnedHeading pins the page side of the pin:
+// a page still gliding toward the heading it was sent to reports the sections
+// it passes, and those must not take the outline off it.
+func TestAPageReportOfItsGlideKeepsThePinnedHeading(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", "# 一\n\n## 二\n\n## 三\n")
+	s.Refresh()
+	s.selectDoc("a.md")
+	s.setMode(config.RenderWebView)
+	tt := newTester(s)
+	s.gotoHeading("三")
+	tt.Frame()
+	tt.Advance(time.Second)
+	tt.Frame()
+
+	// Still gliding: the page passes 一 and 二 on its way to 三.
+	s.followTo("一", 200, false, false)
+	s.followTo("二", 400, false, false)
+	if s.anchor != "三" {
+		t.Fatalf("anchor = %q while the page glides, want 三", s.anchor)
+	}
+	// Landed, with the document's end stopping 三 short of the top.
+	s.followTo("二", 600, true, false)
+	if s.anchor != "三" {
+		t.Fatalf("anchor = %q at the landing, want 三", s.anchor)
+	}
+	// The reader scrolls: the report is theirs now.
+	s.followTo("二", 300, true, false)
+	if s.anchor != "二" {
+		t.Errorf("anchor = %q after the page moved, want 二", s.anchor)
+	}
+}
+
+// TestAPageTakeOverLetsTheOutlineFollow pins the interruption: a wheel on the
+// page cancels the glide, so the pin must let go at once rather than hold a
+// heading nobody is at.
+func TestAPageTakeOverLetsTheOutlineFollow(t *testing.T) {
+	s, root := newState(t)
+	writeDoc(t, root, "a.md", "# 一\n\n## 二\n\n## 三\n")
+	s.Refresh()
+	s.selectDoc("a.md")
+	s.setMode(config.RenderWebView)
+	tt := newTester(s)
+	s.gotoHeading("三")
+	tt.Frame()
+	tt.Advance(time.Second)
+	tt.Frame()
+
+	s.followTo("一", 100, true, true)
+	if s.anchor != "一" {
+		t.Errorf("anchor = %q after the reader took the page over, want 一", s.anchor)
+	}
+}
+
+// TestHeadingScrollJSMarksItsTarget pins what the page has to know to say it
+// has arrived: where the jump sent it.
+func TestHeadingScrollJSMarksItsTarget(t *testing.T) {
+	js := headingScrollJS("二")
+	for _, want := range []string{"__mdTarget", "scrollIntoView", "scrollY"} {
+		if !strings.Contains(js, want) {
+			t.Errorf("js = %s, want it to mention %q", js, want)
+		}
+	}
+}
+
+// TestDocHTMLDropsTheTargetWhenTheReaderScrolls pins the page's own listener:
+// a wheel or a key cancels the jump, and the page says so.
+func TestDocHTMLDropsTheTargetWhenTheReaderScrolls(t *testing.T) {
+	html := docHTML(t.TempDir(), "# A\n", "1", 1)
+	for _, want := range []string{"__mdTarget", "__mdTaken", "wheel", "keydown"} {
+		if !strings.Contains(html, want) {
+			t.Errorf("html = %s, want it to mention %q", html, want)
+		}
 	}
 }

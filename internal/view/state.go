@@ -80,9 +80,10 @@ const (
 	// the one being read, in DIPs.
 	followSlop float32 = 4
 	// jumpPatience is how long the outline keeps a heading a jump chose while
-	// the body has not arrived: a glide takes half a second, so this only runs
-	// out when the reader interrupted the jump.
-	jumpPatience = time.Second
+	// the body has not arrived. A native glide takes half a second; a page's
+	// own smooth scroll may take longer the further it goes, so this is
+	// generous — only an interrupted jump runs it out.
+	jumpPatience = 3 * time.Second
 )
 
 // State is what the window shows, and what the app keeps of it.

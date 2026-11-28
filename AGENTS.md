@@ -317,11 +317,17 @@ GUI 要真实窗口；**无头环境里验证视图一律用 `ui.NewTester`，�
   测试里要连跑两帧；跳转期间靠 `followHold` 与 `pinned` 顶住（前者管滑动，后者管落点）。正文第一个标题在文档顶端时它的 `y` 本就低于窗格顶边
   （路径行 + 内边距），所以「顶边之上没有标题」要取 `headMarks[0]`，不能当成「没有当前章节」。
 - **WebView 的跟随是轮询，不是事件**：内嵌 WebView 没有 mygo 的 bridge（那只给窗口自己的页面），所以
-  `startPageFollow` 每 200 ms `EvalContext`（2 s 超时）问一次 `webFollowJS`。脚本返回 `[rev, slug]`：
-  `rev` 来自 `docHTML` 写进页面的 `<meta name="rev">`，换文档时哪怕顶部标题同名也会重报一次；
-  **只在 `slug` 变了才 `Post`**（否则空闲时每 200 ms 让窗口重画一帧），循环在 `IsDestroyed()` 退出。
-  `followTo` 只认 WebView 模式、且跳过 `followUntil` 静默期；页面报空（在第一个标题之上）当作文档第一章节。
-  页面脚本本身没有测试（Tester 里没有真 WebView），改动只能靠真窗口手动验证。
+  `startPageFollow` 每 200 ms `EvalContext`（2 s 超时）问一次 `webFollowJS`。脚本返回
+  `[rev, slug, scrollY, state]`：`rev` 是 `docHTML` 写进页面的 `<meta name="rev">`（换文档时，哪怕顶部标题同名也重报一次），
+  `scrollY` 与 `state` 是「跳转有没有落点」的判据——**state 1 = 已落点（或没有跳转）/ 0 = 还在滑 / -1 = 读者接管了页面**。
+  跳转时 `headingScrollJS` 把目标写进 `window.__mdTarget`（`scroll-margin-top` 16×scale + 钳到最大滚动），
+  页面报满 2 px 以内就把 target 清掉、报 1；页面的 wheel / touchstart / keydown 监听（`pageInputJS`，写在 `docHTML` 里）
+  会清 target 并置 `__mdTaken`，报 -1，`followTo` 立刻松开 pin。
+  去重键带上 `scrollY` 与 `state`（否则「标题没变但页面动了」「滑完了」这两件事报不上来），
+  **只在键变了才 `Post`**（空闲时不让窗口每 200 ms 重画一帧），循环在 `IsDestroyed()` 退出。
+  `followTo` 只认 WebView 模式、跳过 `followUntil` 静默期；页面报空（在第一个标题之上）当作文档第一章节。
+  页面脚本本身没有测试（Tester 里没有真 WebView），只有 `TestHeadingScrollJSMarksItsTarget` /
+  `TestDocHTMLDropsTheTargetWhenTheReaderScrolls` 钉住脚本里必须有的东西，行为只能靠真窗口手动验证。
 - **`Content` 必须 `drain()`**：shell 只有它这一条构建路径，漏了它，`Post` 投递的 watcher 变更在真实窗口里
   永不生效（历史 bug，2026-11-24 修）。`View`（测试用）与 `Content` 的 `drain` → `handleShortcuts` →
   `updateToasts` 三步顺序要一致。
